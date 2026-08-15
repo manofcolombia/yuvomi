@@ -10,6 +10,8 @@ import { openModal as openSharedModal, closeModal as closeSharedModal, advancedS
 import { DEFAULT_CATEGORY_NAME } from '/utils/shopping-categories.js';
 import { renderKitchenTabsBar } from '/utils/kitchen-tabs.js';
 import { resolveShoppingTarget, announceTransfer } from '/utils/kitchen-transfer.js';
+import { selectIngredientsForShoppingList } from '/utils/ingredient-select.js';
+import { formatQuantityFractions } from '/utils/fraction.js';
 import { popoverMenuHtml, installPopoverMenus } from '/utils/popover-menu.js';
 import { ingredientRowHTML } from '/utils/ingredient-row.js';
 import { scheduleUndoableDelete } from '/utils/ux.js';
@@ -24,6 +26,11 @@ import { renderPageSearch, wirePageSearch } from '/utils/page-search.js';
 let _container = null;
 /** Handle des geteilten Suchfelds (setValue/clear), gesetzt in render(). */
 let _search = null;
+// AbortController für die window-Listener dieser Seite (fraction-quantities-
+// changed) - dasselbe Muster wie `_fabController` in dashboard.js: bei jedem
+// render() erneuert, damit wiederholte Navigation zu /recipes keine
+// doppelten Listener anhäuft.
+let _pageController = null;
 
 const state = {
   recipes: [],
@@ -37,6 +44,11 @@ const state = {
   // sichtbar, sobald mindestens ein gespiegeltes Rezept existiert (siehe
   // renderSourceFilter).
   sourceFilter: 'all',
+  // Haushalt-Präferenz „Mengen als Brüche anzeigen" (fraction_quantities).
+  // Kein localStorage-Spiegel wie bei week_start/date_format - diese Seite
+  // holt sie selbst über GET /preferences und hört auf
+  // fraction-quantities-changed für die Live-Aktualisierung.
+  fractionQuantities: false,
 };
 
 // Client-seitige Suche über Titel, Notizen und Zutaten (Audit A1-21):
@@ -153,6 +165,8 @@ async function loadShoppingLists() {
 
 export async function render(container) {
   _container = container;
+  _pageController?.abort();
+  _pageController = new AbortController();
 
   const page = document.createElement('div');
   page.className = 'recipes-page';
@@ -238,9 +252,38 @@ export async function render(container) {
 
   if (window.lucide) window.lucide.createIcons({ el: container });
 
+  // Haushalt-Präferenz „Mengen als Brüche anzeigen": eigener Preferences-Abruf
+  // NEBEN den übrigen Initial-Ladevorgängen statt im Promise.all darunter - eine
+  // Sekundärpräferenz für die Detail-Ansicht darf die Rezeptliste nicht
+  // verzögern. Weicht der Wert vom Default ab, holt der Re-Render die korrekte
+  // Formatierung nach, sobald sie eintrifft.
+  const prevFractionQuantities = state.fractionQuantities;
+  const fractionQuantitiesLoaded = api.get('/preferences')
+    .then((res) => { state.fractionQuantities = !!res.data?.fraction_quantities; })
+    .catch(() => {});
+
   await Promise.all([loadRecipes(), loadCategories(), loadShoppingLists()]);
   renderSourceFilter();
   renderRecipeList();
+
+  fractionQuantitiesLoaded.then(() => {
+    if (state.fractionQuantities !== prevFractionQuantities) renderRecipeList();
+  });
+
+  // Deep-Link von der Dashboard-„Heute"-Fläche (?open=<recipeId>): einmalige
+  // Aktion bei diesem Seitenaufruf, kein persistenter Modal-Zustand wie beim
+  // Kalender - daher auch kein URL-Rewrite nötig, siehe dashboard.js
+  // recipeOrMealsRoute().
+  const openId = new URLSearchParams(window.location.search).get('open');
+  if (openId && /^\d+$/.test(openId) && state.recipes.some((r) => String(r.id) === openId)) {
+    const toggle = list.querySelector(`[data-action="toggle-detail"][data-id="${openId}"]`);
+    const panel = list.querySelector(`#recipe-detail-${openId}`);
+    if (toggle && panel) {
+      toggle.setAttribute('aria-expanded', 'true');
+      panel.hidden = false;
+    }
+    list.querySelector(`li[data-id="${openId}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }
 
   fab.addEventListener('click', () => openRecipeModal('create'));
 
@@ -306,6 +349,15 @@ export async function render(container) {
   // <button>, der Enter und Space von sich aus verarbeitet. Der frühere Handler
   // gehörte zur Karte, die role="button" trug und damit ein Bedienelement mit
   // Bedienelementen darin war.
+
+  // Live-Aktualisierung, wenn die Einstellungen-Seite die Präferenz in einem
+  // anderen Tab/derselben Sitzung ändert (modules-kitchen.js). `signal` bindet
+  // den Listener an `_pageController`, der oben je render() erneuert wird -
+  // sonst häufte wiederholte Navigation zu /recipes einen Listener pro Besuch an.
+  window.addEventListener('fraction-quantities-changed', (e) => {
+    state.fractionQuantities = !!e.detail?.enabled;
+    renderRecipeList();
+  }, { signal: _pageController.signal });
 }
 
 // Mehrwege-Filter (Alle/Nativ/pro Provider) als Trigger + Popover-Menü im
@@ -649,7 +701,8 @@ function renderRecipeList() {
         for (const ing of ingredients) {
           const item = document.createElement('li');
           item.className = 'recipe-detail__ingredient';
-          item.textContent = ing.quantity ? `${ing.quantity} · ${ing.name}` : ing.name;
+          const qty = state.fractionQuantities ? formatQuantityFractions(ing.quantity) : ing.quantity;
+          item.textContent = qty ? `${qty} · ${ing.name}` : ing.name;
           ul.appendChild(item);
         }
         detail.appendChild(ul);
@@ -956,16 +1009,36 @@ async function planRecipe(recipe, btn) {
 }
 
 async function transferRecipe(recipe, btn) {
-  // Vorprüfung, Listenwahl und die Antwort auf „es gibt keine Liste" liegen im
-  // geteilten Baustein. Vorher lieh sich diese Stelle `meals.noShoppingLists` -
-  // der Text der Rezepte hing damit an einem fremden Modul, und ein Refactor im
-  // Essensplan hätte ihn stillschweigend mitgenommen (Audit 2026-07-30, P1-A).
-  const target = await resolveShoppingTarget(state.lists);
-  if (!target) return;
+  // „Gibt es überhaupt eine Liste?" bleibt der geteilte Baustein - er trägt
+  // Ton, Text und Ausweg für den Leerfall (Audit 2026-07-30, P1-A). Welche
+  // Liste und welche Zutaten übertragen werden, entscheidet jetzt EIN Dialog
+  // (utils/ingredient-select.js) statt zwei nacheinander - `resolveShoppingTarget`
+  // darf hier also NICHT noch einmal nach der Liste fragen, sonst doppelt der
+  // Dialog danach.
+  if (!state.lists.length) {
+    await resolveShoppingTarget(state.lists);
+    return;
+  }
+
+  const result = await selectIngredientsForShoppingList({
+    ingredients: recipe.ingredients.map((i) => ({
+      id: i.id,
+      name: i.name,
+      quantity: state.fractionQuantities ? formatQuantityFractions(i.quantity) : i.quantity,
+    })),
+    lists: state.lists,
+    title: t('recipes.transferTitle', { name: recipe.title }),
+  });
+  if (!result) return;
+
+  const targetList = state.lists.find((l) => l.id === result.listId);
 
   if (btn) btn.disabled = true;
   try {
-    const res = await api.post(`/recipes/${recipe.id}/to-shopping-list`, { listId: target.id });
+    const res = await api.post(`/recipes/${recipe.id}/to-shopping-list`, {
+      listId: result.listId,
+      ingredientIds: result.ingredientIds,
+    });
     const added = res.data?.transferred ?? 0;
     const skipped = res.data?.skipped ?? 0;
 
@@ -974,11 +1047,11 @@ async function transferRecipe(recipe, btn) {
       // `list` nennt das Ziel: „5 Zutaten übernommen." sagte nicht, in welche der
       // Listen (Critique 2026-07-30, P1).
       //
-      // Rücknahme über den geteilten Baustein: dieser Pfad überträgt am meisten
-      // auf einmal - eine ganze Zutatenliste - in eine Liste, die der Nutzer
-      // gerade nicht ansieht (Audit 2026-07-30, P1-B).
+      // Rücknahme über den geteilten Baustein: dieser Pfad kann - je nach
+      // Auswahl im Dialog - immer noch die ganze Zutatenliste übertragen, in
+      // eine Liste, die der Nutzer gerade nicht ansieht (Audit 2026-07-30, P1-B).
       announceTransfer({
-        message: t('recipes.toShoppingSuccess', { count: added, list: target.name }),
+        message: t('recipes.toShoppingSuccess', { count: added, list: targetList?.name ?? '' }),
         addedIds: res.data?.added_ids ?? [],
       });
     } else if (skipped > 0) {

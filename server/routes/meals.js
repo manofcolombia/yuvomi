@@ -17,24 +17,42 @@ const router  = express.Router();
 const VALID_MEAL_TYPES = ['breakfast', 'lunch', 'dinner', 'snack'];
 const VALID_WEEKDAYS = [0, 1, 2, 3, 4, 5, 6]; // 0 = Monday, 6 = Sunday
 
+// Wochenstart-Präferenz (haushaltweit): dieselbe Werteliste wie in
+// server/routes/preferences.js, dort nicht exportiert und darum hier lokal
+// dupliziert. Betrifft NUR die Grenzen der angezeigten/abgefragten Woche -
+// die separate Wochentag-Nummerierung der Wiederholungs-Vorlagen
+// (meal-recurrence.js#mealWeekday) bleibt fest Montag-basiert (#619).
+const VALID_WEEK_STARTS = ['monday', 'sunday', 'saturday'];
+const WEEK_START_DAY_INDEX = { monday: 1, sunday: 0, saturday: 6 };
+
+function cfgGet(key) {
+  const row = db.get().prepare('SELECT value FROM sync_config WHERE key = ?').get(key);
+  return row ? row.value : null;
+}
+
 // --------------------------------------------------------
 // Hilfsfunktionen
 // --------------------------------------------------------
 
 /**
- * Gibt den ISO-Datumstring (YYYY-MM-DD) für den Montag einer Woche zurück.
+ * Gibt den ISO-Datumstring (YYYY-MM-DD) für den ersten Tag der Woche zurück,
+ * abhängig von der Wochenstart-Präferenz des Haushalts (Montag/Sonntag/Samstag).
+ * Vorher fest auf Montag verdrahtet - die Woche begann serverseitig immer
+ * montags, egal was die Einstellung sagte.
  * @param {string} dateStr - beliebiges Datum der Woche (YYYY-MM-DD)
  */
 function weekStart(dateStr) {
   const d   = new Date(dateStr + 'T00:00:00Z');
   const day = d.getUTCDay();          // 0 = So, 1 = Mo, …
-  const diff = (day === 0 ? -6 : 1 - day);
-  d.setUTCDate(d.getUTCDate() + diff);
+  const pref = cfgGet('week_start');
+  const startIdx = WEEK_START_DAY_INDEX[VALID_WEEK_STARTS.includes(pref) ? pref : 'monday'];
+  const diff = (day - startIdx + 7) % 7;
+  d.setUTCDate(d.getUTCDate() - diff);
   return d.toISOString().slice(0, 10);
 }
 
 /**
- * Gibt den ISO-Datumstring für den Sonntag einer Woche zurück.
+ * Gibt den ISO-Datumstring für den letzten Tag der Woche zurück (weekStart() + 6 Tage).
  */
 function weekEnd(dateStr) {
   const start = weekStart(dateStr);
@@ -736,12 +754,18 @@ router.post('/:id/to-shopping-list', (req, res) => {
     const meal   = db.get().prepare('SELECT id, recipe_id FROM meals WHERE id = ?').get(mealId);
     if (!meal) return res.status(404).json({ error: 'Mahlzeit nicht gefunden', code: 404 });
 
-    const { listId } = req.body;
+    const { listId, ingredientIds } = req.body;
     if (!listId)
       return res.status(400).json({ error: 'listId ist erforderlich', code: 400 });
 
     const list = db.get().prepare('SELECT id FROM shopping_lists WHERE id = ?').get(listId);
     if (!list) return res.status(404).json({ error: 'Einkaufsliste nicht gefunden', code: 404 });
+
+    // Optionale Auswahl einzelner Zutaten aus der Checkliste (utils/ingredient-select.js).
+    // Fehlt das Feld oder ist es leer, gilt weiterhin „alles übertragen" (Altverhalten).
+    let selectedIds = Array.isArray(ingredientIds)
+      ? ingredientIds.map((v) => parseInt(v, 10)).filter(Number.isInteger)
+      : [];
 
     // Eine aus einem Rezept geplante Mahlzeit hat keine eigenen Zutaten - sie
     // kennt nur die recipe_id. Beim ersten Transfer werden die Rezeptzutaten
@@ -754,24 +778,41 @@ router.post('/:id/to-shopping-list', (req, res) => {
       .prepare('SELECT COUNT(*) AS c FROM meal_ingredients WHERE meal_id = ?').get(mealId).c;
     if (existingCount === 0 && meal.recipe_id) {
       const recipeIngredients = db.get().prepare(
-        'SELECT name, quantity, category FROM recipe_ingredients WHERE recipe_id = ? ORDER BY id ASC',
+        'SELECT id, name, quantity, category FROM recipe_ingredients WHERE recipe_id = ? ORDER BY id ASC',
       ).all(meal.recipe_id);
       if (recipeIngredients.length > 0) {
         const copyIng = db.get().prepare(
           'INSERT INTO meal_ingredients (meal_id, name, quantity, category) VALUES (?, ?, ?, ?)',
         );
-        db.transaction(() => {
+        // Die Checkliste im Client kennt vor diesem Aufruf nur die
+        // recipe_ingredients-IDs (die Mahlzeit hat noch keine eigenen). Diese
+        // Abbildung übersetzt eine ausgewählte recipe_ingredient-ID auf die
+        // frisch erzeugte meal_ingredient-ID, damit der Filter unten greift.
+        const recipeIdToMealIngredientId = db.transaction(() => {
+          const map = {};
           for (const ing of recipeIngredients) {
-            copyIng.run(mealId, ing.name, ing.quantity, ing.category || 'Sonstiges');
+            const info = copyIng.run(mealId, ing.name, ing.quantity, ing.category || 'Sonstiges');
+            map[ing.id] = Number(info.lastInsertRowid);
           }
+          return map;
         });
+        if (selectedIds.length > 0) {
+          selectedIds = selectedIds
+            .map((rid) => recipeIdToMealIngredientId[rid])
+            .filter((v) => v != null);
+        }
       }
     }
 
-    const ingredients = db.get().prepare(`
-      SELECT * FROM meal_ingredients
-      WHERE meal_id = ? AND on_shopping_list = 0
-    `).all(mealId);
+    const ingredients = selectedIds.length > 0
+      ? db.get().prepare(`
+          SELECT * FROM meal_ingredients
+          WHERE meal_id = ? AND on_shopping_list = 0 AND id IN (${selectedIds.map(() => '?').join(',')})
+        `).all(mealId, ...selectedIds)
+      : db.get().prepare(`
+          SELECT * FROM meal_ingredients
+          WHERE meal_id = ? AND on_shopping_list = 0
+        `).all(mealId);
 
     if (ingredients.length === 0)
       return res.json({ data: { transferred: 0, added_ids: [] } });

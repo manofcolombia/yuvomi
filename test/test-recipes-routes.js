@@ -366,6 +366,60 @@ test('POST /:id/to-shopping-list: added_ids erlauben ein exaktes Zuruecknehmen',
   assert.equal(again.body.data.transferred, 2);
 });
 
+// selectIngredientsForShoppingList() (public/utils/ingredient-select.js) laesst
+// den Nutzer einzelne Zutaten abwaehlen, bevor er ueberhaupt bestaetigt - der
+// Server muss die Auswahl respektieren, statt weiterhin die gesamte
+// Zutatenliste zu uebertragen.
+test('POST /:id/to-shopping-list: ingredientIds uebertraegt nur die ausgewaehlte Teilmenge', async () => {
+  const listId = newList('Transfer Subset');
+  const created = await call('POST', '/', {
+    title: 'Teilauswahl',
+    ingredients: [
+      { name: 'Reis', quantity: '500 g' },
+      { name: 'Curry', quantity: '2 EL' },
+      { name: 'Kokosmilch', quantity: '400 ml' },
+    ],
+  });
+  const recipeId = created.body.data.id;
+  const [rice, , coconutMilk] = created.body.data.ingredients;
+
+  const r = await call('POST', `/${recipeId}/to-shopping-list`, {
+    listId,
+    ingredientIds: [rice.id, coconutMilk.id],
+  });
+
+  assert.equal(r.status, 200);
+  assert.equal(r.body.data.transferred, 2);
+  const items = shoppingItems(listId).map((i) => i.name).sort();
+  assert.deepEqual(items, ['Kokosmilch', 'Reis']);
+});
+
+// Ein Client, der die IDs eines fremden Rezepts unterschiebt (absichtlich oder
+// durch einen Bug), darf keine Zutaten dieses fremden Rezepts uebertragen -
+// die Filterung bindet ingredientIds zusaetzlich an recipe_id = :id.
+test('POST /:id/to-shopping-list: ingredientIds ignoriert IDs eines fremden Rezepts', async () => {
+  const listId = newList('Transfer Foreign');
+  const own = await call('POST', '/', {
+    title: 'Eigenes Rezept',
+    ingredients: [{ name: 'Nudeln' }],
+  });
+  const other = await call('POST', '/', {
+    title: 'Fremdes Rezept',
+    ingredients: [{ name: 'Sahne' }],
+  });
+  const ownIngredientId = own.body.data.ingredients[0].id;
+  const foreignIngredientId = other.body.data.ingredients[0].id;
+
+  const r = await call('POST', `/${own.body.data.id}/to-shopping-list`, {
+    listId,
+    ingredientIds: [ownIngredientId, foreignIngredientId],
+  });
+
+  assert.equal(r.status, 200);
+  assert.equal(r.body.data.transferred, 1);
+  assert.deepEqual(shoppingItems(listId).map((i) => i.name), ['Nudeln']);
+});
+
 // --------------------------------------------------------------------------
 // Recipe-Provider-Mirror: source-Feld, PUT/DELETE-Gate für gespiegelte Rezepte,
 // GET /:id/provider-thumbnail. Läuft einmal je unterstütztem Provider (mealie,

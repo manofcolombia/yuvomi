@@ -836,6 +836,10 @@ async function syncPreferencesOnce() {
     if (timeFormat) {
       localStorage.setItem('yuvomi-time-format', timeFormat);
     }
+    const weekStart = res?.data?.week_start;
+    if (weekStart) {
+      localStorage.setItem('yuvomi-week-start', weekStart);
+    }
     // Region als Formatier-Locale für Zahlen/Währung spiegeln (z. B. de-CH →
     // 123'456.78). getFormatLocale() in i18n.js liest diesen Wert.
     const numberLocale = numberLocaleFor({
@@ -4029,6 +4033,7 @@ function refreshCurrentRoute() {
 
 window.addEventListener('date-format-changed', refreshCurrentRoute);
 window.addEventListener('time-format-changed', refreshCurrentRoute);
+window.addEventListener('week-start-changed', refreshCurrentRoute);
 
 window.addEventListener('resize', () => {
   positionSidebarIndicator();

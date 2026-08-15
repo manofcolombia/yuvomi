@@ -19,6 +19,7 @@ import '/components/category-manager.js';
 import { findPageFab } from '/utils/fab.js';
 import { setBulkPill, clearBulkPill } from '/utils/bulk-pill.js';
 import { makeSortable } from '/utils/sortable.js';
+import { formatQuantityFractions } from '/utils/fraction.js';
 
 // --------------------------------------------------------
 // Konstanten
@@ -32,6 +33,13 @@ function catIcon(name) {
 /** Kategorienamen in DB-Reihenfolge. */
 function categoryNames() {
   return state.categories.map((c) => c.name);
+}
+
+/** Menge zum Lesen: Bruchzahlen-Formatierung, wenn die Haushalts-Einstellung
+ *  an ist - nie fürs bearbeitbare Mengenfeld im Detail-Formular (das zeigt
+ *  immer den rohen gespeicherten Text). */
+function displayQuantity(quantity) {
+  return state.fractionQuantities ? formatQuantityFractions(quantity) : quantity;
 }
 
 // --------------------------------------------------------
@@ -50,7 +58,14 @@ const state = {
    *  Wiederholung des anderen bedient. */
   listsError:    null,
   itemsError:    null,
+  // Haushalts-Einstellung „Bruchzahlen" (#fraction_quantities); Default aus,
+  // bis render() sie einmal nachlädt (siehe api.get('/preferences') unten).
+  fractionQuantities: false,
 };
+
+/** Container der letzten render(), für den fenster-weiten
+ *  fraction-quantities-changed-Listener (siehe bindFractionQuantitiesListener). */
+let _container = null;
 
 // --------------------------------------------------------
 // Hilfsfunktionen
@@ -444,7 +459,7 @@ function renderItem(item) {
         <div class="list-row__main">
           <div class="list-row__name">${esc(item.name)}${renderItemMeta(item)}</div>
           ${item.quantity || item.tags?.length ? `<div class="list-row__meta">
-            ${item.quantity ? `<span class="shopping-item__quantity">${esc(item.quantity)}</span>` : ''}
+            ${item.quantity ? `<span class="shopping-item__quantity">${esc(displayQuantity(item.quantity))}</span>` : ''}
             ${renderItemTags(item.tags)}
           </div>` : ''}
         </div>
@@ -1013,15 +1028,15 @@ function refreshItemName(container, item) {
   if (item.quantity || hasTags) {
     if (!metaEl) {
       main?.insertAdjacentHTML('beforeend', `<div class="list-row__meta">
-        ${item.quantity ? `<span class="shopping-item__quantity">${esc(item.quantity)}</span>` : ''}
+        ${item.quantity ? `<span class="shopping-item__quantity">${esc(displayQuantity(item.quantity))}</span>` : ''}
         ${renderItemTags(item.tags)}
       </div>`);
     } else {
       const qtyEl = metaEl.querySelector('.shopping-item__quantity');
       if (item.quantity && qtyEl) {
-        qtyEl.textContent = item.quantity;
+        qtyEl.textContent = displayQuantity(item.quantity);
       } else if (item.quantity) {
-        metaEl.insertAdjacentHTML('afterbegin', `<span class="shopping-item__quantity">${esc(item.quantity)}</span>`);
+        metaEl.insertAdjacentHTML('afterbegin', `<span class="shopping-item__quantity">${esc(displayQuantity(item.quantity))}</span>`);
       } else {
         qtyEl?.remove();
       }
@@ -1830,7 +1845,28 @@ async function openCategoryManager(container, { fromDeepLink = false } = {}) {
 // Haupt-Render
 // --------------------------------------------------------
 
+let _fractionQuantitiesBound = false;
+
+/**
+ * Bindet den fenster-weiten „fraction-quantities-changed"-Listener genau einmal:
+ * render() läuft bei jeder Rückkehr zu /shopping erneut, ein ungeschützter
+ * addEventListener würde bei jedem Besuch einen weiteren stapeln (wie
+ * bindQuantityFlush in pantry.js). Zieht den zuletzt gerenderten Container aus
+ * dem Modul-Feld _container, damit eine offene Einkaufsliste ohne Neuladen
+ * reagiert, wenn die Einstellung anderswo (Settings) umgeschaltet wird.
+ */
+function bindFractionQuantitiesListener() {
+  if (_fractionQuantitiesBound) return;
+  _fractionQuantitiesBound = true;
+  window.addEventListener('fraction-quantities-changed', (e) => {
+    state.fractionQuantities = !!e.detail?.enabled;
+    if (_container) updateItemsList(_container);
+  });
+}
+
 export async function render(container, { user }) {
+  _container = container;
+  bindFractionQuantitiesListener();
   container.replaceChildren();
   container.insertAdjacentHTML('beforeend', `
     <div class="shopping-page page-measure--narrow">
@@ -1848,6 +1884,16 @@ export async function render(container, { user }) {
     </div>
   `);
   state.itemsError = null;
+  // Nicht blockierend: die Liste soll nicht auf diese Einstellung warten. Ist
+  // sie bis dahin schon gezeichnet und weicht der Wert vom Default ab, holt
+  // updateItemsList() die Mengenanzeige nach - ohne dass die Route erneut lädt.
+  api.get('/preferences').then((res) => {
+    const enabled = !!res.data?.fraction_quantities;
+    if (enabled !== state.fractionQuantities) {
+      state.fractionQuantities = enabled;
+      updateItemsList(container);
+    }
+  }).catch(() => {});
   try {
     // loadCategories() und loadLists() fangen selbst; der äußere catch ist das
     // Netz für alles Unerwartete und bildet es auf denselben Fehlerzustand ab,

@@ -19,7 +19,7 @@ export function mealsPaths() {
       delete: op({ summary: 'Delete meal ingredient', tag: 'Meals', params: [idParam('ingId', 'Ingredient ID')], stateChanging: true }),
     },
     '/api/v1/meals/{id}/to-shopping-list': {
-      post: op({ summary: 'Transfer meal ingredients to shopping list', tag: 'Meals', params: [idParam()], stateChanging: true, requestBody: jsonBody(null) }),
+      post: op({ summary: 'Transfer meal ingredients to shopping list', description: 'Body may include an optional ingredientIds array to transfer only a subset (filtered to this meal); omitted/empty transfers all ingredients.', tag: 'Meals', params: [idParam()], stateChanging: true, requestBody: jsonBody(null) }),
     },
     '/api/v1/meals/week-to-shopping-list': {
       post: op({ summary: 'Transfer weekly meal ingredients to shopping list', tag: 'Meals', stateChanging: true, requestBody: jsonBody(null) }),

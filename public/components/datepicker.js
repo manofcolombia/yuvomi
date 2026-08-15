@@ -26,8 +26,10 @@ import {
   dateInputPlaceholder,
   timeInputPlaceholder,
   getTimeFormat,
+  getWeekStartIndex,
 } from '/i18n.js';
 import { esc } from '/utils/html.js';
+import { weekdayOrder } from '/utils/date.js';
 
 // ── lokale Datums-Helfer (kanonisches ISO, lokale Zeitzone) ──────────────
 const pad2 = (n) => String(n).padStart(2, '0');
@@ -44,15 +46,18 @@ function todayIso() {
   return isoOf(now.getFullYear(), now.getMonth(), now.getDate());
 }
 
-// Wochentagskürzel (Montag-first) und Monats-/Jahres-Label rein aus Intl —
-// keine eigenen Locale-Strings für Kalenderbeschriftung nötig.
-function weekdayLabels(locale) {
+// Wochentagskürzel, rotiert auf den haushaltweiten Wochenstart — Monats-/Jahres-
+// Label rein aus Intl, keine eigenen Locale-Strings für Kalenderbeschriftung nötig.
+function weekdayLabels(locale, weekStart = 1) {
   // timeZone:'UTC', weil die Tage per Date.UTC() gebaut werden — ohne das würde
   // Intl westlich von UTC auf den Vortag zurückrutschen und die Kürzel verschieben.
   const fmt = new Intl.DateTimeFormat(locale, { weekday: 'short', timeZone: 'UTC' });
-  // 2024-01-01 war ein Montag → 7 aufeinanderfolgende Tage ab Montag.
-  return Array.from({ length: 7 }, (_, i) =>
-    fmt.format(new Date(Date.UTC(2024, 0, 1 + i))));
+  // 2024-01-01 war ein Montag (getDay() = 1): für einen Ziel-Wochentagsindex d
+  // liefert Date.UTC(2024, 0, 1 + n) mit n = (d - 1 + 7) % 7 denselben getDay().
+  return weekdayOrder(weekStart).map((dayIndex) => {
+    const n = (dayIndex - 1 + 7) % 7;
+    return fmt.format(new Date(Date.UTC(2024, 0, 1 + n)));
+  });
 }
 
 function monthLabel(locale, year, month) {
@@ -461,7 +466,7 @@ class YuvomiDatepicker extends HTMLElement {
 
     const locale = getLocale();
     const wdRow = el.querySelector('.ydp-cal__weekdays');
-    weekdayLabels(locale).forEach((w) => {
+    weekdayLabels(locale, getWeekStartIndex()).forEach((w) => {
       wdRow.insertAdjacentHTML('beforeend', `<span class="ydp-cal__wd">${esc(w)}</span>`);
     });
 
@@ -501,8 +506,8 @@ class YuvomiDatepicker extends HTMLElement {
     grid.replaceChildren();
 
     const first = new Date(this._viewYear, this._viewMonth, 1);
-    let offset = first.getDay() - 1;        // Montag = 0
-    if (offset < 0) offset = 6;
+    let offset = first.getDay() - getWeekStartIndex();
+    if (offset < 0) offset += 7;
     const start = new Date(this._viewYear, this._viewMonth, 1 - offset);
 
     const selIso = sub.iso;

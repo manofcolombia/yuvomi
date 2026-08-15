@@ -65,6 +65,14 @@ function calendarEventRoute(event) {
   return `/calendar?${params.toString()}`;
 }
 
+// Mahlzeit → Modul-Route: mit verknüpftem Rezept direkt ins Rezept-Detail
+// (Deep-Link wie calendarEventRoute), sonst wie bisher in den Essensplan.
+// `meal` ist die rohe API-Zeile aus `todayMeals`/`highlights.meal` - beide
+// führen `recipe_id`, wenn die Mahlzeit mit einem Rezept verknüpft wurde.
+function recipeOrMealsRoute(meal) {
+  return meal?.recipe_id ? `/recipes?open=${meal.recipe_id}` : '/meals';
+}
+
 function getAppName() {
   return localStorage.getItem(APP_NAME_STORAGE_KEY) || 'Yuvomi';
 }
@@ -679,7 +687,7 @@ function buildTodayProgram(data, { includeTasks = true, includeCalendar = true, 
       sub: MEAL_LABELS()[highlights.mealType] ?? t('dashboard.todayDinner'),
       icon: MEAL_ICONS[highlights.mealType] ?? 'utensils',
       tone: 'dinner',
-      route: '/meals',
+      route: recipeOrMealsRoute(highlights.meal),
       who: null,
     });
   }
@@ -869,7 +877,7 @@ function renderTodayMeals(meals, visibleMealTypes = MEAL_ORDER) {
   const slots = normalizeVisibleMealTypes(visibleMealTypes).map((type) => {
     const meal = safeMeals.find((m) => m.meal_type === type);
     return `
-      <div class="meal-slot ${meal ? 'meal-slot--filled' : ''}" data-type="${type}" data-route="/meals" role="button" tabindex="0">
+      <div class="meal-slot ${meal ? 'meal-slot--filled' : ''}" data-type="${type}" data-route="${recipeOrMealsRoute(meal)}" role="button" tabindex="0">
         <div class="meal-slot__header">
           <span class="meal-slot__type">${mealLabels[type]}</span>
           <i data-lucide="${MEAL_ICONS[type]}" class="meal-slot__icon" aria-hidden="true"></i>
@@ -3426,7 +3434,7 @@ export async function render(container, { user }) {
   }
 }
 
-export const __test = { buildTodayHighlights, buildTodayProgram, buildTodayCockpitModel, renderTodayCockpit, renderPinnedNotes, renderFamilyWidget, formatDueDate, normalizeVisibleMealTypes, renderTodayMeals, calendarEventRoute, eventOccurrenceDateKey, eventStartDate, renderWallSurface, renderWallWho, selectMetricTiles, METRIC_TILE_ORDER, PROGRAM_ROW_CAP, WALL_ROW_CAP };
+export const __test = { buildTodayHighlights, buildTodayProgram, buildTodayCockpitModel, renderTodayCockpit, renderPinnedNotes, renderFamilyWidget, formatDueDate, normalizeVisibleMealTypes, renderTodayMeals, calendarEventRoute, recipeOrMealsRoute, eventOccurrenceDateKey, eventStartDate, renderWallSurface, renderWallWho, selectMetricTiles, METRIC_TILE_ORDER, PROGRAM_ROW_CAP, WALL_ROW_CAP };
 
 function wireWeatherRefresh(container, onUpdated = null) {
   const refreshBtn = container.querySelector('#weather-refresh-btn');

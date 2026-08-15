@@ -1107,6 +1107,23 @@ test('calendarEventRoute: ungültige oder fehlende Startdaten erzeugen keinen ka
   assert(dashboardHelpers.calendarEventRoute(null) === '/calendar', 'Ohne Event geht es zur Kalenderübersicht');
 });
 
+test('recipeOrMealsRoute: Mahlzeit mit verknüpftem Rezept öffnet das Rezept-Detail', async () => {
+  const { __test: dashboardHelpers } = await import('../public/pages/dashboard.js');
+  assert(dashboardHelpers.recipeOrMealsRoute({ id: 5, recipe_id: 42 }) === '/recipes?open=42',
+    'Route muss auf das verknüpfte Rezept zeigen');
+});
+
+test('recipeOrMealsRoute: Mahlzeit ohne Rezept bleibt beim Essensplan', async () => {
+  const { __test: dashboardHelpers } = await import('../public/pages/dashboard.js');
+  assert(dashboardHelpers.recipeOrMealsRoute({ id: 5, recipe_id: null }) === '/meals',
+    'Ohne Rezept-Verknüpfung bleibt es der Essensplan');
+  assert(dashboardHelpers.recipeOrMealsRoute({ id: 5, recipe_id: undefined }) === '/meals',
+    'Undefined recipe_id bleibt der Essensplan');
+  assert(dashboardHelpers.recipeOrMealsRoute({ id: 5, recipe_id: 0 }) === '/meals',
+    'recipe_id 0 gilt als kein Rezept');
+  assert(dashboardHelpers.recipeOrMealsRoute(null) === '/meals', 'Ohne Mahlzeit bleibt es der Essensplan');
+});
+
 test('getUpcomingEvents: vergangene Einzeltermine erscheinen nicht', () => {
   const events = getUpcomingEvents(cdb, { userId: cuTheo, limit: 10 });
   assert(!events.find((e) => e.title === 'Past one-off'), 'Vergangener Einzeltermin darf nicht erscheinen');

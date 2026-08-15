@@ -62,8 +62,9 @@ test('Touch bevorzugt das DOM-Popover; natives OS-Sheet nur ohne Popover-API', (
   assert(/coarse\s*&&\s*!this\._supportsPopover\(\)/.test(comp),
     'Native nur auf Touch OHNE Popover-API als Fallback');
 });
-test('Kalenderraster ist Montag-first', () => {
-  assert(/Montag\s*=\s*0/.test(comp) || /getDay\(\)\s*-\s*1/.test(comp), 'Montag-first-Offset nötig');
+test('Kalenderraster folgt der Wochenstart-Präferenz (nicht fest Montag)', () => {
+  assert(/getWeekStartIndex/.test(comp), 'Grid-Offset muss die Wochenstart-Präferenz nutzen');
+  assert(/first\.getDay\(\)\s*-\s*getWeekStartIndex\(\)/.test(comp), 'Offset-Berechnung auf getWeekStartIndex() nötig');
 });
 test('Regression #515: UTC-gebaute Label-Daten werden auch in UTC formatiert', () => {
   // monthLabel/weekdayLabels bauen ihre Daten via Date.UTC(); ohne timeZone:'UTC'

@@ -57,6 +57,7 @@ const STUBS = {
     export const formatTimeInput = (d) => String(d ?? '');
     export const parseTimeInput = (d) => String(d ?? '');
     export const timeInputPlaceholder = () => 'HH:MM';
+    export const getWeekStartIndex = () => 1;
   `,
   '/rrule-ui.js': `
     export const renderRRuleFields = () => '';

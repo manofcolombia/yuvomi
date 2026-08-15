@@ -343,6 +343,11 @@ router.get('/', (req, res) => {
         ...healthCycleViews(req.authUserId),
         rewards_require_approval: cfgGet('rewards_require_approval') !== '0',
         tasks_subtasks_expanded: cfgGet('tasks_subtasks_expanded') === '1',
+        // Mengen als Brüche anzeigen (1½ statt 1.5) in Rezepten/Essensplan/
+        // Einkaufsliste. Default AUS: neues Anzeigeverhalten, das Bestands-
+        // haushalte nicht überraschen soll (anders als health_cycle_enabled,
+        // das aus Altverhalten heraus default AN ist).
+        fraction_quantities: cfgGet('fraction_quantities') === '1',
         tasks_default_points: parseTaskDefaultPoints(cfgGet('tasks_default_points')),
         // Standard-Erinnerungsliste fuer neue Aufgaben (per-user, #695) -
         // dieselbe Form wie calendar_default_target, damit beide Dialoge ihr
@@ -380,7 +385,7 @@ router.get('/', (req, res) => {
 
 router.put('/', (req, res) => {
   try {
-    const { visible_meal_types, currency, date_format, time_format, week_start, region, language, app_name, dashboard_widgets, dashboard_today_glance, disabled_modules, module_order, mobile_nav_order, housekeeping_payment_tasks, budget_mode, calendar_default_duration, calendar_default_reminders, calendar_default_assign_me, calendar_default_target, health_cycle_enabled, health_cycle_enabled_user, rewards_require_approval, tasks_subtasks_expanded, tasks_default_points, tasks_default_target, weather_provider, weather_lat, weather_lon, weather_city, weather_units, weather_auto_locate, weather_user, holiday_country, holiday_subdivision, holiday_group, holiday_show_public, holiday_show_school, holiday_public_color, holiday_school_color } = req.body;
+    const { visible_meal_types, currency, date_format, time_format, week_start, fraction_quantities, region, language, app_name, dashboard_widgets, dashboard_today_glance, disabled_modules, module_order, mobile_nav_order, housekeeping_payment_tasks, budget_mode, calendar_default_duration, calendar_default_reminders, calendar_default_assign_me, calendar_default_target, health_cycle_enabled, health_cycle_enabled_user, rewards_require_approval, tasks_subtasks_expanded, tasks_default_points, tasks_default_target, weather_provider, weather_lat, weather_lon, weather_city, weather_units, weather_auto_locate, weather_user, holiday_country, holiday_subdivision, holiday_group, holiday_show_public, holiday_show_school, holiday_public_color, holiday_school_color } = req.body;
 
     if (visible_meal_types !== undefined) {
       if (!Array.isArray(visible_meal_types)) {
@@ -420,6 +425,16 @@ router.put('/', (req, res) => {
         return res.status(400).json({ error: `Ungültiger Wochenstart. Erlaubt: ${VALID_WEEK_STARTS.join(', ')}`, code: 400 });
       }
       cfgSet('week_start', week_start);
+    }
+
+    // Mengen als Brüche anzeigen (1½ statt 1.5) — haushaltweit, von jedem
+    // Mitglied änderbar (wie week_start: reine Anzeige-Präferenz, keine
+    // Grundsatzentscheidung, die ein Admin-Gate rechtfertigt).
+    if (fraction_quantities !== undefined) {
+      if (typeof fraction_quantities !== 'boolean') {
+        return res.status(400).json({ error: 'fraction_quantities must be a boolean', code: 400 });
+      }
+      cfgSet('fraction_quantities', fraction_quantities ? '1' : '0');
     }
 
     // Budget-Modus — haushaltweite Grundsatzentscheidung, nur Admin (#476/#505).
@@ -868,6 +883,7 @@ router.put('/', (req, res) => {
         ...healthCycleViews(req.authUserId),
         rewards_require_approval: cfgGet('rewards_require_approval') !== '0',
         tasks_subtasks_expanded: cfgGet('tasks_subtasks_expanded') === '1',
+        fraction_quantities: cfgGet('fraction_quantities') === '1',
         tasks_default_points: parseTaskDefaultPoints(cfgGet('tasks_default_points')),
         // Standard-Erinnerungsliste fuer neue Aufgaben (per-user, #695) -
         // dieselbe Form wie calendar_default_target, damit beide Dialoge ihr

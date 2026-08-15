@@ -81,6 +81,14 @@ function renderPage(container, preferences) {
         </div>
         <p class="form-hint">${t('settings.kitchenExternalHint')}</p>
       </div>
+      <div class="settings-card">
+        ${toggleRowHtml({
+          label: t('settings.fractionQuantitiesLabel'),
+          checked: preferences.fraction_quantities === true,
+          attrs: { id: 'fraction-quantities-toggle' },
+        })}
+        <p class="form-hint">${t('settings.fractionQuantitiesHint')}</p>
+      </div>
     </section>
 
     <section class="settings-section">
@@ -394,6 +402,25 @@ function bindEvents(container) {
       window.yuvomi?.showToast(t('settings.mealTypesSaved'), 'success');
     } catch (error) {
       window.yuvomi?.showToast(error.message || t('common.errorGeneric'), 'danger');
+    }
+  });
+
+  const fractionQuantitiesToggle = container.querySelector('#fraction-quantities-toggle');
+  fractionQuantitiesToggle?.addEventListener('change', async () => {
+    fractionQuantitiesToggle.disabled = true;
+    const checked = fractionQuantitiesToggle.checked;
+    try {
+      await savePreferences({ fraction_quantities: checked });
+      // Parität zu week-start-changed (modules-calendar.js): erlaubt offenen
+      // Recipes-/Meal-Plan-/Shopping-Ansichten, die Mengenanzeige ohne Neuladen
+      // zu übernehmen.
+      window.dispatchEvent(new CustomEvent('fraction-quantities-changed', { detail: { enabled: checked } }));
+      window.yuvomi?.showToast(t('settings.fractionQuantitiesSaved'), 'success');
+    } catch (error) {
+      fractionQuantitiesToggle.checked = !checked;
+      window.yuvomi?.showToast(error.message || t('common.errorGeneric'), 'danger');
+    } finally {
+      fractionQuantitiesToggle.disabled = false;
     }
   });
 }

@@ -147,6 +147,44 @@ test('GET / ohne Woche liefert Struktur mit weekStart/weekEnd', async () => {
   assert.match(r.body.weekEnd, /^\d{4}-\d{2}-\d{2}$/);
 });
 
+// Wochenstart-Präferenz (haushaltweit, server/routes/preferences.js) verschiebt
+// die Grenzen von weekStart()/weekEnd() - vorher fest auf Montag verdrahtet.
+// Mittwoch, 11. März 2026: Sonntag-Woche 08.-14.03., Samstag-Woche 07.-13.03.
+test('GET /?week: week_start=sunday verschiebt die Wochengrenzen', async () => {
+  db.prepare(`INSERT INTO sync_config (key, value) VALUES ('week_start', 'sunday')`).run();
+  try {
+    const r = await call('GET', '/?week=2026-03-11');
+    assert.equal(r.status, 200);
+    assert.equal(r.body.weekStart, '2026-03-08');
+    assert.equal(r.body.weekEnd, '2026-03-14');
+  } finally {
+    db.prepare(`DELETE FROM sync_config WHERE key = 'week_start'`).run();
+  }
+});
+
+test('GET /?week: week_start=saturday verschiebt die Wochengrenzen', async () => {
+  db.prepare(`INSERT INTO sync_config (key, value) VALUES ('week_start', 'saturday')`).run();
+  try {
+    const r = await call('GET', '/?week=2026-03-11');
+    assert.equal(r.status, 200);
+    assert.equal(r.body.weekStart, '2026-03-07');
+    assert.equal(r.body.weekEnd, '2026-03-13');
+  } finally {
+    db.prepare(`DELETE FROM sync_config WHERE key = 'week_start'`).run();
+  }
+});
+
+test('GET /?week: ungültiger/fehlender week_start fällt weiterhin auf Montag zurück', async () => {
+  db.prepare(`INSERT INTO sync_config (key, value) VALUES ('week_start', 'friday')`).run();
+  try {
+    const r = await call('GET', '/?week=2026-03-11');
+    assert.equal(r.body.weekStart, '2026-03-09', 'Montag der Woche, wie ohne gesetzte Präferenz');
+    assert.equal(r.body.weekEnd, '2026-03-15');
+  } finally {
+    db.prepare(`DELETE FROM sync_config WHERE key = 'week_start'`).run();
+  }
+});
+
 test('GET /?week: nur Meals der Woche, sortiert nach meal_type (breakfast<lunch<dinner<snack)', async () => {
   // isolierte Woche im März 2026
   await createMeal({ date: '2026-03-10', meal_type: 'dinner', title: 'D' });
@@ -530,6 +568,32 @@ test('POST /:id/to-shopping-list: überträgt nur offene, markiert sie, idempote
   assert.deepEqual(r2.body.data.added_ids, []);
 });
 
+test('POST /:id/to-shopping-list: ingredientIds beschränkt die Übertragung auf die Auswahl', async () => {
+  const m = (await createMeal({
+    date: '2026-06-06', title: 'Selektiv', ingredients: [{ name: 'Salz' }, { name: 'Pfeffer' }, { name: 'Zucker' }],
+  })).body.data;
+  const keep = m.ingredients.filter((i) => i.name !== 'Pfeffer').map((i) => i.id);
+
+  const r = await call('POST', `/${m.id}/to-shopping-list`, { listId: LIST, ingredientIds: keep });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.data.transferred, 2);
+
+  const transferred = db.prepare('SELECT name FROM shopping_items WHERE list_id = ? AND added_from_meal = ?')
+    .all(LIST, m.id).map((i) => i.name).sort();
+  assert.deepEqual(transferred, ['Salz', 'Zucker']);
+
+  const stillOpen = db.prepare('SELECT name FROM meal_ingredients WHERE meal_id = ? AND on_shopping_list = 0').all(m.id).map((i) => i.name);
+  assert.deepEqual(stillOpen, ['Pfeffer'], 'die nicht ausgewählte Zutat bleibt offen');
+});
+
+test('POST /:id/to-shopping-list: leeres ingredientIds überträgt weiterhin alles (Altverhalten)', async () => {
+  const m = (await createMeal({
+    date: '2026-06-07', title: 'LeereAuswahl', ingredients: [{ name: 'Mehl' }, { name: 'Hefe' }],
+  })).body.data;
+  const r = await call('POST', `/${m.id}/to-shopping-list`, { listId: LIST, ingredientIds: [] });
+  assert.equal(r.body.data.transferred, 2);
+});
+
 /**
  * Beim Mahlzeit-Pfad gehört das `on_shopping_list`-Flag zum Übertrag.
  *
@@ -643,6 +707,27 @@ test('POST /:id/to-shopping-list: materialisiert Rezeptzutaten und überträgt s
 
   const items = db.prepare('SELECT name FROM shopping_items WHERE list_id = ? AND added_from_meal = ?').all(LIST, m.id);
   assert.equal(items.length, 2);
+});
+
+test('POST /:id/to-shopping-list: ingredientIds referenziert recipe_ingredient-IDs vor der Materialisierung', async () => {
+  const recipeIngs = db.prepare('SELECT id, name FROM recipe_ingredients WHERE recipe_id = ? ORDER BY id ASC').all(RECIPE_WITH_ING);
+  const reisId = recipeIngs.find((i) => i.name === 'Reis').id;
+
+  const m = (await createMeal({ date: '2026-10-11', title: 'Curry-Selektiv', recipe_id: RECIPE_WITH_ING })).body.data;
+  assert.equal(m.ingredients.length, 0, 'noch keine eigenen Zutaten vor dem ersten Transfer');
+
+  const r = await call('POST', `/${m.id}/to-shopping-list`, { listId: LIST, ingredientIds: [reisId] });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.data.transferred, 1, 'nur Reis, obwohl beide Rezeptzutaten materialisiert wurden');
+
+  const materialized = db.prepare('SELECT name, on_shopping_list FROM meal_ingredients WHERE meal_id = ? ORDER BY id').all(m.id);
+  assert.equal(materialized.length, 2, 'beide Rezeptzutaten wurden materialisiert');
+  assert.deepEqual(materialized.map((i) => i.name), ['Reis', 'Kokosmilch']);
+  assert.equal(materialized.find((i) => i.name === 'Reis').on_shopping_list, 1);
+  assert.equal(materialized.find((i) => i.name === 'Kokosmilch').on_shopping_list, 0, 'nicht ausgewählt, bleibt offen');
+
+  const items = db.prepare('SELECT name FROM shopping_items WHERE list_id = ? AND added_from_meal = ?').all(LIST, m.id);
+  assert.deepEqual(items.map((i) => i.name), ['Reis']);
 });
 
 test('POST /:id/to-shopping-list: materialisiert nicht erneut nach vollständigem Transfer', async () => {

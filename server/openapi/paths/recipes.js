@@ -11,7 +11,7 @@ export function recipesPaths() {
       delete: op({ summary: 'Delete recipe', tag: 'Recipes', params: [idParam()], stateChanging: true }),
     },
     '/api/v1/recipes/{id}/to-shopping-list': {
-      post: op({ summary: 'Transfer recipe ingredients to shopping list', tag: 'Recipes', params: [idParam()], stateChanging: true, requestBody: jsonBody(null) }),
+      post: op({ summary: 'Transfer recipe ingredients to shopping list', description: 'Body may include an optional ingredientIds array to transfer only a subset (filtered to this recipe); omitted/empty transfers all ingredients.', tag: 'Recipes', params: [idParam()], stateChanging: true, requestBody: jsonBody(null) }),
     },
   };
 }

@@ -262,7 +262,9 @@ router.get('/:id/provider-thumbnail', async (req, res) => {
 /**
  * POST /api/v1/recipes/:id/to-shopping-list
  * Zutaten eines Rezepts auf eine Einkaufsliste übernehmen.
- * Body: { listId: number }
+ * Body: { listId: number, ingredientIds?: number[] } - ohne ingredientIds (oder
+ *   leer) werden wie bisher alle Zutaten übertragen; sonst nur die genannten,
+ *   gefiltert auf ingredient_id ∈ diesem Rezept.
  * Response: { data: { transferred: number, skipped: number, added_ids: number[] } }
  *
  * Anders als bei Mahlzeiten wird hier NICHTS am Rezept markiert: ein Rezept ist
@@ -293,9 +295,19 @@ router.post('/:id/to-shopping-list', (req, res) => {
     const list = db.get().prepare('SELECT id FROM shopping_lists WHERE id = ?').get(vList.value);
     if (!list) return res.status(404).json({ error: 'Shopping list not found.', code: 404 });
 
-    const ingredients = db.get().prepare(
-      'SELECT name, quantity, category FROM recipe_ingredients WHERE recipe_id = ? ORDER BY id ASC',
-    ).all(id);
+    const ingredientIds = Array.isArray(req.body.ingredientIds)
+      ? req.body.ingredientIds.map(Number).filter(Number.isInteger)
+      : [];
+
+    const ingredients = ingredientIds.length
+      ? db.get().prepare(
+          `SELECT name, quantity, category FROM recipe_ingredients
+           WHERE recipe_id = ? AND id IN (${ingredientIds.map(() => '?').join(',')})
+           ORDER BY id ASC`,
+        ).all(id, ...ingredientIds)
+      : db.get().prepare(
+          'SELECT name, quantity, category FROM recipe_ingredients WHERE recipe_id = ? ORDER BY id ASC',
+        ).all(id);
     if (!ingredients.length) return res.json({ data: { transferred: 0, skipped: 0, added_ids: [] } });
 
     const result = db.transaction(() => {

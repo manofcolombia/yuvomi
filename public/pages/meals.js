@@ -7,18 +7,20 @@
 import { api } from '/api.js';
 import { openModal as openSharedModal, closeModal as closeSharedModal, selectModal, confirmModal, advancedSection, wireBlurValidation, reportFieldError } from '/components/modal.js';
 import { stagger, scheduleUndoableDelete, wireScrollFade } from '/utils/ux.js';
-import { t, formatDate, formatDayMonth, formatDateInput, parseDateInput, isDateInputValid } from '/i18n.js';
+import { t, formatDate, formatDayMonth, formatDateInput, parseDateInput, isDateInputValid, getWeekStartIndex } from '/i18n.js';
 import { esc } from '/utils/html.js';
 import { renderSkeletonList } from '/utils/skeleton.js';
 import { DEFAULT_CATEGORY_NAME } from '/utils/shopping-categories.js';
 import { renderKitchenTabsBar } from '/utils/kitchen-tabs.js';
-import { resolveShoppingTarget, announceTransfer, mountMissingShoppingList } from '/utils/kitchen-transfer.js';
+import { missingShoppingListAnswer, TRANSFER_TOAST_MS, announceTransfer, mountMissingShoppingList } from '/utils/kitchen-transfer.js';
 import { ingredientRowHTML } from '/utils/ingredient-row.js';
-import { addLocalDays, startOfLocalWeekKey, toLocalDateKey } from '/utils/date.js';
+import { addLocalDays, startOfLocalWeekKey, toLocalDateKey, weekdayOrder } from '/utils/date.js';
 import { normalizeRecipeMealTypes, recipeSupportsMealType, recipeAllowsMealType } from '/utils/recipe-meal-types.js';
 import { mountEmptyState, mountLoadError, emptyStateEl } from '/utils/empty-state.js';
 import { mealPayloadFromRecipe } from '/utils/recipe-to-meal.js';
 import { findPageFab } from '/utils/fab.js';
+import { formatQuantityFractions } from '/utils/fraction.js';
+import { selectIngredientsForShoppingList } from '/utils/ingredient-select.js';
 
 // --------------------------------------------------------
 // Konstanten
@@ -31,10 +33,15 @@ const MEAL_TYPES = () => [
   { key: 'snack',     label: t('meals.typeSnack'),     icon: 'cookie'  },
 ];
 
-const DAY_NAMES = () => [
-  t('meals.dayMo'), t('meals.dayDi'), t('meals.dayMi'), t('meals.dayDo'),
-  t('meals.dayFr'), t('meals.daySa'), t('meals.daySo'),
-];
+// getDay()-Index (0=So…6=Sa) → Übersetzungsschlüssel. Rebuild in Wochenstart-
+// Reihenfolge über weekdayOrder() statt einer festen Montag-Sonntag-Liste -
+// der Essensplan begann sonst IMMER montags, egal was die Wochenstart-
+// Einstellung sagte (Bugfix).
+const DAY_NAME_KEYS = ['daySo', 'dayMo', 'dayDi', 'dayMi', 'dayDo', 'dayFr', 'daySa'];
+
+function DAY_NAMES() {
+  return weekdayOrder(getWeekStartIndex()).map((i) => t(`meals.${DAY_NAME_KEYS[i]}`));
+}
 
 const EXCLUDED_MEAL_CATEGORY_NAMES = new Set(['Haushalt', 'Drogerie']);
 
@@ -43,13 +50,14 @@ const EXCLUDED_MEAL_CATEGORY_NAMES = new Set(['Haushalt', 'Drogerie']);
 // --------------------------------------------------------
 
 let state = {
-  currentWeek:      null,   // YYYY-MM-DD (Montag)
+  currentWeek:      null,   // YYYY-MM-DD (erster Tag der Woche nach Wochenstart-Einstellung)
   meals:            [],
   recipes:          [],
   lists:            [],     // Einkaufslisten für Transfer-Dropdown
   categories:       [],     // Einkaufskategorien für Zutaten
   modal:            null,
   visibleMealTypes: ['breakfast', 'lunch', 'dinner', 'snack'],
+  fractionQuantities: false, // Bruchzahlen-Anzeige (Haushalts-Präferenz), siehe loadPreferences()
   /** Gefangener Fehler des letzten Wochen-Ladevorgangs, sonst null.
    *  Ohne dieses Feld ist eine fehlgeschlagene Woche von einer leeren Woche
    *  nicht zu unterscheiden - und der Renderer zeigte den Leerzustand. */
@@ -59,22 +67,27 @@ let state = {
 // Container-Referenz für Hilfsfunktionen (wird in render() gesetzt)
 let _container = null;
 let _dragRecipeId = null;
+// AbortController für die window-Listener dieser Seite (week-start-changed) -
+// dasselbe Muster wie `_pageController` in recipes.js: bei jedem render()
+// erneuert, damit wiederholte Navigation zu /meals keine doppelten Listener
+// anhäuft.
+let _pageController = null;
 
 // --------------------------------------------------------
 // Datumshelfer
 // --------------------------------------------------------
 
-function getMondayOf(dateStr) {
-  return startOfLocalWeekKey(dateStr, 1);
+function getWeekStartOf(dateStr) {
+  return startOfLocalWeekKey(dateStr, getWeekStartIndex());
 }
 
 function addDays(dateStr, n) {
   return addLocalDays(dateStr, n);
 }
 
-function formatWeekLabel(monday) {
-  const sunday = addDays(monday, 6);
-  return `${formatDate(monday)} – ${formatDate(sunday)}`;
+function formatWeekLabel(weekStart) {
+  const weekEnd = addDays(weekStart, 6);
+  return `${formatDate(weekStart)} – ${formatDate(weekEnd)}`;
 }
 
 function isToday(dateStr) {
@@ -150,7 +163,7 @@ function buildRandomMealAssignments({ weekStart, visibleMealTypes, meals, recipe
 // --------------------------------------------------------
 
 async function loadWeek(week) {
-  const currentWeek = getMondayOf(week);
+  const currentWeek = getWeekStartOf(week);
   state.currentWeek = currentWeek;
   try {
     const res = await api.get(`/meals?week=${currentWeek}`);
@@ -198,6 +211,7 @@ async function loadPreferences() {
   try {
     const res = await api.get('/preferences');
     state.visibleMealTypes = res.data.visible_meal_types ?? state.visibleMealTypes;
+    state.fractionQuantities = res.data.fraction_quantities ?? false;
   } catch {
     // Default beibehalten
   }
@@ -209,6 +223,8 @@ async function loadPreferences() {
 
 export async function render(container, { user }) {
   _container = container;
+  _pageController?.abort();
+  _pageController = new AbortController();
   container.replaceChildren();
   container.insertAdjacentHTML('beforeend', `
     <div class="meals-page">
@@ -264,7 +280,7 @@ export async function render(container, { user }) {
   renderKitchenTabsBar(container, '/meals');
 
   const today  = toLocalDateKey(new Date());
-  const monday = getMondayOf(today);
+  const monday = getWeekStartOf(today);
 
   await Promise.all([loadWeek(monday), loadLists(), loadPreferences(), loadCategories(), loadRecipes()]);
   renderWeekGrid();
@@ -277,6 +293,29 @@ export async function render(container, { user }) {
     const firstType = state.visibleMealTypes[0] ?? 'lunch';
     openMealModal({ mode: 'create', date: today, mealType: firstType });
   });
+
+  // Wochenstart geändert, während dieser Tab schon offen ist (Settings in
+  // einem anderen Tab/derselben Sitzung, modules-calendar.js) - ein bloßer
+  // Routen-Refresh (router.js#refreshCurrentRoute) wüsste nicht, dass die
+  // schon durchblätterte Woche auf die ÄQUIVALENTE Woche unter dem neuen
+  // Start verschoben werden muss, statt auf die aktuelle Woche zurückzuspringen.
+  window.addEventListener('week-start-changed', async () => {
+    const newStart = getWeekStartOf(state.currentWeek);
+    if (newStart !== state.currentWeek) {
+      setWeekBusy();
+      await loadWeek(newStart);
+    }
+    renderWeekGrid();
+  }, { signal: _pageController.signal });
+
+  // Live-Aktualisierung der Bruchzahlen-Präferenz (Settings-Toggle,
+  // modules-kitchen.js) - nur der State wird nachgezogen, kein Rerender: die
+  // Zutatenmengen sind aktuell nirgends auf dem Screen sichtbar, nur in der
+  // beim Transfer geöffneten Zutaten-Checkliste, die bei jedem Öffnen frisch
+  // formatiert.
+  window.addEventListener('fraction-quantities-changed', (e) => {
+    state.fractionQuantities = !!e.detail?.enabled;
+  }, { signal: _pageController.signal });
 }
 
 // --------------------------------------------------------
@@ -426,14 +465,13 @@ function renderWeekGrid() {
   grid.insertAdjacentHTML('beforeend', gutterHTML + weekDays.map((date, dayIndex) => {
     const mealsForDay = state.meals.filter((m) => m.date === date);
     const todayClass  = isToday(date) ? 'day-header--today' : '';
-    const dayNameIndex = (new Date(`${date}T00:00:00`).getDay() + 6) % 7;
     // Spalte 1 ist die Gutter-Spalte, Zeile 1 die Kopfzeile — Inhalte ab 2.
     const dayCol = dayIndex + 2;
 
     return `
       <div class="day-column">
         <div class="day-header ${todayClass}" style="--day-col: ${dayCol}">
-          <span class="day-header__name">${dayNames[dayNameIndex]}</span>
+          <span class="day-header__name">${dayNames[dayIndex]}</span>
           <span class="day-header__date">${formatDayDate(date)}</span>
         </div>
         <div class="day-slots">
@@ -474,7 +512,8 @@ function renderWeekGrid() {
     // Wochentag rutschte dadurch hinter die sticky Gutter-Spalte, deren
     // opaker Hintergrund ihn vollständig verdeckte: Montag war bei jedem Laden
     // reproduzierbar unsichtbar, ohne jeden Hinweis (Critique 2026-07-30).
-    // Die Woche beginnt jetzt bei Montag, solange heute im Blick ist.
+    // Die erste Spalte bleibt jetzt sichtbar, solange heute im Blick ist -
+    // unabhängig vom Wochenstart-Tag (Montag/Sonntag/Samstag).
     const todayHeader = grid.querySelector('.day-header--today');
     if (todayHeader) {
       const gridBox = grid.getBoundingClientRect();
@@ -692,7 +731,7 @@ function wireNav() {
   });
 
   _container.querySelector('#week-today')?.addEventListener('click', async () => {
-    const monday = getMondayOf(toLocalDateKey(new Date()));
+    const monday = getWeekStartOf(toLocalDateKey(new Date()));
     if (monday === state.currentWeek) return;
     setWeekBusy();
     await loadWeek(monday);
@@ -1256,13 +1295,28 @@ function openMealModal(opts) {
       );
 
       panel.querySelector('#transfer-btn')?.addEventListener('click', async () => {
-        const selectEl = panel.querySelector('#transfer-list-select');
-        const listId   = parseInt(selectEl?.value, 10);
-        if (!listId || !state.modal?.meal) return;
+        const meal = state.modal?.meal;
+        if (!meal) return;
+        const openIngredients = (meal.ingredients ?? []).filter((i) => !i.on_shopping_list);
+        if (!openIngredients.length) return;
+
+        const result = await selectIngredientsForShoppingList({
+          ingredients: openIngredients.map((ing) => ({
+            id: ing.id,
+            name: ing.name,
+            quantity: state.fractionQuantities ? formatQuantityFractions(ing.quantity) : ing.quantity,
+          })),
+          lists: state.lists,
+        });
+        if (!result) return;
+
         const btn = panel.querySelector('#transfer-btn');
         btn.disabled = true;
         try {
-          const res = await api.post(`/meals/${state.modal.meal.id}/to-shopping-list`, { listId });
+          const res = await api.post(`/meals/${meal.id}/to-shopping-list`, {
+            listId: result.listId,
+            ingredientIds: result.ingredientIds,
+          });
           if (res.data.transferred > 0) {
             await loadWeek(state.currentWeek);
             closeModal({ force: true });
@@ -1272,7 +1326,7 @@ function openMealModal(opts) {
             announceTransfer({
               message: t('meals.transferSuccess', {
                 count: res.data.transferred,
-                list: state.lists.find((l) => l.id === listId)?.name ?? '',
+                list: state.lists.find((l) => l.id === result.listId)?.name ?? '',
               }),
               addedIds: res.data.added_ids ?? [],
               onUndone: async () => {
@@ -1318,8 +1372,6 @@ function buildModalContent({ mode, date, mealType, meal }) {
   const typeOpts = MEAL_TYPES().map((mt) =>
     `<option value="${mt.key}" ${mt.key === mealType ? 'selected' : ''}>${mt.label}</option>`
   ).join('');
-
-  const listOpts = state.lists.map((l) => `<option value="${l.id}">${esc(l.name)}</option>`).join('');
 
   const ingRows = isEdit && meal.ingredients?.length
     ? meal.ingredients.map((ing) => ingredientRowHTML({
@@ -1451,7 +1503,6 @@ function buildModalContent({ mode, date, mealType, meal }) {
         ${t('meals.transferLabel')}
       </div>
       ${state.lists.length ? `
-      <select class="shopping-transfer__select" id="transfer-list-select">${listOpts}</select>
       <button class="btn btn--secondary shopping-transfer__btn" id="transfer-btn" type="button">
         ${t('meals.transferNow')}
       </button>`
@@ -1635,14 +1686,48 @@ async function deleteMeal(mealId) {
 // --------------------------------------------------------
 
 async function transferMeal(mealId, btn) {
-  // Vorprüfung, Listenwahl und die Antwort auf „es gibt keine Liste" liegen im
-  // geteilten Baustein (utils/kitchen-transfer.js).
-  const target = await resolveShoppingTarget(state.lists);
-  if (!target) return;
+  // Vorprüfung („gibt es überhaupt eine Liste?") bleibt der geteilte Baustein
+  // (utils/kitchen-transfer.js) - die Listenauswahl selbst steckt jetzt in der
+  // Zutaten-Checkliste (utils/ingredient-select.js), darum NICHT zusätzlich
+  // resolveShoppingTarget() für die Listenwahl aufrufen (Doppel-Dialog).
+  if (!state.lists.length) {
+    const { message, action } = missingShoppingListAnswer();
+    window.yuvomi?.showToast(message, 'warning', TRANSFER_TOAST_MS, action);
+    return;
+  }
+
+  const meal = state.meals.find((m) => m.id === mealId);
+  if (!meal) return;
+
+  const openIngredients = (meal.ingredients ?? []).filter((i) => !i.on_shopping_list);
+  // Aus einem Rezept geplante Mahlzeit ohne eigene Zutaten: die Checkliste zeigt
+  // die Rezeptzutaten. Der Server materialisiert dieselben Zutaten beim ersten
+  // Transfer und übersetzt die hier verwendeten recipe_ingredient-IDs auf die
+  // frischen meal_ingredient-IDs (siehe POST /:id/to-shopping-list).
+  const ingredientsForChecklist = openIngredients.length
+    ? openIngredients
+    : (meal.recipe_id ? state.recipes.find((r) => r.id === meal.recipe_id)?.ingredients ?? [] : []);
+  if (!ingredientsForChecklist.length) {
+    window.yuvomi?.showToast(t('common.errorGeneric'), 'danger');
+    return;
+  }
+
+  const result = await selectIngredientsForShoppingList({
+    ingredients: ingredientsForChecklist.map((ing) => ({
+      id: ing.id,
+      name: ing.name,
+      quantity: state.fractionQuantities ? formatQuantityFractions(ing.quantity) : ing.quantity,
+    })),
+    lists: state.lists,
+  });
+  if (!result) return;
 
   if (btn) btn.disabled = true;
   try {
-    const res = await api.post(`/meals/${mealId}/to-shopping-list`, { listId: target.id });
+    const res = await api.post(`/meals/${mealId}/to-shopping-list`, {
+      listId: result.listId,
+      ingredientIds: result.ingredientIds,
+    });
     if (res.data.transferred > 0) {
       await loadWeek(state.currentWeek);
       renderWeekGrid();
@@ -1655,7 +1740,10 @@ async function transferMeal(mealId, btn) {
       // `on_shopping_list` zurück, die Zutaten sind danach wieder offen - und die
       // Kachel zeigt den Übernahme-Knopf wieder an.
       announceTransfer({
-        message: t('meals.transferSuccess', { count: res.data.transferred, list: target.name }),
+        message: t('meals.transferSuccess', {
+          count: res.data.transferred,
+          list: state.lists.find((l) => l.id === result.listId)?.name ?? '',
+        }),
         addedIds: res.data.added_ids ?? [],
         onUndone: async () => {
           await loadWeek(state.currentWeek);

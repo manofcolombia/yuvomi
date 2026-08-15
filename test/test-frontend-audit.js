@@ -990,7 +990,7 @@ test('module-specific settings leaves only reference their owned preferences and
   const ownership = {
     '../public/settings/pages/modules-kitchen.js': {
       endpoints: ['/preferences'],
-      preferences: ['visible_meal_types'],
+      preferences: ['fraction_quantities', 'visible_meal_types'],
     },
     '../public/settings/pages/modules-calendar.js': {
       endpoints: [

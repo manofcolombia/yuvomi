@@ -125,6 +125,7 @@ npm run test:datepicker         # yuvomi-datepicker: ISO-Wertkontrakt, form-asso
 npm run test:ux-utils        # UX-Helfer: stagger/vibrate/withBusy, Datums-/Zeit-Parser, WCAG-Ink-Wahl; Undo-Löschen läuft ausschließlich über scheduleUndoableDelete (Undo verhindert den Server-Delete, ohne Undo commit nach Ablauf) - die alte deleteWithUndo-API löschte sofort und ist gesperrt
 npm run test:skeleton-utils
 npm run test:date-utils
+npm run test:fraction-format # formatQuantityFractions (public/utils/fraction.js): Dezimal-Token (\d+\.\d+) → gemischte Zahl mit Unicode-Bruchglyph, gerundet auf die nächste Koch-Bruchzahl {0, ⅛, ¼, ⅓, ⅜, ½, ⅝, ⅔, ¾, ⅞, 1}; Carry in die nächste ganze Zahl (1.97 → "2"), Rest-0 bleibt ganzzahlig ("2.0" → "2"), mehrere Token im String, nicht-numerischer Text/leere Eingabe unverändert
 npm run test:time-input     # flexible Zeiteingabe: 0930/09.30/9h30 → HH:MM parsing (#442)
 npm run test:html-entities
 npm run test:help

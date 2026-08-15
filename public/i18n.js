@@ -1,9 +1,9 @@
 /**
  * i18n - Internationalisierung / Übersetzungsmodul
- * Bietet t(), initI18n(), setLocale(), getLocale(), getSupportedLocales(),
- * formatDate(), formatTime() für die gesamte App.
- * Dependencies: none (vanilla JS, Fetch API, Intl API)
+ *
+ * Lädt Locale-JSON-Dateien und liefert eine `t(key, params)`-Übersetzungsfunktion.
  */
+import { weekStartIndex } from './utils/date.js';
 
 const SUPPORTED_LOCALES = ['de', 'en', 'es', 'fr', 'it', 'sv', 'el', 'ru', 'tr', 'zh', 'ja', 'ar', 'hi', 'pt', 'uk', 'pl', 'nl', 'cs', 'vi', 'hu', 'ko', 'id', 'fa', 'fil'];
 const RTL_LOCALES = new Set(['ar', 'fa']);
@@ -11,10 +11,13 @@ const DEFAULT_LOCALE = 'de';
 const STORAGE_KEY = 'yuvomi-locale';
 const DATE_FORMAT_KEY = 'yuvomi-date-format';
 const TIME_FORMAT_KEY = 'yuvomi-time-format';
+const WEEK_START_KEY = 'yuvomi-week-start';
 const NUMBER_LOCALE_KEY = 'yuvomi-number-locale';
 const DEFAULT_DATE_FORMAT = 'dmy';
 const DEFAULT_TIME_FORMAT = '24h';
+const DEFAULT_WEEK_START = 'monday';
 const VALID_TIME_FORMATS = ['24h', '12h'];
+const VALID_WEEK_STARTS = ['monday', 'sunday', 'saturday'];
 
 let currentLocale = DEFAULT_LOCALE;
 let translations = {};
@@ -177,6 +180,17 @@ function getTimeFormatPreference() {
 
 export function getTimeFormat() {
   return getTimeFormatPreference();
+}
+
+/** Haushaltweite Wochenstart-Präferenz ('monday' | 'sunday' | 'saturday'). */
+export function getWeekStartPreference() {
+  const stored = localStorage.getItem(WEEK_START_KEY);
+  return VALID_WEEK_STARTS.includes(stored) ? stored : DEFAULT_WEEK_START;
+}
+
+/** Wochenstart-Präferenz als JS-getDay()-Index (0=So … 6=Sa), siehe utils/date.js. */
+export function getWeekStartIndex() {
+  return weekStartIndex(getWeekStartPreference());
 }
 
 /**

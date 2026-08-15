@@ -384,6 +384,7 @@ function bindWeekStart(container, preferences) {
       await savePreferences({ week_start: value });
       // Parität zu date-format-changed/time-format-changed: erlaubt offenen
       // Ansichten, den Wochenstart ohne Neuladen zu übernehmen.
+      localStorage.setItem('yuvomi-week-start', value);
       window.dispatchEvent(new CustomEvent('week-start-changed', { detail: { weekStart: value } }));
       window.yuvomi?.showToast(t('settings.weekStartSaved'), 'success');
     } catch (error) {
