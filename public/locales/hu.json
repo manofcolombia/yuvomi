@@ -489,6 +489,8 @@
         "itemNameLabel": "Elem neve",
         "itemQtyLabel": "Mennyiség",
         "categoryLabel": "Kategória",
+        "listLabel": "Lista",
+        "movedToListToast": "Áthelyezve ide: {{list}}.",
         "addItemLabel": "Elem hozzáadása",
         "listActionsLabel": "Műveletek: {{name}}",
         "renameListLabel": "Lista átnevezése",

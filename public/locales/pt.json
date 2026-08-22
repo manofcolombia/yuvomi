@@ -489,6 +489,8 @@
         "itemNameLabel": "Nome do item",
         "itemQtyLabel": "Quantidade",
         "categoryLabel": "Categoria",
+        "listLabel": "Lista",
+        "movedToListToast": "Movido para {{list}}.",
         "addItemLabel": "Adicionar item",
         "listActionsLabel": "Ações para {{name}}",
         "renameListLabel": "Renomear lista",

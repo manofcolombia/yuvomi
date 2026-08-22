@@ -489,6 +489,8 @@
         "itemNameLabel": "Tên mục",
         "itemQtyLabel": "Số lượng",
         "categoryLabel": "Danh mục",
+        "listLabel": "Danh sách",
+        "movedToListToast": "Đã chuyển đến {{list}}.",
         "addItemLabel": "Thêm mục",
         "listActionsLabel": "Tác vụ cho {{name}}",
         "renameListLabel": "Đổi tên danh sách",

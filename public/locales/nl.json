@@ -489,6 +489,8 @@
         "itemNameLabel": "Itemnaam",
         "itemQtyLabel": "Hoeveelheid",
         "categoryLabel": "Categorie",
+        "listLabel": "Lijst",
+        "movedToListToast": "Verplaatst naar {{list}}.",
         "addItemLabel": "Item toevoegen",
         "listActionsLabel": "Acties voor {{name}}",
         "renameListLabel": "Lijst hernoemen",

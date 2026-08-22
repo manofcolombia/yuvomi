@@ -489,6 +489,8 @@
         "itemNameLabel": "Objektets namn",
         "itemQtyLabel": "Kvantitet",
         "categoryLabel": "Kategori",
+        "listLabel": "Lista",
+        "movedToListToast": "Flyttad till {{list}}.",
         "addItemLabel": "Lägg till objekt",
         "listActionsLabel": "Åtgärder för {{name}}",
         "renameListLabel": "Byt namn på listan",

@@ -1103,6 +1103,13 @@ function openItemDetails(itemId, container) {
             </select>
           </div>
         </div>
+        ${state.lists.length > 1 ? `
+        <div class="form-group">
+          <label class="form-label" for="item-details-list">${t('shopping.listLabel')}</label>
+          <select class="form-input" id="item-details-list">
+            ${state.lists.map((l) => `<option value="${l.id}" ${l.id === item.list_id ? 'selected' : ''}>${esc(l.name)}</option>`).join('')}
+          </select>
+        </div>` : ''}
         <div class="form-group">
           <label class="form-label" for="item-details-url">${t('shopping.urlLabel')}</label>
           <input class="form-input" type="url" id="item-details-url" inputmode="url"
@@ -1124,6 +1131,7 @@ function openItemDetails(itemId, container) {
       const nameEl  = panel.querySelector('#item-details-name');
       const qtyEl   = panel.querySelector('#item-details-qty');
       const catEl   = panel.querySelector('#item-details-cat');
+      const listEl  = panel.querySelector('#item-details-list');
       const urlEl   = panel.querySelector('#item-details-url');
       const notesEl = panel.querySelector('#item-details-notes');
       const preview = panel.querySelector('#item-details-link');
@@ -1146,26 +1154,40 @@ function openItemDetails(itemId, container) {
           reportFieldError(nameEl, t('common.nameRequired'));
           return;
         }
+        const targetListId = listEl ? Number(listEl.value) : item.list_id;
         const payload = {
           name,
           quantity: qtyEl.value.trim() || null,
           category: catEl.value,
           notes: notesEl.value.trim() || null,
           url: urlEl.value.trim() || null,
+          list_id: targetListId,
         };
         try {
           const data = await api.patch(`/shopping/items/${item.id}`, payload);
           const categoryChanged = data.data.category !== item.category;
+          const listChanged     = data.data.list_id !== item.list_id;
+          const targetList = listChanged ? state.lists.find((l) => l.id === data.data.list_id) : null;
           Object.assign(item, data.data);
           // force: der Dirty-Guard vergleicht gegen den Snapshot vom Öffnen und
           // sähe die gerade gespeicherten Felder als ungespeicherte Änderungen.
           // Ohne das fragte Speichern „Änderungen verwerfen?" (Issue #625).
           closeModal({ force: true });
-          // Ein Kategoriewechsel verschiebt die Zeile in eine andere Gruppe - das
-          // kann keine Zeilen-Auffrischung leisten, dafür muss die Liste neu
-          // gruppiert werden. Sonst genügt der schonende Weg, der die
-          // Swipe-Closures und die Scroll-Position erhält (Issue #276).
-          if (categoryChanged) {
+          if (listChanged) {
+            // Der Artikel gehört jetzt einer anderen Liste - er verschwindet aus
+            // der gerade offenen (analog zum Löschen), die Zähler beider Tabs
+            // ziehen nach (gleiches Muster wie transferMeal/transferRecipe).
+            updateListCounter(state.activeListId, -1, item.is_checked ? -1 : 0);
+            updateListCounter(data.data.list_id, 1, data.data.is_checked ? 1 : 0);
+            state.items = state.items.filter((i) => i.id !== item.id);
+            updateItemsList(container);
+            renderTabs(container);
+            window.yuvomi.showToast(t('shopping.movedToListToast', { list: targetList?.name ?? '' }), 'success');
+          } else if (categoryChanged) {
+            // Ein Kategoriewechsel verschiebt die Zeile in eine andere Gruppe - das
+            // kann keine Zeilen-Auffrischung leisten, dafür muss die Liste neu
+            // gruppiert werden. Sonst genügt der schonende Weg, der die
+            // Swipe-Closures und die Scroll-Position erhält (Issue #276).
             updateItemsList(container);
           } else {
             updateItemRow(container, item);

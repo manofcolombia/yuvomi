@@ -489,6 +489,8 @@
         "itemNameLabel": "Ürün adı",
         "itemQtyLabel": "Miktar",
         "categoryLabel": "Kategori",
+        "listLabel": "Liste",
+        "movedToListToast": "{{list}} listesine taşındı.",
         "addItemLabel": "Ürün ekle",
         "listActionsLabel": "{{name}} için işlemler",
         "renameListLabel": "Listeyi yeniden adlandır",

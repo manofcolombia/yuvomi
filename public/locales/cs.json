@@ -489,6 +489,8 @@
         "itemNameLabel": "Název položky",
         "itemQtyLabel": "Množství",
         "categoryLabel": "Kategorie",
+        "listLabel": "Seznam",
+        "movedToListToast": "Přesunuto do {{list}}.",
         "addItemLabel": "Přidat položku",
         "listActionsLabel": "Akce pro {{name}}",
         "renameListLabel": "Přejmenovat seznam",

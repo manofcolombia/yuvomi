@@ -502,6 +502,8 @@
         "itemNameLabel": "نام قلم",
         "itemQtyLabel": "مقدار",
         "categoryLabel": "دسته",
+        "listLabel": "فهرست",
+        "movedToListToast": "به {{list}} منتقل شد.",
         "addItemLabel": "افزودن قلم",
         "listActionsLabel": "اقدامات {{name}}",
         "renameListLabel": "تغییر نام فهرست",

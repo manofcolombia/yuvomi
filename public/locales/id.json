@@ -502,6 +502,8 @@
         "itemNameLabel": "Nama item",
         "itemQtyLabel": "Jumlah",
         "categoryLabel": "Kategori",
+        "listLabel": "Daftar",
+        "movedToListToast": "Dipindahkan ke {{list}}.",
         "addItemLabel": "Tambah item",
         "listActionsLabel": "Tindakan untuk {{name}}",
         "renameListLabel": "Ubah nama daftar",

@@ -489,6 +489,8 @@
         "itemNameLabel": "Όνομα είδους",
         "itemQtyLabel": "Ποσότητα",
         "categoryLabel": "Κατηγορία",
+        "listLabel": "Λίστα",
+        "movedToListToast": "Μετακινήθηκε στο {{list}}.",
         "addItemLabel": "Προσθήκη είδους",
         "listActionsLabel": "Ενέργειες για {{name}}",
         "renameListLabel": "Μετονομασία λίστας",

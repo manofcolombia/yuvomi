@@ -489,6 +489,8 @@
         "itemNameLabel": "اسم العنصر",
         "itemQtyLabel": "الكمية",
         "categoryLabel": "الفئة",
+        "listLabel": "القائمة",
+        "movedToListToast": "تم النقل إلى {{list}}.",
         "addItemLabel": "إضافة عنصر",
         "listActionsLabel": "إجراءات {{name}}",
         "renameListLabel": "إعادة تسمية القائمة",

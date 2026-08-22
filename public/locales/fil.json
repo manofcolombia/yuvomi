@@ -502,6 +502,8 @@
         "itemNameLabel": "Pangalan ng item",
         "itemQtyLabel": "Dami",
         "categoryLabel": "Kategorya",
+        "listLabel": "Listahan",
+        "movedToListToast": "Inilipat sa {{list}}.",
         "addItemLabel": "Magdagdag ng item",
         "listActionsLabel": "Mga aksyon para sa {{name}}",
         "renameListLabel": "Palitan ang pangalan ng listahan",

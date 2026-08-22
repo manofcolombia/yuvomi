@@ -489,6 +489,8 @@
         "itemNameLabel": "आइटम नाम",
         "itemQtyLabel": "मात्रा",
         "categoryLabel": "श्रेणी",
+        "listLabel": "सूची",
+        "movedToListToast": "{{list}} में ले जाया गया।",
         "addItemLabel": "आइटम जोड़ें",
         "listActionsLabel": "{{name}} के लिए कार्रवाइयाँ",
         "renameListLabel": "सूची का नाम बदलें",

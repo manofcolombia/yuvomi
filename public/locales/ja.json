@@ -489,6 +489,8 @@
         "itemNameLabel": "商品名",
         "itemQtyLabel": "数量",
         "categoryLabel": "カテゴリー",
+        "listLabel": "リスト",
+        "movedToListToast": "{{list}}に移動しました。",
         "addItemLabel": "商品を追加",
         "listActionsLabel": "{{name}}の操作",
         "renameListLabel": "リストの名前を変更",

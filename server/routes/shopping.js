@@ -299,6 +299,7 @@ router.patch('/items/:itemId', (req, res) => {
       category   = item.category,
       notes      = item.notes,
       url: urlVal = item.url,
+      list_id    = item.list_id,
     } = req.body;
 
     if (!name?.trim()) return res.status(400).json({ error: 'name darf nicht leer sein.', code: 400 });
@@ -306,6 +307,19 @@ router.patch('/items/:itemId', (req, res) => {
     const validNames = validCategoryNames();
     if (category && !validNames.includes(category))
       return res.status(400).json({ error: 'Invalid category.', code: 400 });
+
+    // Zielliste fürs Verschieben - fremde/ungültige IDs sind ein 404, kein
+    // stiller no-op, sonst merkt eine ausgehängte Liste (schon gelöscht in
+    // einem anderen Tab) niemand.
+    const targetListId = Number(list_id);
+    if (!Number.isInteger(targetListId))
+      return res.status(400).json({ error: 'list_id muss eine ganze Zahl sein.', code: 400 });
+    if (targetListId !== item.list_id) {
+      const targetList = db.get()
+        .prepare('SELECT id FROM shopping_lists WHERE id = ?')
+        .get(targetListId);
+      if (!targetList) return res.status(404).json({ error: 'Zielliste nicht gefunden.', code: 404 });
+    }
 
     // notes/url gleich validieren wie beim Anlegen (URL nur http/https → XSS-sicher).
     const vNotes = str(notes, 'Notiz', { max: MAX_TEXT, required: false });
@@ -315,20 +329,21 @@ router.patch('/items/:itemId', (req, res) => {
 
     db.get().prepare(`
       UPDATE shopping_items
-      SET is_checked = ?, name = ?, quantity = ?, category = ?, notes = ?, url = ?
+      SET is_checked = ?, name = ?, quantity = ?, category = ?, notes = ?, url = ?, list_id = ?
       WHERE id = ?
-    `).run(is_checked ? 1 : 0, name.trim(), quantity ?? null, category, vNotes.value, vUrl.value, req.params.itemId);
+    `).run(is_checked ? 1 : 0, name.trim(), quantity ?? null, category, vNotes.value, vUrl.value, targetListId, req.params.itemId);
 
-    // Kategoriewechsel heißt Positionswechsel: die Handsortierung zählt je
-    // Kategorie (#678), der alte Rang gilt in der neuen Nachbarschaft nicht.
-    // Ans Ende - dort landet in dieser Liste auch alles neu Hinzugefügte.
-    if (category !== item.category) {
+    // Kategoriewechsel ODER Listenwechsel heißt Positionswechsel: die
+    // Handsortierung zählt je Liste+Kategorie (#678), der alte Rang gilt in
+    // der neuen Nachbarschaft nicht. Ans Ende - dort landet in dieser
+    // Liste/Kategorie auch alles neu Hinzugefügte oder Verschobene.
+    if (category !== item.category || targetListId !== item.list_id) {
       db.get().prepare(`
         UPDATE shopping_items SET sort_order = COALESCE((
           SELECT MAX(sort_order) FROM shopping_items
            WHERE list_id = ? AND category = ? AND id != ?
         ), 0) + 1 WHERE id = ?
-      `).run(item.list_id, category, item.id, item.id);
+      `).run(targetListId, category, item.id, item.id);
     }
 
     const updated = db.get()

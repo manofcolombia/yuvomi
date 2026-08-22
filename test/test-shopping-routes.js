@@ -206,6 +206,28 @@ test('PATCH /items/:itemId: aktualisiert Felder + is_checked', async () => {
   assert.equal(r.body.data.is_checked, 1);
 });
 
+test('PATCH /items/:itemId: unbekannte Zielliste → 404', async () => {
+  const list = await newList();
+  const item = (await call('POST', `/${list}/items`, { name: 'X' })).body.data;
+  const r = await call('PATCH', `/items/${item.id}`, { list_id: 999999 });
+  assert.equal(r.status, 404);
+});
+
+test('PATCH /items/:itemId: verschiebt Artikel in andere Liste', async () => {
+  const listA = await newList('A');
+  const listB = await newList('B');
+  const item = (await call('POST', `/${listA}/items`, { name: 'X' })).body.data;
+  const r = await call('PATCH', `/items/${item.id}`, { list_id: listB });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.data.list_id, listB);
+
+  const itemsA = (await call('GET', `/${listA}/items`)).body.data;
+  const itemsB = (await call('GET', `/${listB}/items`)).body.data;
+  assert.equal(itemsA.length, 0);
+  assert.equal(itemsB.length, 1);
+  assert.equal(itemsB[0].id, item.id);
+});
+
 test('DELETE /items/:itemId: unbekannt → 404', async () => {
   const r = await call('DELETE', '/items/999999');
   assert.equal(r.status, 404);

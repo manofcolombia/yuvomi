@@ -489,6 +489,8 @@
         "itemNameLabel": "商品名称",
         "itemQtyLabel": "数量",
         "categoryLabel": "分类",
+        "listLabel": "列表",
+        "movedToListToast": "已移动到{{list}}。",
         "addItemLabel": "添加商品",
         "listActionsLabel": "{{name}} 的操作",
         "renameListLabel": "重命名清单",

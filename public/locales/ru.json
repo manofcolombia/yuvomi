@@ -489,6 +489,8 @@
         "itemNameLabel": "Название товара",
         "itemQtyLabel": "Количество",
         "categoryLabel": "Категория",
+        "listLabel": "Список",
+        "movedToListToast": "Перемещено в {{list}}.",
         "addItemLabel": "Добавить товар",
         "listActionsLabel": "Действия для {{name}}",
         "renameListLabel": "Переименовать список",
