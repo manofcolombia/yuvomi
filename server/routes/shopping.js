@@ -652,6 +652,10 @@ router.post('/:listId/items', (req, res) => {
       .prepare('SELECT * FROM shopping_items WHERE id = ?')
       .get(result.lastInsertRowid);
     res.status(201).json({ data: item });
+    // Gehört die Liste zu einer gespiegelten CalDAV-Liste, wandert der neue
+    // Artikel gleich mit (#831) - sonst hinge er bis zum nächsten Sync-Intervall
+    // fest, während Umbenennen und Abhaken sofort hinausgehen.
+    pushToCalDAV('Neuer Einkaufsartikel');
   } catch (err) {
     log.error('POST /:listId/items error:', err);
     res.status(500).json({ error: 'Internal server error.', code: 500 });

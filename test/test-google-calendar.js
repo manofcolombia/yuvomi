@@ -16,6 +16,7 @@ const { localEventToGoogle, googleAllDayEndToInclusive, localAllDayEndToExclusiv
         upsertGoogleEvents, upsertExternalCalendar,
         setReadonly, isReadonly, fetchEventColorMap, serverTimeZone } = __test;
 const { nearestColorId } = await import('../server/utils/ical-color.js');
+const { expandRecurringEvents } = await import('../server/services/calendar-events.js');
 
 // Reale Google-Event-Palette (colors.get → event), Basis für Nearest-Match.
 const GOOGLE_EVENT_PALETTE = {
@@ -538,6 +539,83 @@ test('Re-Sync mit geändertem Titel kommt weiterhin an', () => {
     'SELECT title FROM calendar_events WHERE external_calendar_id = ?'
   ).get('evt-changed');
   assertEqual(row.title, 'Team-Meeting (verschoben)', 'Titeländerung muss ankommen');
+});
+
+// --------------------------------------------------------
+// Zeitzone einer Google-Serie (#829)
+//
+// Google liefert die IANA-Zone neben der Zeit (start.timeZone), Yuvomi hat sie
+// nicht mitgeschrieben. Ohne tzid wiederholt expandRecurringEvents den festen
+// Offset des ersten Vorkommens - ueber die Sommer-/Winterzeit-Grenze steht die
+// Serie dann eine Stunde falsch. Fuer CalDAV/Apple war das als #549 laengst
+// behoben, fuer Google nie nachgezogen.
+// --------------------------------------------------------
+
+const torontoSeries = {
+  id: 'evt-tz-829',
+  status: 'confirmed',
+  summary: 'Wochentermin',
+  start: { dateTime: '2026-08-24T19:00:00-04:00', timeZone: 'America/Toronto' },
+  end:   { dateTime: '2026-08-24T20:00:00-04:00', timeZone: 'America/Toronto' },
+  recurrence: ['RRULE:FREQ=WEEKLY;BYDAY=MO'],
+};
+const tzidOf = (id) => db.prepare(
+  'SELECT tzid FROM calendar_events WHERE external_calendar_id = ?'
+).get(id)?.tzid ?? null;
+
+test('Der Import uebernimmt die Zeitzone, die Google mitliefert', () => {
+  const calRefId = upsertExternalCalendar('google', 'primary', 'Mein Kalender', '#FF0000');
+  upsertGoogleEvents([torontoSeries], calRefId, '#FF0000', COLOR_MAP);
+  assertEqual(tzidOf('evt-tz-829'), 'America/Toronto');
+});
+
+test('Ohne Zone am Termin greift die Zone des Kalenders', () => {
+  const calRefId = upsertExternalCalendar('google', 'primary', 'Mein Kalender', '#FF0000');
+  const item = { ...torontoSeries, id: 'evt-tz-cal', start: { dateTime: '2026-08-24T19:00:00-04:00' } };
+  upsertGoogleEvents([item], calRefId, '#FF0000', COLOR_MAP, { calTimeZone: 'America/Toronto' });
+  assertEqual(tzidOf('evt-tz-cal'), 'America/Toronto');
+});
+
+test('Ein Ganztags-Termin traegt keine Zone', () => {
+  const calRefId = upsertExternalCalendar('google', 'primary', 'Mein Kalender', '#FF0000');
+  const item = {
+    id: 'evt-tz-allday', status: 'confirmed', summary: 'Urlaub',
+    start: { date: '2026-08-24' }, end: { date: '2026-08-26' },
+  };
+  upsertGoogleEvents([item], calRefId, '#FF0000', COLOR_MAP, { calTimeZone: 'America/Toronto' });
+  assertEqual(tzidOf('evt-tz-allday'), null);
+});
+
+test('Eine Bestandszeile bekommt die Zone beim naechsten Lauf nachgetragen', () => {
+  // Der Wertvergleich im UPDATE muss tzid kennen, sonst bliebe die Spalte bei
+  // allen vor diesem Fix importierten Serien fuer immer leer.
+  const calRefId = upsertExternalCalendar('google', 'primary', 'Mein Kalender', '#FF0000');
+  const item = { ...torontoSeries, id: 'evt-tz-backfill' };
+  upsertGoogleEvents([item], calRefId, '#FF0000', COLOR_MAP);
+  db.prepare('UPDATE calendar_events SET tzid = NULL WHERE external_calendar_id = ?').run('evt-tz-backfill');
+
+  upsertGoogleEvents([item], calRefId, '#FF0000', COLOR_MAP);
+  assertEqual(tzidOf('evt-tz-backfill'), 'America/Toronto');
+});
+
+test('Die Serie behaelt ihre Ortszeit ueber den Zeitumstellungs-Wechsel', () => {
+  const calRefId = upsertExternalCalendar('google', 'primary', 'Mein Kalender', '#FF0000');
+  const item = { ...torontoSeries, id: 'evt-tz-dst' };
+  upsertGoogleEvents([item], calRefId, '#FF0000', COLOR_MAP);
+  const row = db.prepare(
+    'SELECT * FROM calendar_events WHERE external_calendar_id = ?'
+  ).get('evt-tz-dst');
+
+  const wallTime = (iso) => new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Toronto', hour: '2-digit', minute: '2-digit', hour12: false,
+  }).format(new Date(iso));
+
+  const occurrences = expandRecurringEvents([row], '2026-08-24', '2026-11-30');
+  const times = new Set(occurrences.map((o) => wallTime(o.start_datetime)));
+  assertEqual(
+    [...times].join(','), '19:00',
+    'Jedes Vorkommen steht um 19:00 Ortszeit - vor UND nach der Umstellung am 1. November'
+  );
 });
 
 // --------------------------------------------------------

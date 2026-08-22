@@ -18,9 +18,10 @@ import { findPageFab } from '/utils/fab.js';
 // Wert, es ist nur `hidden`: der Absende-Pfad liest es unveraendert, und kommt
 // ein zweites Mitglied dazu, steht es wieder da.
 import { isSoloHousehold } from '/utils/household.js';
+import { maxUploadBytes, maxUploadMb } from '/utils/upload-limit.js';
 
 const CATEGORIES = ['medical', 'school', 'identity', 'insurance', 'finance', 'home', 'vehicle', 'legal', 'travel', 'pets', 'warranty', 'taxes', 'work', 'other'];
-const MAX_FILE_SIZE = 5 * 1024 * 1024;
+
 
 const CATEGORY_ICONS = {
   medical: 'heart-pulse',
@@ -211,13 +212,13 @@ async function loadMetaOptions() {
     state.isAdmin = res.data?.is_admin === true;
     // Grenzwerte vom Server übernehmen, statt sie im Client zu duplizieren —
     // sonst driften Hinweistext und tatsächliche Annahme auseinander.
-    state.maxFileSize = Number(res.data?.max_file_size) || MAX_FILE_SIZE;
+    state.maxFileSize = Number(res.data?.max_file_size) || maxUploadBytes();
     state.allowedMimeTypes = Array.isArray(res.data?.allowed_mime_types) ? res.data.allowed_mime_types : [];
   } catch {
     state.dmsAccounts = [];
     state.activeUploadBackend = 'local';
     state.isAdmin = false;
-    state.maxFileSize = MAX_FILE_SIZE;
+    state.maxFileSize = maxUploadBytes();
     state.allowedMimeTypes = [];
   }
 }
@@ -1254,7 +1255,7 @@ function openDocumentModal(doc = null) {
             <span class="document-dropzone__hint">${t('documents.dropzoneHint')}</span>
             <span class="document-dropzone__file" id="document-selected-file" hidden></span>
           </label>
-          <p class="document-form__hint">${t('documents.fileHint')}</p>
+          <p class="document-form__hint">${t('documents.fileHint', { size: maxUploadMb() })}</p>
           <p class="document-storage-target">
             <i data-lucide="${uploadTargetIcon(state.activeUploadBackend)}" aria-hidden="true"></i>
             <span>${t('documents.activeUploadTarget', {
@@ -1399,7 +1400,7 @@ async function saveDocument(event, doc, panel) {
     } else {
       const files = Array.from(form.querySelector('#document-file').files || []);
       if (!files.length) throw new Error(t('documents.fileRequired'));
-      const maxSize = state.maxFileSize || MAX_FILE_SIZE;
+      const maxSize = state.maxFileSize || maxUploadBytes();
       const tooBig = files.find((file) => file.size > maxSize);
       if (tooBig) throw new Error(t('documents.fileTooLargeNamed', { name: tooBig.name }));
 

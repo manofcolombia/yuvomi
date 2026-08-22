@@ -108,8 +108,14 @@
   --color-border-subtle:  var(--neutral-150);
   --color-border-strong:  var(--neutral-300);  /* kräftigere Trennlinie (Hover, betonte Rahmen) */
   --color-text-primary:   var(--neutral-900);
-  --color-text-secondary: var(--neutral-600);  /* WCAG AA: 5.75:1 auf weiß, 5.2:1 auf --color-bg */
-  --_color-text-tertiary: #68686F;
+  --color-text-secondary: var(--neutral-600);  /* WCAG AA: 6.19:1 auf weiß, 5.58:1 auf --color-bg - dieselben Werte wie an --_neutral-600 oben; hier standen die der alten kühlen Rampe (5.75 / 5.2) */
+  /* WARM STATT KUEHL (Dark-Kur 2026-08-17, gilt fuer BEIDE Themes). #68686F
+   * stand bei Hue 291 (Lab) - ein kuehl-violetter Rest der abgeloesten
+   * Apple-Rampe, waehrend jede andere Neutralstufe bei Hue 74-97 laeuft. Der
+   * Placeholder war damit die eine kalte Stimme auf dem warmen Papier. Der
+   * neue Wert haelt dieselben Zusagen mit Luft: 5.63 auf Weiss (vorher 5.53),
+   * 5.07 auf --color-bg (vorher 4.98), 4.69 auf dem Well (vorher 4.60). */
+  --_color-text-tertiary: #6B675F;
   --color-text-tertiary:  var(--_color-text-tertiary);  /* WCAG AA: ≥4.6:1 auf --color-bg, ≥5.2:1 auf weiß */
   --color-text-quaternary: var(--neutral-500);  /* nur dekorativ (z.B. Kbd-Hint), nie für Fließtext */
   /* NUR für wirklich Deaktiviertes. Der Wert trägt auf KEINER Fläche der App
@@ -506,7 +512,9 @@
   --_family-people:   #CE2A63;  /* Rose - Kontakte, Geburtstage; 5.01:1 auf weiss */
   --_family-health:   #9E1E88;  /* Beeren-Fuchsia (310 Grad) - Gesundheit; 7.0:1 auf
                                  * weiss (AAA), kein Rot (Trennung von Danger) */
-  --_family-records:  #42587E;  /* Stahlblau - Dokumente, Notizen */
+  --_family-records:  #42587E;  /* Stahlblau - Dokumente, Notizen, Inventar
+                                 * (Inventar kam 2026-08-11 dazu, Begruendung
+                                 * unten an --module-inventory) */
   --_family-neutral:  #677079;  /* Grau - Einstellungen: Konfiguration gehoert keinem
                                  * Lebensbereich; 5.03:1 auf weiss */
 
@@ -635,6 +643,75 @@
   --source-tandoor:         var(--_source-tandoor);
   --_source-tandoor-light:  #DBEAFE;
   --source-tandoor-light:   var(--_source-tandoor-light);
+
+  /* --------------------------------------------------------
+   * 5b. Farben - Wetterlagen
+   *
+   * WOFÜR: das Wetter ist der einzige Inhalt der App, den niemand im Haushalt
+   * eingegeben hat - er kommt von draußen und ändert sich von selbst. Bis
+   * hierher trug seine Glyphe `--module-dashboard`, also das Violett der
+   * Übersicht: die Karte sagte damit, WO sie steht, aber nichts darüber, WAS
+   * sie zeigt. Sechs Lagen bekommen deshalb einen eigenen Ton.
+   *
+   * SIE SIND KEINE ZEHNTE FAMILIE. Die Familientöne (Abschnitt 4) beantworten
+   * „welches Modul", und dieses Vokabular gehört den Modulen allein - deshalb
+   * teilt keine Lage hier den WERT einer Familie. Die Wetterlage beantwortet
+   * eine andere Frage, und sie erscheint ausschließlich in Wetter-Flächen:
+   * Karte, Masthead-Zeile, Wand-Modus. Die Bauart ist dieselbe wie bei den
+   * Mahlzeit-Typen darüber - eine parallele Domänenfamilie mit eigenen
+   * `--_`-Privaten, damit der Dark-Block sie erreicht.
+   *
+   * FARBE IST HIER NIE DER ALLEINIGE TRÄGER: neben jedem Ton steht die Glyphe
+   * der Lage und der ausgeschriebene Beschreibungstext (`wmo.*`). Wer die
+   * Töne nicht unterscheiden kann, verliert nichts.
+   *
+   * ALLE ZWÖLF WERTE SIND GEMESSEN, Ziel 4,5:1 (nicht 3:1) - der Ton trägt in
+   * der Verlaufszeile auch die Höchsttemperatur, und das ist Kleintext. Light
+   * gegen #FFFFFF / #FBFAF7 / #F5F3ED, Dark gegen #2B2825 / #37332E / #191816;
+   * der jeweils schlechteste Grund steht daneben. Kleinster Abstand im Paar
+   * cloud/snow (dE 18,5) - Schiefer ist entsättigt, Petrol nicht.
+   * -------------------------------------------------------- */
+  --_weather-clear:  #B45309;   /* Bernstein  - Sonne, klarer Tag; 4,53:1 */
+  --weather-clear:   var(--_weather-clear);
+  --_weather-night:  #4C4FBF;   /* Indigo     - klare Nacht, Mond;  5,96:1 */
+  --weather-night:   var(--_weather-night);
+  --_weather-cloud:  #4F6478;   /* Schiefer   - bewölkt, Nebel;     5,52:1 */
+  --weather-cloud:   var(--_weather-cloud);
+  --_weather-rain:   #0A5C9E;   /* Azur       - Regen, Niesel;      6,23:1 */
+  --weather-rain:    var(--_weather-rain);
+  --_weather-snow:   #00768C;   /* Petrol     - Schnee, Graupel;    4,77:1 */
+  --weather-snow:    var(--_weather-snow);
+  --_weather-storm:  #8B2FC9;   /* Purpur     - Gewitter;           5,65:1 */
+  --weather-storm:   var(--_weather-storm);
+
+  /* Die Temperaturbänder der Verlaufszeile: FÜNF Stufen, keine Interpolation.
+   * Eine stufenlose Rampe hätte ihren Mischwert als Zahl am Element gebraucht
+   * (`calc(var(--x) * 100%)`), und genau diese Bauart sieht der Tönungs-Guard
+   * (6b) nicht - sie wäre die achtunddreißigste Prozentstufe gewesen, nur
+   * unsichtbar. Fünf benannte Bänder lesen sich außerdem wie eine Wetterkarte
+   * statt wie ein Farbverlauf, und der Balken bleibt neben der ausgeschriebenen
+   * Zahl eine Zweitkodierung. Schwellen und Einheitenumrechnung: dashboard.js,
+   * `weatherTempBand()`. */
+  --_weather-band-icy:  #0E7490;   /* unter 0 °C   */
+  --weather-band-icy:   var(--_weather-band-icy);
+  --_weather-band-cold: #0663C7;   /* 0 bis 9 °C   */
+  --weather-band-cold:  var(--_weather-band-cold);
+  --_weather-band-mild: #0F766E;   /* 10 bis 19 °C */
+  --weather-band-mild:  var(--_weather-band-mild);
+  --_weather-band-warm: #9F5700;   /* 20 bis 27 °C */
+  --weather-band-warm:  var(--_weather-band-warm);
+  --_weather-band-hot:  #C2410C;   /* ab 28 °C     */
+  --weather-band-hot:   var(--_weather-band-hot);
+
+  /* Der Lichthauch hinter der Glyphe - und der Grund, warum er ein TOKEN ist
+   * und keine Zahl in dashboard.css: er ist dieselbe Gattung wie die
+   * Backdrop-Blobs hinter dem Glas (Abschnitt 14b, `--lg-blob-opacity`), also
+   * eine weiche Atmosphäre HINTER dem Inhalt, kein chromatischer Verlauf AUF
+   * ihm. Weil er dieselbe Gattung ist, hat er dieselben Ausschalter: in
+   * prefers-reduced-transparency und prefers-contrast steht er wie sein
+   * Vorbild auf 0. Ein Wert in der Komponente hätte diese Kopplung nicht
+   * mitgebracht. */
+  --weather-glow-opacity: 1;
 
   /* --------------------------------------------------------
    * 6. Farben - Prioritäten
@@ -1105,6 +1182,19 @@
   --icon-md: 16px;   /* Standard: Buttons, Listenzeilen */
   --icon-lg: 20px;   /* Betonte Aktionen, Toolbar */
   --icon-xl: 24px;   /* FAB, Empty-State, Dialog-Kopf */
+
+  /* Die STRICHSTÄRKE der Modulzeichen, in gerenderten Pixeln (das Zeichen
+   * trägt dazu `vector-effect: non-scaling-stroke`, sonst skalierte der Strich
+   * mit der Größe mit).
+   *
+   * SIE IST DIE HANDSCHRIFT, und sie war bisher ein Zufall: Yuvomis eigener
+   * Satz zeichnet mit 1.6 auf viewBox 24, Lucide mit 2 - bei 20px bzw. 16px
+   * ergaben beide gerenderte 1,333px, und genau deshalb ist nie aufgefallen,
+   * dass die Übereinstimmung an den GRÖSSEN hing und nicht an einer Regel.
+   * Sobald ein Zeichen des eigenen Satzes bei 16px stand (Widget-Kopf), fiel
+   * es auf 1,07px und wurde neben seinen Nachbarn dünn. Der Wert hält den
+   * gemessenen Bestand fest, jetzt als Zusicherung statt als Koinzidenz. */
+  --icon-stroke: 1.35;
 
   /* --------------------------------------------------------
    * 11c. Breakpoints — verbindlicher Kontrakt
@@ -1591,52 +1681,69 @@
  * ================================================================ */
 @media screen and (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    /* Neutral-Skala — Apple Dark */
+    /* Neutral-Skala — Apple Dark.
+     *
+     * DIE FLAECHEN SIND 2026-08-17 GESTIEGEN, DIE BUEHNE NICHT (Dark-Kur,
+     * Etappe 1). Der Anlass war gemessen, nicht gefuehlt: Buehne->Surface lag
+     * bei 1.15:1 (dE2000 3.9), und die Dark-Schatten (rgba 0,0,0) sind auf
+     * dieser Buehne physikalisch wirkungslos - die Karte trennte sich nicht,
+     * das Board las als Wand gleich dunkler Rechtecke. Die Buehne #191816
+     * bleibt, wo ihre dokumentierte Entscheidung sie hingestellt hat (dreifach
+     * ueber dem OLED-Near-Black #0A0A0C); gestiegen ist die KARTE: jede
+     * Flaechenstufe rueckt eine knappe halbe Rampenstufe nach oben, und die
+     * Leiter behaelt ihre Sprossenabstaende (1.21 / 1.17 / 1.19:1). Messlauf:
+     * .impeccable/redesign-tools/dark-ramp-final.mjs */
     --_neutral-50:  #0F0E0D;
     --_neutral-100: #191816;   /* Buehne — warme Kohle, L=0.0092 (dreifach ueber #0A0A0C) */
-    --_neutral-150: #262422;   /* Surface — 1.18:1 ueber der Buehne */
-    --_neutral-200: #322F2B;
-    --_neutral-250: #403C37;
-    --_neutral-300: #4E4A44;
+    --_neutral-150: #2B2825;   /* Surface — 1.21:1 ueber der Buehne (vorher 1.15:1) */
+    --_neutral-200: #37332E;
+    --_neutral-250: #443E37;
+    --_neutral-300: #514B45;
     --_neutral-400: #6B665E;
     --_neutral-500: #948E85;
-    --_neutral-600: #B4AEA5;   /* WCAG AA: 6.92:1 auf --color-surface, 6.06:1 auf -raised */
+    --_neutral-600: #B4AEA5;   /* WCAG AA: 6.66:1 auf --color-surface, 5.69:1 auf -raised */
     --_neutral-700: #CBC5BC;
     --_neutral-800: #E7E2DA;
     --_neutral-900: #F5F3ED;
     --_neutral-950: #FBFAF7;
 
-    --_color-surface:          #262422;
-    --_color-surface-3:        #322F2B;
-    --_color-surface-elevated: #322F2B;
+    --_color-surface:          #2B2825;
+    --_color-surface-3:        #37332E;
+    --_color-surface-elevated: #37332E;
     /* EINE STUFE, NICHT ZWEI (Critique R1, A10). Der Hover stand auf
      * --_neutral-250 und damit zwei Rampenstufen ueber der Flaeche
      * (--_neutral-150), waehrend er im Light genau eine unter Weiss liegt.
      * Gemessen an der Cockpit-Zeile: dark 1.414:1, light 1.201:1 - derselbe
      * Zeiger, zwei verschieden laute Antworten, und die lautere gehoerte
      * ausgerechnet dem Theme, in dem ein Helligkeitssprung mehr auffaellt.
-     * Mit --_neutral-200 sind es 1.18:1, also die luminanzgleiche
+     * Mit --_neutral-200 sind es 1.17:1, also die luminanzgleiche
      * Entsprechung. Dass der Wert damit auf --_color-surface-3 faellt, ist
      * kein Zufall und kein Fehler: im Light tut er dasselbe (beide
      * --_neutral-150). Der Hover ist in beiden Themes die naechste
      * Flaechenstufe, nicht eine eigene Farbe. */
-    --_color-surface-hover:    #322F2B;
+    --_color-surface-hover:    #37332E;
     /* Die Stufe ueber der erhoehten Flaeche - im Dark der Wert, den
      * --_color-surface-hover bis 2026-08-11 fuer ALLE Flaechen trug. */
-    --_color-surface-elevated-hover: #403C37;
-    --_color-surface-work:     #262422;
-    --_color-surface-raised:   #322F2B;
-    --_color-surface-glass:    rgba(38, 36, 34, 0.66);
+    --_color-surface-elevated-hover: #443E37;
+    --_color-surface-work:     #2B2825;
+    --_color-surface-raised:   #37332E;
+    --_color-surface-glass:    rgba(43, 40, 37, 0.66);
 
     /* Kanten: im Dark eigenständig gesetzt statt aus der Neutral-Rampe
      * abgeleitet — die Rampe liegt zu dicht an --color-surface, eine
      * Kartenkante in der Farbe ihrer eigenen Fläche wäre unsichtbar
-     * (Critique 2026-07-29). Ratios gegen --color-surface (#1C1C1E). */
-    --color-border-subtle: #37332E;  /* Trenner, ruhige Kartenkante */
-    --color-border:        #454039;  /* Standardkante, Formfelder */
-    --color-border-strong: #6F6A61;  /* Hover, betonte Rahmen (~2.9:1) */
+     * (Critique 2026-07-29). Mit der Flaechen-Kur eine knappe Stufe
+     * mitgerueckt, damit die Sichtbarkeit auf der helleren Surface haelt
+     * (subtle 1.28:1, border 1.47:1 gegen #2B2825 - vorher 1.23 / 1.51).
+     * Die Standardkante bleibt dabei unter #48423C: zwei Bestandsstellen
+     * fuellen mit --color-border eine Flaeche UNTER Sekundaertext
+     * (.note-format-btn--sep:hover, .user-ms__avatar--none), und der Guard
+     * verlangt dort zu Recht 4.5 - #47423B traegt 4.52. */
+    --color-border-subtle: #3E3933;  /* Trenner, ruhige Kartenkante */
+    --color-border:        #47423B;  /* Standardkante, Formfelder */
+    --color-border-strong: #6F6A61;  /* Hover, betonte Rahmen (~2.7:1) */
 
-    --_sidebar-bg:           #201E1C;
+    --_sidebar-bg:           #221F1D;
     --_sidebar-shadow-light: rgba(255, 255, 255, 0.04);
     --_sidebar-shadow-dark:  rgba(0, 0, 0, 0.5);
 
@@ -1644,7 +1751,7 @@
      *
      * DIE ZUSAGE GILT FUER DIE HELLSTE FLAECHE, AUF DER DER AKZENT ALS TEXT
      * STEHT, nicht fuer eine ausgesuchte. Die App setzt Akzent-Text auch auf
-     * --color-surface-raised (#322F2B), nicht nur auf --color-surface - eine
+     * --color-surface-raised (#37332E), nicht nur auf --color-surface - eine
      * Zusage, die nur eine der drei Flaechen nennt, gilt fuer drei und haelt
      * fuer eine. Gefunden am aktiven Domaenenkopf der Settings-Navigation
      * (zwei Regeln, 23 Blaetter).
@@ -1653,7 +1760,7 @@
      * ausdruecklich fuer akzent-getoenten Grund, hier ist der Grund neutral.
      * Die FLAECHEN-Rolle bleibt unberuehrt - sie haengt an --_color-btn-primary,
      * das weisses Label traegt und darum nicht mitwandern darf. */
-    --_color-accent:            #A78BFA;   /* Text: 4.96 auf #322F2B, 5.66 auf #262422, 6.50 auf #191816 */
+    --_color-accent:            #A78BFA;   /* Text: 4.61 auf #37332E, 5.39 auf #2B2825, 6.52 auf #191816 */
     /* Zieht mit, und im Dark geht die Leiter NACH OBEN: eine abgedunkelte
      * Hellfarbe auf warmer Kohle liest niemand als Hover. Abstand 1.19 wie
      * zuvor - die Leiter wandert, ihre Sprosse nicht. */
@@ -1669,7 +1776,14 @@
     --_color-warning:       #FF9F0A;
     --_color-danger:        #FF6961;   /* heller als FF453A: ~5.6:1 auf #1C1C1E */
     --_color-info:          #409CFF;
-    --_color-text-tertiary: #98989F;
+    /* WARM STATT KUEHL (Dark-Kur 2026-08-17). #98989F stand bei Hue 291
+     * (Lab), ein kuehl-violetter Rest der abgeloesten Apple-Rampe, waehrend
+     * jede andere Neutralstufe beider Themes bei Hue 74-97 laeuft - der
+     * Placeholder war die eine kalte Stimme im warmen Raum. Der Warm-Tausch
+     * loest zugleich einen Alt-Riss: auf der gestiegenen Well-Flaeche #37332E
+     * haette der alte Wert nur noch 4.37:1 getragen, der neue haelt 5.01:1
+     * (bg 7.09, surface 5.86). Abstand zu secondary bleibt 1.16x. */
+    --_color-text-tertiary: #A9A39A;
     --_color-success-light: #0E2E17;
     --_color-warning-light: #33230A;
     --_color-danger-light:  #3A1210;
@@ -1777,6 +1891,21 @@
     --_source-tandoor:        #60A5FA;
     --_source-tandoor-light:  #172554;
 
+    /* Wetterlagen (5b) - dieselben sechs Rollen, auf der Kohle-Buehne
+     * aufgehellt. Gemessen gegen #2B2825 / #37332E / #191816, schlechtester
+     * Grund: 7,51 / 6,29 / 6,35 / 6,60 / 7,75 / 6,38:1. */
+    --_weather-clear:  #FBBF24;
+    --_weather-night:  #A5B4FC;
+    --_weather-cloud:  #A8BBCC;
+    --_weather-rain:   #7FC4F0;
+    --_weather-snow:   #5EDDE8;
+    --_weather-storm:  #D8A6F5;
+    --_weather-band-icy:  #67E8F9;
+    --_weather-band-cold: #7FB8FF;
+    --_weather-band-mild: #5EEAD4;
+    --_weather-band-warm: #FBBF24;
+    --_weather-band-hot:  #FB923C;
+
     --_color-priority-low:       #C7C7CC;
     --_color-priority-medium:    #FBBF24;
     --_color-priority-high:      #FB923C;
@@ -1790,13 +1919,26 @@
     --_color-overlay:       rgba(0, 0, 0, 0.6);
     --_color-overlay-light: rgba(0, 0, 0, 0.35);
 
-    --_shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.30);
-    --_shadow-md: 0 4px 14px rgba(0, 0, 0, 0.40);
-    --_shadow-lg: 0 8px 28px rgba(0, 0, 0, 0.50);
-    --_shadow-xl: 0 18px 56px rgba(0, 0, 0, 0.65), 0 4px 12px rgba(0, 0, 0, 0.28);
+    /* DER RING IST IM DARK DIE TRENNUNG, DIE DER SCHATTEN NICHT LEISTEN KANN
+     * (Dark-Kur 2026-08-17). "Die Trennung leistet der Schatten, nicht eine
+     * Kante" (DESIGN.md) ist auf der Kohle-Buehne gemessen falsch herum: ein
+     * rgba(0,0,0)-Wurf auf #191816 ist unsichtbar, die Karte hing allein an
+     * 1.15:1 Flaechenkontrast. Die Glas-Schatten dieses Blocks kennen die
+     * Antwort seit jeher - ein eingebauter 1px-Weiss-Ring. Die opaken
+     * Elevation-Stufen uebernehmen ihn jetzt in leiserer Dosierung
+     * (0.05-0.06 statt 0.05-0.07); im Light bleibt alles unveraendert, dort
+     * traegt der Schatten wirklich. xs bleibt ohne Ring: die kleinste Stufe
+     * sitzt auf Elementen, denen eine Kontur mehr Laerm als Halt gaebe. */
+    --_shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.30), 0 0 0 1px rgba(255, 255, 255, 0.06);
+    --_shadow-md: 0 4px 14px rgba(0, 0, 0, 0.40), 0 0 0 1px rgba(255, 255, 255, 0.06);
+    --_shadow-lg: 0 8px 28px rgba(0, 0, 0, 0.50), 0 0 0 1px rgba(255, 255, 255, 0.05);
+    --_shadow-xl: 0 18px 56px rgba(0, 0, 0, 0.65), 0 4px 12px rgba(0, 0, 0, 0.28), 0 0 0 1px rgba(255, 255, 255, 0.05);
     --_shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.35);
 
-    --_glass-bg-elevated:      rgba(44, 44, 46, 0.88);
+    /* WARMES GLAS (Dark-Kur 2026-08-17): rgba(44,44,46) war iOS-Neutralgrau -
+     * die Tab-Bar stand als kuehle Scheibe auf der warmen Buehne. Jetzt die
+     * Glas-Fassung der eigenen Surface (#2D2A27-Basis), gleiche Deckung. */
+    --_glass-bg-elevated:      rgba(45, 42, 39, 0.88);
     --_glass-border:           rgba(255, 255, 255, 0.12);
     --_glass-border-subtle:    rgba(255, 255, 255, 0.14);
     --_glass-highlight:        rgba(255, 255, 255, 0.09);
@@ -1806,7 +1948,7 @@
     --_glass-shadow-md: 0 6px 24px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.06);
     --_glass-shadow-lg: 0 10px 44px rgba(0, 0, 0, 0.60), 0 0 0 1px rgba(255, 255, 255, 0.05);
     --_glass-bg-card:          var(--_color-surface-glass);
-    --_glass-bg-card-hover:    rgba(40, 40, 42, 0.80);
+    --_glass-bg-card-hover:    rgba(43, 40, 37, 0.80);
     --_glass-tint-strength:    6%;
     --_app-backdrop-accent-strength: 1.5%;
     --_app-backdrop-secondary-strength: 0.75%;
@@ -1818,51 +1960,52 @@
  * Wahl des Nutzers gilt für sein Display, nicht für seinen Drucker. */
 @media screen {
   [data-theme="dark"] {
-    /* Neutral-Skala — Apple Dark */
+    /* Neutral-Skala — Apple Dark. Flaechen-Kur 2026-08-17: Werte und
+     * Begruendung im Media-Block oben. */
     --_neutral-50:  #0F0E0D;
     --_neutral-100: #191816;   /* Buehne — warme Kohle, L=0.0092 (dreifach ueber #0A0A0C) */
-    --_neutral-150: #262422;   /* Surface — 1.18:1 ueber der Buehne */
-    --_neutral-200: #322F2B;
-    --_neutral-250: #403C37;
-    --_neutral-300: #4E4A44;
+    --_neutral-150: #2B2825;   /* Surface — 1.21:1 ueber der Buehne (vorher 1.15:1) */
+    --_neutral-200: #37332E;
+    --_neutral-250: #443E37;
+    --_neutral-300: #514B45;
     --_neutral-400: #6B665E;
     --_neutral-500: #948E85;
-    --_neutral-600: #B4AEA5;   /* WCAG AA: 6.92:1 auf --color-surface, 6.06:1 auf -raised */
+    --_neutral-600: #B4AEA5;   /* WCAG AA: 6.66:1 auf --color-surface, 5.69:1 auf -raised */
     --_neutral-700: #CBC5BC;
     --_neutral-800: #E7E2DA;
     --_neutral-900: #F5F3ED;
     --_neutral-950: #FBFAF7;
 
     /* Semantische Aliase folgen automatisch via var(--neutral-*) */
-    --_color-surface:          #262422;
-    --_color-surface-3:        #322F2B;
-    --_color-surface-elevated: #322F2B;
+    --_color-surface:          #2B2825;
+    --_color-surface-3:        #37332E;
+    --_color-surface-elevated: #37332E;
     /* EINE STUFE, NICHT ZWEI (Critique R1, A10). Der Hover stand auf
      * --_neutral-250 und damit zwei Rampenstufen ueber der Flaeche
      * (--_neutral-150), waehrend er im Light genau eine unter Weiss liegt.
      * Gemessen an der Cockpit-Zeile: dark 1.414:1, light 1.201:1 - derselbe
      * Zeiger, zwei verschieden laute Antworten, und die lautere gehoerte
      * ausgerechnet dem Theme, in dem ein Helligkeitssprung mehr auffaellt.
-     * Mit --_neutral-200 sind es 1.18:1, also die luminanzgleiche
+     * Mit --_neutral-200 sind es 1.17:1, also die luminanzgleiche
      * Entsprechung. Dass der Wert damit auf --_color-surface-3 faellt, ist
      * kein Zufall und kein Fehler: im Light tut er dasselbe (beide
      * --_neutral-150). Der Hover ist in beiden Themes die naechste
      * Flaechenstufe, nicht eine eigene Farbe. */
-    --_color-surface-hover:    #322F2B;
+    --_color-surface-hover:    #37332E;
     /* Die Stufe ueber der erhoehten Flaeche - im Dark der Wert, den
      * --_color-surface-hover bis 2026-08-11 fuer ALLE Flaechen trug. */
-    --_color-surface-elevated-hover: #403C37;
-    --_color-surface-work:     #262422;
-    --_color-surface-raised:   #322F2B;
-    --_color-surface-glass:    rgba(38, 36, 34, 0.66);
+    --_color-surface-elevated-hover: #443E37;
+    --_color-surface-work:     #2B2825;
+    --_color-surface-raised:   #37332E;
+    --_color-surface-glass:    rgba(43, 40, 37, 0.66);
 
     /* Kanten: eigenständig gesetzt (siehe Media-Block oben) */
-    --color-border-subtle: #37332E;
-    --color-border:        #454039;
+    --color-border-subtle: #3E3933;
+    --color-border:        #47423B;
     --color-border-strong: #6F6A61;
 
     /* Sidebar */
-    --_sidebar-bg:           #201E1C;
+    --_sidebar-bg:           #221F1D;
     --_sidebar-shadow-light: rgba(255, 255, 255, 0.04);
     --_sidebar-shadow-dark:  rgba(0, 0, 0, 0.5);
 
@@ -1880,7 +2023,8 @@
     --_color-warning:       #FF9F0A;
     --_color-danger:        #FF6961;
     --_color-info:          #409CFF;
-    --_color-text-tertiary: #98989F;
+    /* Warm statt kuehl - Begruendung im Media-Block oben (Dark-Kur 2026-08-17). */
+    --_color-text-tertiary: #A9A39A;
     --_color-success-light: #0E2E17;
     --_color-warning-light: #33230A;
     --_color-danger-light:  #3A1210;
@@ -1972,6 +2116,19 @@
     --_source-tandoor:        #60A5FA;
     --_source-tandoor-light:  #172554;
 
+    /* Wetterlagen (5b) - Zwilling des prefers-color-scheme-Blocks. */
+    --_weather-clear:  #FBBF24;
+    --_weather-night:  #A5B4FC;
+    --_weather-cloud:  #A8BBCC;
+    --_weather-rain:   #7FC4F0;
+    --_weather-snow:   #5EDDE8;
+    --_weather-storm:  #D8A6F5;
+    --_weather-band-icy:  #67E8F9;
+    --_weather-band-cold: #7FB8FF;
+    --_weather-band-mild: #5EEAD4;
+    --_weather-band-warm: #FBBF24;
+    --_weather-band-hot:  #FB923C;
+
     /* Priority-Badge Hintergründe */
     --_color-priority-low:       #C7C7CC;
     --_color-priority-medium:    #FBBF24;
@@ -1987,15 +2144,16 @@
     --_color-overlay:       rgba(0, 0, 0, 0.6);
     --_color-overlay-light: rgba(0, 0, 0, 0.35);
 
-    /* Schatten stärker im Dark Mode */
-    --_shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.30);
-    --_shadow-md: 0 4px 14px rgba(0, 0, 0, 0.40);
-    --_shadow-lg: 0 8px 28px rgba(0, 0, 0, 0.50);
-    --_shadow-xl: 0 18px 56px rgba(0, 0, 0, 0.65), 0 4px 12px rgba(0, 0, 0, 0.28);
+    /* Schatten stärker im Dark Mode; der 1px-Weiss-Ring ist die Trennung,
+     * die der Schwarz-Wurf auf der Kohle nicht leisten kann (Media-Block oben). */
+    --_shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.30), 0 0 0 1px rgba(255, 255, 255, 0.06);
+    --_shadow-md: 0 4px 14px rgba(0, 0, 0, 0.40), 0 0 0 1px rgba(255, 255, 255, 0.06);
+    --_shadow-lg: 0 8px 28px rgba(0, 0, 0, 0.50), 0 0 0 1px rgba(255, 255, 255, 0.05);
+    --_shadow-xl: 0 18px 56px rgba(0, 0, 0, 0.65), 0 4px 12px rgba(0, 0, 0, 0.28), 0 0 0 1px rgba(255, 255, 255, 0.05);
     --_shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.35);
 
-    /* Glass */
-    --_glass-bg-elevated:     rgba(44, 44, 46, 0.88);
+    /* Glass — warm statt iOS-Neutralgrau (Media-Block oben) */
+    --_glass-bg-elevated:     rgba(45, 42, 39, 0.88);
     --_glass-border:          rgba(255, 255, 255, 0.12);
     --_glass-border-subtle:   rgba(255, 255, 255, 0.14);
     --_glass-highlight:       rgba(255, 255, 255, 0.09);
@@ -2005,7 +2163,7 @@
     --_glass-shadow-md: 0 6px 24px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.06);
     --_glass-shadow-lg: 0 10px 44px rgba(0, 0, 0, 0.60), 0 0 0 1px rgba(255, 255, 255, 0.05);
     --_glass-bg-card:         var(--_color-surface-glass);
-    --_glass-bg-card-hover:   rgba(40, 40, 42, 0.80);
+    --_glass-bg-card-hover:   rgba(43, 40, 37, 0.80);
     --_glass-tint-strength:   6%;
     --_app-backdrop-accent-strength: 1.5%;
     --_app-backdrop-secondary-strength: 0.75%;
@@ -2035,6 +2193,7 @@
     --blur-lg:  blur(0px);
     --opacity-glass-elevated: 1;
     --lg-blob-opacity: 0;     /* Backdrop-Blobs aus */
+    --weather-glow-opacity: 0; /* Wetter-Lichthauch aus - gleiche Gattung (5b) */
     /* Specular aus - beide Schreibweisen. --lg-specular ist die Stärke des
      * einen freien Highlights, --glass-inset-strength der Faktor der
      * abgestuften Inset-Tokens; sie sind dasselbe Konzept und fallen zusammen. */
@@ -2077,6 +2236,7 @@
      * Ohne Eintrag gilt der regulaere Modul-Tint, und der haelt seine Zusage. */
 
     --lg-blob-opacity: 0;     /* Backdrop-Blobs aus */
+    --weather-glow-opacity: 0; /* Wetter-Lichthauch aus - gleiche Gattung (5b) */
     /* Specular aus - beide Schreibweisen, siehe der Schwesterblock oben. */
     --lg-specular: 0;
     --glass-inset-strength: 0;

@@ -246,6 +246,19 @@
   .recipe-row__toggle .list-row__meta {
     flex: 1 0 100%;
     order: 2;
+    /* UND DAMIT ENTFÄLLT DER GRUND FÜR `text-align: end`.
+     *
+     * Oben steht er, damit die Zutatenzahl bündig zum Chevron bleibt, während
+     * sie in derselben Zeile rechts vom Namen sitzt. Hier bekommt sie ihre
+     * eigene volle Zeile - der Name beginnt links, sein Untertitel endete
+     * rechts, und die Zeile verlor ihre Anatomie: gemessen bei 375px stand
+     * „Chicken Tikka Masala" bei x=29 und „6 Zutaten" 257px weiter rechts
+     * darunter. Jede andere Liste der App hält Name und Meta auf einer Kante.
+     *
+     * Die Mindestbreite geht mit: sie hielt die Spalte für die Breitfassung
+     * frei und presst hier nur noch eine volle Zeile auf 15ch. */
+    min-width: 0;
+    text-align: start;
   }
 }
 

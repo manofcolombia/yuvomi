@@ -170,6 +170,32 @@ test('PATCH /catalog/:id — 404/400/Teil-Update/Deaktivieren', async () => {
   assert.equal(upd.body.data.cost, 10, 'cost unverändert');
 });
 
+test('PATCH /catalog/:id — gesendetes null leert, fehlendes Feld erhält (#789)', async () => {
+  // Die UI schickt beim Speichern IMMER alle Felder, leere als `null`. Wer eine
+  // Prämie ohne Icon anlegt und danach nur den Preis ändert, schickt also
+  // `icon: null` mit - und bekam den Text "null" als Icon zurück.
+  const id = (await call('POST', '/catalog', { body: { name: 'Ohne Icon', cost: 7 } })).body.data.id;
+  const kept = await call('PATCH', `/catalog/${id}`, { body: { name: 'Ohne Icon', cost: 8, icon: null, description: null } });
+  assert.equal(kept.body.data.icon, null, 'icon bleibt NULL, nicht der Text "null"');
+  assert.equal(kept.body.data.description, null, 'description bleibt NULL, nicht der Text "null"');
+  const stored = db.prepare('SELECT icon, description FROM reward_catalog WHERE id=?').get(id);
+  assert.equal(stored.icon, null, 'auch in der DB steht kein "null"');
+  assert.equal(stored.description, null);
+
+  // Die Gegenrichtung muss erhalten bleiben: gesendetes `null` LEERT weiterhin,
+  // sonst wäre ein gesetztes Icon nicht mehr zu entfernen.
+  await call('PATCH', `/catalog/${id}`, { body: { icon: '🎁', description: 'Da' } });
+  const cleared = await call('PATCH', `/catalog/${id}`, { body: { icon: null, description: null } });
+  assert.equal(cleared.body.data.icon, null, 'null leert ein gesetztes Icon');
+  assert.equal(cleared.body.data.description, null, 'null leert eine gesetzte Beschreibung');
+
+  // Und ein fehlendes Feld lässt den Wert unangetastet.
+  await call('PATCH', `/catalog/${id}`, { body: { icon: '🍬', description: 'Bleibt' } });
+  const untouched = await call('PATCH', `/catalog/${id}`, { body: { cost: 9 } });
+  assert.equal(untouched.body.data.icon, '🍬', 'fehlendes icon-Feld ändert nichts');
+  assert.equal(untouched.body.data.description, 'Bleibt', 'fehlendes description-Feld ändert nichts');
+});
+
 test('GET /catalog — Nicht-Admin nur aktive, Admin all=1 auch inaktive', async () => {
   const tmp = (await call('POST', '/catalog', { body: { name: 'Verborgen', cost: 5 } })).body.data.id;
   await call('PATCH', `/catalog/${tmp}`, { body: { is_active: false } });

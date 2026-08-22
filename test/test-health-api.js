@@ -351,6 +351,82 @@ test('Logs: ein geplanter Eintrag lässt sich nicht löschen, nur zurücknehmen'
   assert.equal(undone.body.data.status, 'pending');
 });
 
+// --------------------------------------------------------
+// Bedarfsmedikation (#700)
+// --------------------------------------------------------
+
+test('PRN: Mindestabstand und Bedarfsdosis werden gespeichert und geändert', async () => {
+  asA();
+  const created = await call('POST', '/medications', {
+    name: 'Excedrin', prn: true, min_interval_hours: 6, prn_dose_qty: 2,
+  });
+  assert.equal(created.status, 201);
+  assert.equal(created.body.data.prn, 1);
+  assert.equal(created.body.data.min_interval_hours, 6);
+  assert.equal(created.body.data.prn_dose_qty, 2);
+
+  // Halbe Stunden kommen auf Beipackzetteln vor - der Wert ist deshalb REAL.
+  const patched = await call('PATCH', `/medications/${created.body.data.id}`, { min_interval_hours: 4.5 });
+  assert.equal(patched.body.data.min_interval_hours, 4.5);
+
+  // Und wieder abräumen, wenn der Bedarfshaken fällt.
+  const cleared = await call('PATCH', `/medications/${created.body.data.id}`, {
+    prn: false, min_interval_hours: null, prn_dose_qty: null,
+  });
+  assert.equal(cleared.body.data.min_interval_hours, null);
+  assert.equal(cleared.body.data.prn_dose_qty, null);
+});
+
+test('PRN: ein unmöglicher Mindestabstand wird abgewiesen', async () => {
+  asA();
+  // 0 und negativ ergäben einen Countdown, der immer abgelaufen ist; alles über
+  // vier Wochen beschreibt keine Bedarfsdosis mehr, sondern einen Zeitplan.
+  for (const value of [0, -1, 24 * 29, 'bald']) {
+    const res = await call('POST', '/medications', { name: 'Kaputt', prn: true, min_interval_hours: value });
+    assert.equal(res.status, 400, `min_interval_hours=${value} hätte 400 geben müssen`);
+  }
+});
+
+test('PRN: eine Dosis ohne Zeitplan taucht in ihrem Zeitraum auf', async () => {
+  // Der Kern von #700: Ein Bedarfsmedikament hat keinen Zeitplan, also ist
+  // `scheduled_at` NULL - und ein Vergleich mit NULL ist unbekannt. Vorher fiel
+  // die Dosis damit aus JEDEM Zeitraum heraus, war also weder im Protokoll zu
+  // finden noch als Grundlage für den Countdown zu lesen.
+  asA();
+  const med = await call('POST', '/medications', { name: 'Bedarfsmittel', prn: true, min_interval_hours: 6 });
+  const id = med.body.data.id;
+
+  const logged = await call('POST', `/medications/${id}/logs`, {
+    status: 'taken', taken_at: '2026-06-10T12:40',
+  });
+  assert.equal(logged.status, 201);
+  assert.equal(logged.body.data.scheduled_at, null);
+
+  const inRange = await call('GET', `/medications/${id}/logs?from=2026-06-10T00:00&to=2026-06-10T23:59`);
+  assert.equal(inRange.body.data.length, 1);
+  assert.equal(inRange.body.data[0].taken_at, '2026-06-10T12:40');
+
+  // Und außerhalb ihres Tages bleibt sie draußen - der Filter ist nicht bloß
+  // durchlässig geworden.
+  const outside = await call('GET', `/medications/${id}/logs?from=2026-06-11T00:00&to=2026-06-11T23:59`);
+  assert.equal(outside.body.data.length, 0);
+});
+
+test('PRN: die letzte Minute des Tages fällt nicht aus ihrem Tag', async () => {
+  // In derselben Spalte liegen zwei Schreibweisen: Wanduhrzeit ohne Zone und
+  // ISO mit 'Z' und Sekunden. Ohne den Schnitt auf Minuten wäre '…T23:59:30Z'
+  // größer als die Obergrenze '…T23:59'.
+  asA();
+  const med = await call('POST', '/medications', { name: 'Spätdosis', prn: true });
+  const id = med.body.data.id;
+  db.prepare(
+    "INSERT INTO medication_logs (medication_id, status, taken_at, created_at) VALUES (?, 'taken', NULL, ?)"
+  ).run(id, '2026-06-12T23:59:30Z');
+
+  const res = await call('GET', `/medications/${id}/logs?from=2026-06-12T00:00&to=2026-06-12T23:59`);
+  assert.equal(res.body.data.length, 1);
+});
+
 test('Medications: DELETE kaskadiert Logs (kein Fremdzugriff mehr)', async () => {
   asA();
   const del = await call('DELETE', `/medications/${medId}`);
@@ -891,6 +967,24 @@ test('Export: from/to-Zeitraum + Personen-Filter über alle CSV-Endpunkte', asyn
   assert.equal(vitalsPerson.status, 200);
 });
 
+test('Export: eine Bedarfsdosis steht im Auszug ihres Zeitraums (#700)', async () => {
+  // Der Auszug ist der Ort, an dem das Fehlen am teuersten ist: er wird
+  // ausgedruckt und einer Ärztin hingelegt. Ohne Zeitplan ist `scheduled_at`
+  // NULL, und der Zeitraumfilter warf die Zeile damit lautlos heraus.
+  asA();
+  const med = await call('POST', '/medications', { name: 'exp-prn-marker', prn: true });
+  await call('POST', `/medications/${med.body.data.id}/logs`, {
+    status: 'taken', taken_at: '2026-08-03T21:15',
+  });
+
+  const inRange = await callCsv('/export/meds-logs?from=2026-08-01&to=2026-08-05');
+  assert.equal(inRange.status, 200);
+  assert.ok(inRange.text.includes('exp-prn-marker'), 'Bedarfsdosis fehlt im Auszug');
+
+  const outOfRange = await callCsv('/export/meds-logs?from=2026-08-06&to=2026-08-10');
+  assert.ok(!outOfRange.text.includes('exp-prn-marker'), 'Bedarfsdosis steht im falschen Zeitraum');
+});
+
 test('Cycle: Perioden from/to-Filter + Log löschen', async () => {
   asA();
   await call('POST', '/cycle/periods', { start_date: '2028-03-01', note: 'per-in' });
@@ -1113,3 +1207,26 @@ test('Betreuung: niemand wird sein eigener Betreuer, Unbekannte werden abgelehnt
 });
 
 test.after(() => { server.close(); });
+
+test('PRN: 0 als Mindestabstand nennt seine Grenze richtig', async () => {
+  // Die Meldung sagte „between 0 and 672", wies die 0 aber ab - und das
+  // Formularfeld liess sie zu. Wer 0 eintippt, soll lesen, was gilt.
+  asA();
+  const res = await call('POST', '/medications', { name: 'Grenzfall', prn: true, min_interval_hours: 0 });
+  assert.equal(res.status, 400);
+  assert.match(JSON.stringify(res.body), /greater than 0 and at most 672/);
+});
+
+test('PRN: eine negative Bedarfsdosis wird abgewiesen', async () => {
+  // `v.num` nimmt negative Zahlen an (das Budget rechnet damit), und der
+  // Bestandsabzug rechnet `stock_qty - dose`: -2 würde den Bestand bei jeder
+  // Einnahme ERHÖHEN. Das Formularfeld sperrt das, ein API-Token nicht.
+  asA();
+  const res = await call('POST', '/medications', { name: 'Minusdosis', prn: true, prn_dose_qty: -2 });
+  assert.equal(res.status, 400);
+
+  const ok = await call('POST', '/medications', { name: 'Plusdosis', prn: true, prn_dose_qty: 2 });
+  assert.equal(ok.status, 201);
+  const patched = await call('PATCH', `/medications/${ok.body.data.id}`, { prn_dose_qty: -1 });
+  assert.equal(patched.status, 400);
+});

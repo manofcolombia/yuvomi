@@ -6,6 +6,8 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { eachRule } from './css-rules.js';
 
 // /i18n.js wird durch test-browser-loader.mjs gemockt (--loader Flag)
 const { wireBlurValidation, btnSuccess, btnError } = await import('../public/components/modal.js');
@@ -272,4 +274,92 @@ test('btnError: entfernt btn--shaking zuerst um Animation-Restart zu erzwingen',
   btnError(btn);
   assert.equal(order[0], 'remove:btn--shaking');
   assert.equal(order[1], 'add:btn--shaking');
+});
+
+// --------------------------------------------------------
+// Panel-Overflow (#805)
+// --------------------------------------------------------
+
+/* Das .modal-panel darf keine Scroll-Box haben.
+ *
+ * `overflow: hidden` erzeugt eine - unsichtbar fuer den Nutzer (keine
+ * Scrollbar), aber programmatisch scrollbar. Chrome ruft beim Fokussieren
+ * eines <select> scrollIntoView auf ALLEN Vorfahren auf und schob das Panel
+ * dabei um 507px hoch: Kopfzeile und Schliessen-X verliessen das Sichtfeld,
+ * ohne Weg zurueck. Ausloeser war ein .sr-only-Input (position:absolute im
+ * Fluss), das dem overflow:auto des Bodys entkommt.
+ *
+ * `overflow: clip` ist visuell deckungsgleich, erzeugt aber gar keine
+ * Scroll-Box. Gescrollt wird strukturell nur im Body.
+ *
+ * Der Guard prueft beide Enden der Zusage - sonst faellt nicht auf, wenn
+ * jemand die Regel spaeter im selben Stylesheet auf hidden zuruecksetzt. */
+const layoutCss = readFileSync(new URL('../public/styles/layout.css', import.meta.url), 'utf8');
+
+function overflowValuesOf(css, selector) {
+  const out = [];
+  for (const rule of eachRule(css)) {
+    if (!rule.selector.split(',').map((s) => s.trim()).includes(selector)) continue;
+    const m = rule.body.match(/(?:^|;)\s*overflow\s*:\s*([^;]+)/);
+    if (m) out.push(m[1].trim());
+  }
+  return out;
+}
+
+test('#805: .modal-panel bekommt overflow:clip, nie hidden', () => {
+  const werte = overflowValuesOf(layoutCss, '.modal-panel');
+  assert.ok(werte.length > 0, '.modal-panel setzt gar kein overflow - die Zusage steht nirgends');
+  assert.ok(
+    werte.every((v) => v === 'clip'),
+    `.modal-panel muss overflow:clip tragen, gefunden: ${werte.join(', ')}. `
+    + 'hidden macht das Panel programmatisch scrollbar und schiebt das Schliessen-X aus dem Bild (#805).',
+  );
+});
+
+test('#805: der Modal-Body bleibt der scrollende Container', () => {
+  const rule = [...eachRule(layoutCss)].find((r) => r.selector.trim() === '.modal-panel__body');
+  assert.ok(rule, '.modal-panel__body fehlt');
+  assert.match(
+    rule.body, /overflow-y\s*:\s*auto/,
+    '.modal-panel__body muss overflow-y:auto behalten - nimmt man ihm das Scrollen, '
+    + 'ist langer Modal-Inhalt hinter dem clip des Panels unerreichbar.',
+  );
+});
+
+/* Zweite Runde zu #805: der erste Fix sass nur am Panel und hat den Fehler
+ * damit bloss eine Ebene hoeher geschoben.
+ *
+ * Ab 768px trug .modal-panel kein position:relative - das stand allein in der
+ * Mobile-Media-Query. In der Rolle des Containing Blocks hielt es sich dort nur
+ * durch den transform-Endwert seiner Einfahr-Animation, und den nimmt
+ * `prefers-reduced-motion: reduce` weg. Dann faengt das .sr-only-Input am
+ * fixed .modal-overlay an, dessen `overflow: hidden` dieselbe unsichtbare
+ * Scroll-Box ist: gemessen 1259px Scroll-Hoehe bei 700px Sichtfeld, das Panel
+ * liess sich um 507px hochschieben, Kopfzeile und Schliessen-X weg.
+ *
+ * Beide Enden gehoeren gehalten: dem Overlay die Scroll-Box nehmen UND das
+ * Panel breakpoint-unabhaengig zum Containing Block machen. Eine Zusage, die an
+ * einer Animation haengt, ist keine. */
+
+test('#805: .modal-overlay bekommt overflow:clip, nie hidden', () => {
+  const werte = overflowValuesOf(layoutCss, '.modal-overlay');
+  assert.ok(werte.length > 0, '.modal-overlay setzt gar kein overflow - die Zusage steht nirgends');
+  assert.ok(
+    werte.every((v) => v === 'clip'),
+    `.modal-overlay muss overflow:clip tragen, gefunden: ${werte.join(', ')}. `
+    + 'hidden macht das Overlay programmatisch scrollbar und schiebt das ganze Panel '
+    + 'samt Schliessen-X aus dem Bild (#805).',
+  );
+});
+
+test('#805: .modal-panel ist auf jeder Breite der Containing Block', () => {
+  const regeln = [...eachRule(layoutCss)]
+    .filter((r) => r.selector.split(',').map((s) => s.trim()).includes('.modal-panel'))
+    .filter((r) => /(?:^|;)\s*position\s*:\s*relative/.test(r.body));
+  assert.ok(
+    regeln.some((r) => r.at.length === 0),
+    '.modal-panel braucht position:relative in der BASISREGEL, nicht nur in einer '
+    + `Media-Query (gefunden in: ${regeln.map((r) => r.at.join(' ') || 'Basis').join(' | ') || 'keiner Regel'}). `
+    + 'Sonst haengen absolut positionierte Nachfahren am .modal-overlay statt am Panel (#805).',
+  );
 });

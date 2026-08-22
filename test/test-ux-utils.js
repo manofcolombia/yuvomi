@@ -5,9 +5,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, globSync, readFileSync } from 'node:fs';
+import { eachRule } from './css-rules.js';
 
 // Minimales Window/Navigator-Mock für Node
-const { stagger, vibrate, withBusy, scheduleUndoableDelete } = await (async () => {
+const { stagger, vibrate, withBusy, scheduleUndoableDelete, wireSwipeToDismiss } = await (async () => {
   global.window = {
     matchMedia: () => ({ matches: false }),
     addEventListener: () => {},
@@ -287,4 +288,146 @@ test('parseDateInput: 8 raw digits — invalid date returns empty string', () =>
   localStorage.setItem('yuvomi-date-format', 'dmy');
   assert.equal(parseDateInput('99992026'), '');
   assert.equal(parseDateInput('00000000'), '');
+});
+
+// --------------------------------------------------------
+// Wischen zum Verwerfen (#821)
+// --------------------------------------------------------
+
+/* WARUM DIESE GESTE EINEN TEST BRAUCHT UND NICHT NUR EINEN BLICK:
+ * Sie war app-weit kaputt, sah dabei aber heil aus. Der Toast trug seinen
+ * „Rückgängig"-Knopf, der Knopf trug seinen Handler - nur erreichte ihn kein
+ * Mausklick mehr, weil der Zeiger schon beim `pointerdown` eingefangen wurde
+ * und der `click` damit ans einfangende Element ging. Per Tastatur und per
+ * Touch löste derselbe Knopf weiterhin aus, also blieb der Bruch unter jeder
+ * flüchtigen Prüfung. Gemessen an echtem Chrome, hier festgehalten. */
+
+function swipeStub() {
+  const handlers = {};
+  const el = {
+    style: {},
+    captured: [],
+    addEventListener: (name, fn) => { (handlers[name] ??= []).push(fn); },
+    setPointerCapture: (id) => { el.captured.push(id); },
+  };
+  const fire = (name, props = {}) => {
+    for (const fn of handlers[name] ?? []) fn({ button: 0, pointerId: 1, clientX: 0, ...props });
+  };
+  return { el, fire };
+}
+
+test('wireSwipeToDismiss: blosses Drüberfahren verschiebt nichts', () => {
+  const { el, fire } = swipeStub();
+  wireSwipeToDismiss(el, { onDismiss: () => {} });
+
+  // Maus fährt über den Toast, ohne gedrückt zu sein: die Falle war, dass der
+  // Startpunkt noch auf 0 stand und der Toast damit um die halbe Fensterbreite
+  // wegrutschte - unsichtbar (opacity 0), bevor der Zeiger seinen Knopf erreichte.
+  fire('pointermove', { clientX: 787 });
+
+  assert.equal(el.style.transform, undefined, 'ohne gedrückte Taste darf sich nichts verschieben');
+  assert.equal(el.style.opacity, undefined, 'ohne gedrückte Taste darf nichts ausgeblendet werden');
+});
+
+test('wireSwipeToDismiss: ein Klick fängt den Zeiger nicht ein', () => {
+  const { el, fire } = swipeStub();
+  let dismissed = false;
+  wireSwipeToDismiss(el, { onDismiss: () => { dismissed = true; } });
+
+  fire('pointerdown', { clientX: 100 });
+  fire('pointermove', { clientX: 104 }); // innerhalb der Klick-Toleranz
+  fire('pointerup', { clientX: 104 });
+
+  assert.deepEqual(el.captured, [], 'unterhalb der Wisch-Schwelle darf kein Pointer-Capture gesetzt werden');
+  assert.equal(dismissed, false, 'ein Klick verwirft nicht');
+});
+
+test('wireSwipeToDismiss: aus dem Druck wird eine Wischgeste', () => {
+  const { el, fire } = swipeStub();
+  let dismissed = false;
+  wireSwipeToDismiss(el, { onDismiss: () => { dismissed = true; } });
+
+  fire('pointerdown', { clientX: 100 });
+  fire('pointermove', { clientX: 130 });
+  assert.deepEqual(el.captured, [1], 'jenseits der Toleranz wird der Zeiger genau einmal eingefangen');
+  assert.equal(el.style.transform, 'translateX(30px)');
+
+  fire('pointermove', { clientX: 160 });
+  assert.deepEqual(el.captured, [1], 'ein zweites Capture wäre überflüssig');
+
+  fire('pointerup', { clientX: 160 });
+  assert.equal(dismissed, true, 'jenseits der Schwelle wird verworfen');
+  assert.equal(el.style.transform, '', 'der Versatz wird zurückgenommen');
+  assert.equal(el.style.opacity, '');
+});
+
+test('wireSwipeToDismiss: ein zu kurzer Wisch federt zurück', () => {
+  const { el, fire } = swipeStub();
+  let dismissed = false;
+  wireSwipeToDismiss(el, { onDismiss: () => { dismissed = true; } });
+
+  fire('pointerdown', { clientX: 100 });
+  fire('pointermove', { clientX: 125 }); // über die Toleranz, unter der Schwelle
+  fire('pointerup', { clientX: 125 });
+
+  assert.equal(dismissed, false, 'unter der Schwelle bleibt der Toast stehen');
+  assert.equal(el.style.transform, '', 'der Versatz wird zurückgenommen');
+});
+
+test('wireSwipeToDismiss: ein abgebrochener Zeiger lässt nichts verschoben zurück', () => {
+  const { el, fire } = swipeStub();
+  wireSwipeToDismiss(el, { onDismiss: () => {} });
+
+  // Übernimmt der Browser die Geste als Bildlauf, kommt `pointercancel` statt
+  // `pointerup` - ohne diesen Pfad bliebe der Toast halbtransparent hängen.
+  fire('pointerdown', { clientX: 100 });
+  fire('pointermove', { clientX: 140 });
+  fire('pointercancel');
+
+  assert.equal(el.style.transform, '', 'nach dem Abbruch steht der Toast wieder gerade');
+  assert.equal(el.style.opacity, '');
+
+  fire('pointermove', { clientX: 400 });
+  assert.equal(el.style.transform, '', 'der abgebrochene Druck zählt nicht weiter');
+});
+
+test('wireSwipeToDismiss: die Sekundärtaste startet keine Geste', () => {
+  const { el, fire } = swipeStub();
+  wireSwipeToDismiss(el, { onDismiss: () => {} });
+
+  fire('pointerdown', { clientX: 100, button: 2 });
+  fire('pointermove', { clientX: 200 });
+
+  assert.equal(el.style.transform, undefined, 'ein Rechtsklick ist keine Wischgeste');
+});
+
+test('der Toast überlässt die waagerechte Geste dem Script', () => {
+  // Gegenstück zum Handler: ohne `touch-action` hält der Browser sich die
+  // Deutung offen, übernimmt den waagerechten Wisch als Bildlauf und beendet
+  // den Zeiger mit `pointercancel` - auf dem Telefon war der Wisch damit nie
+  // auslösbar (gemessen in Chrome mit Touch-Emulation).
+  const css = readFileSync(new URL('../public/styles/layout.css', import.meta.url), 'utf8');
+  const toastRule = [...eachRule(css)].find(
+    (r) => r.selector === '.toast' && r.at.length === 0,
+  );
+  assert.ok(toastRule, '.toast muss eine Basisregel in layout.css haben');
+  assert.match(
+    toastRule.body,
+    /touch-action:\s*pan-y/,
+    '.toast braucht touch-action: pan-y, sonst frisst der Bildlauf die Wischgeste',
+  );
+});
+
+test('showToast verdrahtet die Geste über den geteilten Helfer', () => {
+  // Der Inline-Zwilling im Router war die Fassung mit den zwei Fallen. Bleibt
+  // er weg, kann er sie nicht ein zweites Mal einsammeln.
+  const router = readFileSync(new URL('../public/router.js', import.meta.url), 'utf8');
+  assert.ok(
+    router.includes('wireSwipeToDismiss(toast'),
+    'der Toast muss die Geste aus utils/ux.js beziehen',
+  );
+  assert.ok(
+    !router.includes('setPointerCapture'),
+    'die Shell darf keinen eigenen Wisch-Zwilling mit Pointer-Capture halten',
+  );
 });

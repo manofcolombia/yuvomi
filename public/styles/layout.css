@@ -200,17 +200,18 @@
  * also auf ihm und nicht auf der Zeilenaktion darunter - auf „Neu" statt auf
  * „Löschen". Läge es umgekehrt, wäre die strenge Invariante ihren Preis wert.
  *
- * AN .app-content, NICHT AN DEN LISTEN. Die App hat zwei Scrollport-
- * Architekturen: in Küche und Budget ist der Modul-Root `overflow: hidden` und
- * eine innere Liste scrollt, in Belohnungen und anderswo scrollt .app-content
- * die ganze Seite. Das Padding trifft beide richtig, aber auf zwei Wegen, und
- * das ist geprüft statt angenommen: wo `.app-content` selbst scrollt (Dashboard,
- * Aufgaben, Belohnungen …), reitet es als Nachlauf am Inhaltsende und der
- * Scrollport bleibt fensterhoch. Wo der Modul-Root `height: 100%` trägt,
- * verkürzt es dessen Bezugshöhe - dort verhält sich alles exakt wie mit der
- * Marge, also ohne Regress. Sieben `padding-bottom: *-fab-clearance` in vier
- * Dateien bleiben abgeschafft, samt der drei auseinandergedrifteten Kopien des
- * Tokens.
+ * ALS SUMMAND, NICHT ALS FERTIGES PADDING (2026-08-20). Bis dahin schrieb
+ * diese Regel den Nachlauf direkt an `.app-content` - mit der Begründung, die
+ * App habe zwei Scrollport-Architekturen und das Padding treffe beide richtig,
+ * nur auf zwei Wegen. Der zweite Weg war der falsche: wo der Modul-Root
+ * `height: 100%; overflow: hidden` trägt, verkürzt ein Padding an
+ * `.app-content` dessen Bezugshöhe, statt am Inhaltsende zu reiten. Die
+ * Sichtfläche geht verloren UND der Streifen ist nicht scrollbar. Was dort
+ * gebraucht wird, ist ein Nachlauf im echten Scrollport, und den kennt nur die
+ * Seite - deshalb `.page-scrollport` (Regel weiter unten).
+ *
+ * Sieben `padding-bottom: *-fab-clearance` in vier Dateien bleiben abgeschafft,
+ * samt der drei auseinandergedrifteten Kopien des Tokens.
  *
  * NUR MIT FAB: `:has()` fragt die Seite, statt eine Klasse zu verlangen, die
  * beim nächsten neuen Modul vergessen wird. `:not([hidden])`, weil eine Seite
@@ -218,47 +219,127 @@
  *
  * Gefragt wird an der SHELL, nicht am Scrollport: der FAB hängt seit #634 in
  * `.fab-layer` neben `.app-content`, nicht mehr darin. */
-.app-shell:has(.fab-layer .page-fab:not([hidden])) .app-content {
-  padding-block-end: var(--fab-safe-zone);
+.app-shell:has(.fab-layer .page-fab:not([hidden])) {
+  --fab-tail: var(--fab-safe-zone);
 }
 
-/* UND DIE PILLE BRAUCHT DENSELBEN NACHLAUF. Sie ist seit Etappe 5 eine fixierte
- * Shell-Fläche über der Liste (siehe .list-bulkbar) und verdeckt am Scroll-Ende
- * sonst genau die Zeilen, auf die sie sich bezieht - derselbe Defekt, den
- * Sonde 18 für den FAB misst. Am Finger fällt --fab-safe-zone auf 0 (der FAB
- * sitzt dort in der Nav-Kapsel), dort ist die Pillenzone der ganze Nachlauf.
+/* ── UND DER DRITTE FIXIERTE KÖRPER: DER INSTALL-BANNER ──
  *
- * ZWEI REGELN STATT EINER SUMME: `:has()` trägt die Spezifität seines
- * Arguments, eine Regel mit nur `:has(.list-bulkbar)` stünde UNTER der
- * FAB-Regel darüber und bliebe wirkungslos, sobald ein FAB da ist. Und genau
- * das ist der Normalfall - beide Seiten mit Pille haben einen. */
-.app-shell:has(.fab-layer .page-fab:not([hidden])):has(.list-bulkbar) .app-content {
-  padding-block-end: calc(var(--fab-safe-zone) + var(--bulk-pill-safe-zone));
+ * FAB und Sammelaktions-Pille bekamen ihren Nachlauf, der Banner nie - obwohl
+ * er dieselbe Bauart hat (fixiert, über dem Scrollport, verdeckt das Ende der
+ * Seite). Gemessen auf /rewards bei 375px: 89px der letzten Punktestandszeile
+ * lagen bei maximalem Scroll unter ihm, mit Balken und „Einlösen" darin. Kein
+ * Scrollweg führte dorthin.
+ *
+ * ALS SUMMAND, NICHT ALS VIERTE `:has()`-REGEL. Der Nachlauf hat schon drei
+ * Fassungen (FAB, Pille, beides), und jede weitere fixierte Fläche verdoppelt
+ * sie. Der Banner steht deshalb als Variable in allen Fassungen - ohne ihn ist
+ * sie 0 und die Regeln rechnen wie bisher.
+ *
+ * DIE HÖHE KOMMT AUS DEM BAUTEIL (`--install-prompt-height`, gesetzt per
+ * ResizeObserver in yuvomi-install-prompt.js): sie hängt am Text, und der
+ * bricht in 24 Sprachen unterschiedlich um.
+ *
+ * DER FALLBACK IST GEMESSEN, keine Schätzung: 89px ist die deutsche
+ * iOS-Fassung mit zweizeiligem Untertitel, also der höhere der beiden
+ * Bannertexte. Er trägt allein - der Nachlauf stimmt auch dann, wenn die
+ * Meldung ausbleibt, weil das Banner nach einem Re-Render neu aufgebaut wurde.
+ * Ein Fallback, der nur den kurzen Fall kennt, wäre genau in den Sprachen
+ * falsch, in denen der Text umbricht. */
+/* BEIDE ALS `:root`, SONST GEWINNT DIE BASIS. Die erste Fassung schrieb den
+ * Zustand als `html:has(yuvomi-install-prompt)` - Typ plus :has() mit einem
+ * Typ-Argument ist Spezifitaet (0,0,2) und liegt damit UNTER dem `:root` der
+ * Basis (0,1,0). Gemessen: `--install-prompt-height` stand korrekt auf 89px,
+ * der Nachlauf blieb 0, und die letzte Zeile lag weiter 97px unter dem Banner.
+ * Dieselbe Falle, vor der die Pillen-Regel weiter unten im Kommentar warnt. */
+/* DIE DREI SUMMANDEN DES NACHLAUFS, jeder 0, solange seine Fläche fehlt.
+ *
+ * Sie stehen als Variablen und nicht als vier `:has()`-Kombinationen an der
+ * Nachlauf-Regel: mit drei fixierten Flächen wären das acht Regeln, von denen
+ * jede die Spezifitätsfalle von `:has()` mitzurechnen hätte. Als Summanden
+ * bleibt EINE Regel übrig, und die vierte Fläche kostet eine Zeile statt einer
+ * Verdopplung.
+ *
+ * `--fab-tail` und `--bulk-pill-tail` werden an `.app-shell` gesetzt (beide
+ * Flächen hängen dort), `--install-prompt-tail` an `:root` (das Banner ist ein
+ * Kind von `body`). Die Summe zieht `.app-content`, siehe dort - sie MUSS
+ * unterhalb aller drei Setzer stehen, weil eine Custom Property ihre `var()`
+ * an der Stelle auflöst, an der sie DEKLARIERT wird, nicht dort, wo sie
+ * benutzt wird. An `:root` deklariert hätte sie alle drei als 0 gelesen. */
+:root {
+  --install-prompt-tail: 0px;
+  --fab-tail: 0px;
+  --bulk-pill-tail: 0px;
 }
 
-.app-shell:not(:has(.fab-layer .page-fab:not([hidden]))):has(.list-bulkbar) .app-content {
-  padding-block-end: var(--bulk-pill-safe-zone);
+:root:has(yuvomi-install-prompt) {
+  --install-prompt-tail: calc(var(--install-prompt-height, 89px) + var(--space-4));
 }
 
-/* UND DER NACHLAUF MUSS AN DAS, WAS WIRKLICH SCROLLT (Critique 2026-08-13).
+/* Die Pille ist der zweite Summand - dieselbe Bauart wie der FAB: fixierte
+ * Shell-Fläche über dem Scrollport, die am Scroll-Ende sonst genau die Zeilen
+ * verdeckt, auf die sie sich bezieht. Am Finger fällt --fab-safe-zone auf 0
+ * (der FAB sitzt dort in der Nav-Kapsel), dort ist sie der ganze Nachlauf. */
+.app-shell:has(.list-bulkbar) {
+  --bulk-pill-tail: var(--bulk-pill-safe-zone);
+}
+
+/* Die Summe. AN .app-content UND NICHT AN :root - sie liest die drei Summanden
+ * an der Stelle, an der sie deklariert wird (siehe :root oben), und alle drei
+ * sind erst hier fertig. */
+.app-content {
+  --shell-tail: calc(var(--fab-tail) + var(--bulk-pill-tail) + var(--install-prompt-tail));
+}
+
+/* --------------------------------------------------------
+ * DER NACHLAUF GEHÖRT AN DAS, WAS WIRKLICH SCROLLT
  *
- * Die zwei Regeln darüber setzen ihn an `.app-content` - und genau dort scrollt
- * bei den drei Modulen mit Pille gar nichts. Einkauf und Vorrat scrollen in
- * `.list-scroller`, die Kontakte in `.contacts-list`; `.app-content` ist bei
- * ihnen ein `overflow: hidden`-Rahmen um eine Flex-Spalte. Der Nachlauf landete
- * damit an einer Box, die keinen Scroll-Ende-Zustand hat, und die Pille verdeckt
- * am Listenende weiter die Zeilen, auf die sie sich bezieht: gemessen 16.334px²
- * auf /contacts, 16.732px² auf /shopping. Eine Regel, die nie feuert, ist im
- * Quelltext nicht von einer zu unterscheiden, die ihre Sache tut.
+ * Die App hat zwei Scrollport-Architekturen. In Belohnungen, Aufgaben,
+ * Dokumenten, Gesundheit und auf der Übersicht scrollt `.app-content` die ganze
+ * Seite. In Küche, Budget, Kontakten, Notizen und Kalender trägt der Modul-Root
+ * `height: 100%; overflow: hidden` und genau ein Kind darin scrollt - acht
+ * Seiten, gemessen an ihren `*-page`-Regeln.
  *
- * `.has-bulk-safe-zone` ist die ROLLE „ich bin der Scrollport einer Seite, die
- * eine Sammelaktions-Pille zeigt". Sie steht bewusst nicht als Liste von
- * Modul-Selektoren hier - eine Allowlist über N Dateien deckt keine Regel ab,
- * und dieses Repo hat das schon dreimal bezahlt. Stattdessen trägt jeder
- * Scrollport sie selbst, und ein Guard prüft die Gegenrichtung: wer
- * `setBulkPill` aufruft, muss sie vergeben haben. */
-.app-shell:has(.list-bulkbar) .has-bulk-safe-zone {
-  padding-block-end: var(--bulk-pill-safe-zone);
+ * BIS 2026-08-20 BEKAMEN BEIDE DENSELBEN NACHLAUF AN `.app-content`, und in der
+ * zweiten Architektur war das jedes Mal falsch: das Padding verkürzt dort die
+ * Bezugshöhe des Modul-Roots, statt am Inhaltsende zu reiten. Was entsteht, ist
+ * ein Streifen UNTERHALB des Scrollports - er scrollt nicht mit, er trägt
+ * nichts, und die Fläche, die er kostet, fehlt der Liste bei jedem Scrollstand.
+ * Gemessen mit sichtbarer Sammelaktions-Pille, in allen drei Modulen gleich:
+ *
+ *   1440x900    Scrollport 641 statt 717px, 76px totes Band darunter
+ *   1680x1050   Scrollport 791 statt 867px, 76px
+ *   390x844     Scrollport 575 statt 655px, 80px
+ *
+ * Der Defekt war zweimal repariert worden, ohne dass die Ursache fiel: 2026-08-13
+ * kam eine zweite Regel für den echten Scrollport dazu (`.has-bulk-safe-zone`),
+ * die alte blieb daneben stehen, und seitdem zahlten die drei Module mit Pille
+ * sie doppelt. Das Muster ist der eigentliche Befund - der Nachlauf gehört
+ * NICHT an die Box, die den Scrollport enthält, sondern an den Scrollport.
+ *
+ * `.page-scrollport` ist die Rolle „ich bin der Scrollport meiner Seite". Sie
+ * steht bewusst nicht als Liste von Modul-Selektoren hier: eine Allowlist über
+ * N Dateien deckt keine Regel ab, und dieses Repo hat das schon dreimal
+ * bezahlt. Jeder Scrollport trägt sie selbst, und zwei Guards prüfen beide
+ * Richtungen (test-frontend-audit.js): jede Seite mit eigenem Scrollport
+ * vergibt sie, und keine `.app-content`-Regel setzt den Nachlauf mehr selbst.
+ *
+ * `:not(:has(.page-scrollport))` an BEIDEN Selektoren, und das ist keine
+ * Symmetrie um ihrer selbst willen. Am Default-Port beantwortet es „bringt die
+ * Seite ihren eigenen mit?". An der Rolle beantwortet es dieselbe Frage eine
+ * Ebene tiefer: das Budget schaltet seinen Scrollport bei 640px um (darüber
+ * scrollt `.budget-list` im Panel, darunter das Panel selbst), beide tragen die
+ * Rolle, und der Nachlauf gehört jeweils dem inneren. Ohne den Ausschluss
+ * polsterte das Panel die Liste, die es enthält, aus dem sichtbaren Bereich -
+ * derselbe Fehler wie oben, nur eine Ebene tiefer.
+ *
+ * `--scrollport-pad` ist das EIGENE Bodenpolster eines Scrollports, das der
+ * Nachlauf nicht wegnehmen darf. Wochengitter und Agenda haben eines; ohne
+ * diesen Summanden hätte die Rolle es überschrieben.
+ * -------------------------------------------------------- */
+.app-content:not(:has(.page-scrollport)),
+.app-shell .page-scrollport:not(:has(.page-scrollport)) {
+  padding-block-end: calc(var(--scrollport-pad, 0px) + var(--shell-tail));
 }
 
 /* #main-content wird nach jeder Navigation programmatisch fokussiert, damit
@@ -553,12 +634,18 @@ html:has(.search-overlay--visible) yuvomi-install-prompt {
   user-select: none;
 }
 
-/* Ruhezustand ist --color-surface-elevated, also gilt die Stufe ueber der
- * erhoehten Flaeche - der Surface-Hover faellt hier im Dark mit der eigenen
- * Farbe zusammen (gemessen 1:1, also gar kein Hover). */
+/* Der Hover eines FELDES lebt an seiner Kante, nicht an seiner Flaeche
+ * (Dark-Kur 2026-08-17). Hier stand zusaetzlich der Flaechenschritt auf
+ * --color-surface-elevated-hover, und der drueckte den Placeholder
+ * (Tertiaerfarbe) im Dark unter AA - gemessen 3.82:1, mit der gestiegenen
+ * Rampe 4.32:1, beides unter 4.5. Ein Eingabefeld ist nach dem
+ * Kasten-in-Kasten-Vokabular ein GRIFF und traegt seine Kante; border-strong
+ * gegen border ist in beiden Themes ein klarer Zustand (1.55x dunkel), die
+ * Flaeche muss nichts dazutun. Die uebrigen Traeger der Hover-Stufe
+ * (.more-item, .metric-card--tile, Chips) fuehren keinen Tertiaertext und
+ * behalten ihren Flaechenschritt. */
 .more-sheet__search:hover {
   border-color: var(--color-border-strong, var(--color-border));
-  background-color: var(--color-surface-elevated-hover);
 }
 
 .more-sheet__search:active {
@@ -592,31 +679,41 @@ html:has(.search-overlay--visible) yuvomi-install-prompt {
   flex: 1;
 }
 
-/* ── Das Markensiegel (Block 2, 2026-08-10) ──
+/* ── Das Markensiegel (Block 2, 2026-08-10; ein Gesicht seit 2026-08-17) ──
  * Yuvomis Ausweisform, abgeleitet aus der Bildmarke (drei transluzente
- * Kreise mit Sheen): ein kreisrunder, getoenter Chip, der die Herkunft
- * eines Objekts benennt - Flaeche als --tint-surface des Familientons,
- * Icon im vollen Ton, Sheen-Lichtkante als Gradient aus --glass-sheen.
+ * Kreise mit Sheen): eine kreisrunde Vollton-Scheibe, die die Herkunft eines
+ * Objekts benennt - Flaeche im Familienton, Tinte --color-ink-on-vivid,
+ * Sheen-Lichtkante als Gradient aus --glass-sheen.
  * KEIN Glas (kein backdrop-filter): der Sheen-Stop kippt in
  * prefers-reduced-transparency und prefers-contrast mit dem Token auf
- * transparent, der Fallback ist die flache Toenung.
+ * transparent, der Fallback ist die flache Vollton-Scheibe.
  * Einsatzgesetz (Herkunfts-Regel, .impeccable/block2-brief.md): Siegel
  * stehen an Mischstellen (Suche, Heute wichtig, Widget-Koepfe, Mehr) und
  * im eigenen Modul genau einmal im Kopf - nie als Dauer-Dekor in den
  * Listen eines einzelnen Moduls.
  * Farbe pro Instanz ueber --seal-accent (moduleAccentVar bzw.
- * var(--module-*)); ohne Angabe erbt das Siegel den aktiven Modul-Akzent. */
+ * var(--module-*)); ohne Angabe erbt das Siegel den aktiven Modul-Akzent.
+ *
+ * HIER STAND EINE 16-%-TOENUNG AUF EINEM PARAMETRISCHEN GRUND (--seal-base),
+ * UND SIE IST ERSATZLOS ENTFALLEN - mit ihr das --vivid-Gesicht, das es
+ * daneben gab. Der Rueckbau ist die Verallgemeinerung der Widget-Kopf-Kur vom
+ * selben Tag: dark-chroma.mjs hat gemessen, dass eine Beimischung im Dark fast
+ * nur AUFHELLT (Buntheit 4-8 von 24-73 des Volltons), also gerade nicht das
+ * traegt, wofuer das Siegel da ist. Im Light ist der Befund noch schaerfer und
+ * er stand im Mehr-Blatt: Notizen, Dokumente und Inventar teilen sich die
+ * Familie „records", und bei 16 % war ihr Scheibengrund BITWEISE derselbe
+ * (#E1E4EA) - die Toenung loeschte genau den Unterschied, den sie zeigen soll.
+ * Der Kommentar der Kachelreihe hatte den Satz schon: zwei Siegel-Gesichter
+ * auf einem Board waeren zwei Wahrheiten. Es gibt jetzt eines.
+ *
+ * GEMESSEN UEBER ALLE NEUN FAMILIENTOENE, Glyph gegen Scheibe, und zwar an der
+ * UNGUENSTIGSTEN Stelle: unter dem Sheen, wo 16 % Weiss den Ton aufhellen und
+ * eine helle Tinte am wenigsten traegt. Light 3,65-5,18:1, Dark 7,42-12,24:1 -
+ * ueberall ueber der 3:1-Grafikschwelle. Ohne den Sheen liegt der Light-Bereich
+ * bei 5,04-7,17:1; die Spanne dazwischen ist der Preis des Materials, und er
+ * ist bezahlt. */
 .module-seal {
   --seal-accent: var(--module-accent, var(--color-accent));
-  /* DER GRUND, AUF DEM DAS SIEGEL LIEGT, IST EIN PARAMETER - nicht
-   * `--color-surface` festverdrahtet. Die Pro-Hintergrund-Regel gilt fuer die
-   * Toenung genauso wie fuer Text: dieselbe 16-%-Mischung, die auf Weiss eine
-   * sichtbare Scheibe ergibt, liegt auf dem Grouped-Grund bei 1,06:1 und
-   * verschwindet - derselbe Befund, aus dem die Traeger-Regel den Well auf
-   * Surface-3 gestellt hat. Wer das Siegel auf einen anderen Grund setzt
-   * (Modulkopf: --color-bg, Toast: der dunkle Toast-Grund), setzt --seal-base
-   * mit; die Mischung folgt dann seinem echten Hintergrund. */
-  --seal-base: var(--color-surface);
   --seal-icon: var(--icon-md);
   display: inline-flex;
   align-items: center;
@@ -625,15 +722,69 @@ html:has(.search-overlay--visible) yuvomi-install-prompt {
   width: var(--target-sm);
   height: var(--target-sm);
   border-radius: var(--radius-full);
+}
+
+/* ── DAS MATERIAL EINER MARKE, EINMAL ──
+ * Die Vollton-Regel (DESIGN.md, Colors) sagt: was eine Identitaet NENNT,
+ * traegt seine Farbe im Vollton. Das Siegel war der erste Traeger dieser
+ * Regel; die Modulseiten hatten daneben sieben eigene Marken in der
+ * zurueckgenommenen BLASSEN Fassung - 16-%-Waschung im Grund, dieselbe Farbe
+ * blass darueber. Genau die Bauart, die `--vivid` und `--seal-base` gekostet
+ * hat, nur unter anderen Klassennamen; der Guard von damals nannte eine
+ * Klasse, nicht die Regel, und hat sie deshalb nie gesehen.
+ *
+ * WARUM ZWEI SELEKTOREN UND NICHT EINE KLASSE: das Siegel besitzt seine
+ * GEOMETRIE (Scheibe, drei Groessenrollen). Die Marken einer Modulseite haben
+ * ihre eigene - 42px-Quadrat auf der Dokumentenkarte, 40px-Scheibe im
+ * Widget - und borgen nur die HAUT. Eine gemeinsame Regel statt zweier Kopien,
+ * damit der Sheen und die Tinte nicht auseinanderlaufen koennen; getrennte
+ * Geometrie, damit keine Flaeche ihre Form aendern muss, um Farbe zu tragen.
+ *
+ * `--seal-accent` ist der einzige Parameter. Wer eine andere Quelle fuehrt
+ * (Kategorie, Termin, Mitglied), setzt sie dort - siehe die Fundstellen in
+ * contacts.css, documents.css, settings.css, split-expenses.css. */
+.module-seal,
+.vivid-mark {
   background:
     linear-gradient(to bottom, var(--glass-sheen), transparent 55%),
-    color-mix(in srgb, var(--seal-accent) var(--tint-surface), var(--seal-base));
-  color: var(--seal-accent);
+    var(--seal-accent);
+  color: var(--color-ink-on-vivid);
+}
+
+.vivid-mark {
+  --seal-accent: var(--module-accent, var(--color-accent));
 }
 
 .module-seal svg {
   width: var(--seal-icon);
   height: var(--seal-icon);
+}
+
+/* ── EINE HAND FÜR ALLE MODULZEICHEN ──
+ * Wo ein Modul sich zu erkennen gibt - Siegel, Leiste, Sidebar, Mehr-Blatt,
+ * Modul-Liste in den Einstellungen -, zeichnet dieselbe Strichstärke,
+ * unabhängig davon, ob das Zeichen aus Yuvomis eigenem Satz (nav-icons.js, 1.6
+ * auf viewBox 24) oder aus Lucide (2 auf viewBox 24) kommt. Ohne
+ * `non-scaling-stroke` skaliert der Strich mit der Zeichengröße, und dieselbe
+ * Zahl bedeutete dann in jeder Größe etwas anderes: genau daran hing die
+ * bisherige Übereinstimmung (siehe --icon-stroke). CSS schlägt das
+ * `stroke-width`-Attribut, das beide Bibliotheken setzen - deshalb reicht diese
+ * eine Regel für beide Hände.
+ *
+ * DER SELEKTOR IST EINE MARKE AM ZEICHEN, KEINE LISTE VON ORTEN. Er war eine
+ * Liste (`.module-seal svg, .nav-item__icon, .more-item__icon`), und eine Liste
+ * hätte mit jedem neuen Ort eine Zeile gebraucht - die Modul-Liste der
+ * Einstellungen war der erste, der sie schon nicht mehr hatte. `moduleIconEl`
+ * und `moduleIconHTML` hängen `.module-glyph` an JEDES Zeichen, das sie
+ * ausgeben, den Lucide-Rückfall eingeschlossen (`lucide.createIcons()`
+ * übernimmt die Klassen des Platzhalters auf das erzeugte <svg>). Die beiden
+ * Nav-Selektoren bleiben daneben stehen: die Sidebar-Suche baut ihr Zeichen als
+ * rohen Lucide-Platzhalter, gehört aber in dieselbe Leiste. */
+.module-glyph,
+.nav-item__icon,
+.more-item__icon {
+  stroke-width: var(--icon-stroke);
+  vector-effect: non-scaling-stroke;
 }
 
 /* Kleine Rolle: Inline-Siegel in Koepfen und Sektionszeilen. */
@@ -642,26 +793,15 @@ html:has(.search-overlay--visible) yuvomi-install-prompt {
   height: var(--space-6);
 }
 
-/* ── Das Siegel auf einer UMGEKEHRTEN Flaeche ──
- * DER TRAEGER ENTSCHEIDET, WELCHES GESICHT DAS SIEGEL ZEIGT - derselbe Satz wie
- * beim Well (Traeger-Regel) und aus demselben Grund, naemlich einer Messung.
- * Die Toenung ist auf Flaechen der Seiten-Polaritaet geeicht und traegt dort
- * 1,19-1,33:1. Der Toast ist die eine Flaeche der App, die in BEIDEN Themes die
- * Umkehrung der Seite ist (--neutral-800 ist hell im Dark-Theme und dunkel im
- * Light-Theme); dort liegt dieselbe Toenung bei 1,03-1,10:1 und ist keine
- * Scheibe mehr, sondern ein Hauch. Auf einer umgekehrten Flaeche zeigt das
- * Siegel deshalb sein VOLLTON-Gesicht - genau die Sprache, die die App fuer
- * jede vivide Flaeche schon fuehrt (Primaerknopf, FAB, aktives Segment,
- * Marken-Tile): der Ton ist die Flaeche, die Tinte ist --color-ink-on-vivid.
- * Gemessen ueber die drei Herkuenfte des Erinnerungs-Toasts: Glyph auf Scheibe
- * 5,1-9,8:1 in beiden Themes.
+/* HIER STAND `.module-seal--vivid`. Die Variante hat die Regel gewonnen, statt
+ * neben ihr zu bestehen: sie war fuer die eine umgekehrte Flaeche der App
+ * gedacht (der Toast, in beiden Themes die Umkehrung der Seite), hat dann den
+ * Widget-Kopf und die Kennzahl-Kacheln bekommen und am Ende gab es zwei
+ * Gesichter fuer eine Rolle. Der Vollton steht jetzt in der Basisregel, die
+ * Variante ist gestrichen - inklusive `--seal-base`, dem Parameter, den nur
+ * die Toenung brauchte. Was bleibt, ist ihre Messung: Glyph auf Scheibe
+ * 5,1-9,8:1 in beiden Themes ueber alle neun Familientoene.
  * Der Sheen bleibt, er ist der Materialbeweis - dasselbe Licht wie auf dem FAB. */
-.module-seal--vivid {
-  background:
-    linear-gradient(to bottom, var(--glass-sheen), transparent 55%),
-    var(--seal-accent);
-  color: var(--color-ink-on-vivid);
-}
 
 /* ── Kopfrolle: das Siegel als ABSENDER des Moduls ──
  * Die zweite der beiden Groessenrollen des Briefs (Listenzeile, Modulkopf).
@@ -679,8 +819,11 @@ html:has(.search-overlay--visible) yuvomi-install-prompt {
  * alle Module teilen, und ein Opt-in, das jedes Modul selbst setzen muesste,
  * fehlt beim naechsten.
  *
- * SEIN GRUND IST DER SEITENGRUND: der Kopf steht auf --color-bg (opak, kein
- * Glas). Ohne --seal-base laege die Scheibe auf ihm bei 1,06:1.
+ * HIER STAND SEIN EIGENER GRUND (--seal-base: --color-bg), weil die Toenung
+ * auf dem Seitengrund sonst bei 1,06:1 lag. Mit dem Vollton hat das Siegel
+ * ueberhaupt keinen Grund mehr, gegen den es mischt - der Ton IST die Flaeche,
+ * und die Pro-Hintergrund-Frage stellt sich fuer die Scheibe nicht mehr,
+ * sondern nur noch fuer die Tinte darauf (--color-ink-on-vivid, gemessen).
  *
  * DAS SIEGEL NIMMT DEN RANG SEINES TITELS AN. Die beiden Schnitte des
  * Canonical Page Head (Large Title 34 / Inline 22, typography.css) haben hier
@@ -692,12 +835,10 @@ html:has(.search-overlay--visible) yuvomi-install-prompt {
   /* Der Rang kommt von der Leiste, in der das Siegel steht. Der Fallback ist
    * der Inline-Rang und gilt fuer den zweiten Traeger dieser Rolle: die
    * Kuechen-Leiste, die nach der Leisten-Regel selbst die Kopf-Navigation ist
-   * und deshalb ihren Absender fuehrt (sub-tabs.css). Sie steht auf demselben
-   * Seitengrund wie der Modulkopf, also gilt --seal-base fuer beide. */
+   * und deshalb ihren Absender fuehrt (sub-tabs.css). */
   width: var(--seal-head-size, var(--space-6));
   height: var(--seal-head-size, var(--space-6));
   --seal-icon: var(--seal-head-icon, var(--icon-md));
-  --seal-base: var(--color-bg);
   transition:
     width var(--duration-sm) var(--ease-out),
     height var(--duration-sm) var(--ease-out);
@@ -771,8 +912,12 @@ html:has(.search-overlay--visible) yuvomi-install-prompt {
   line-height: 18px;
   text-align: center;
   font-variant-numeric: tabular-nums;
-  background-color: color-mix(in srgb, var(--item-module-accent, var(--color-accent)) var(--tint-state), var(--color-surface));
-  color: color-mix(in srgb, var(--item-module-accent, var(--color-accent)) var(--tint-ink), var(--color-text-primary));
+  /* NEUTRAL, obwohl das Mehr-Blatt eine Mischstelle ist: die Herkunft nennt in
+   * dieser Zelle bereits das Vollton-Siegel darueber. Die ZAHL nennt keine -
+   * sie zaehlt, und eine Toenung des Modultons unter einer Toenung derselben
+   * Farbe sagte sie zweimal blass (Skalen-Regel, Gegenrichtung). */
+  background-color: var(--color-fill-well);
+  color: var(--color-text-secondary);
 }
 
 .more-item[aria-current="page"] {
@@ -1182,15 +1327,13 @@ html:has(.search-overlay--visible) yuvomi-install-prompt {
 /* Scope-Kacheln sind eine Mischstelle: das Siegel traegt den Familienton
  * des Zielmoduls (--seal-accent setzt der Aufbau in router.js).
  *
- * --seal-base MITSETZEN, weil die Kachel NICHT auf --color-surface steht,
- * sondern auf --color-surface-elevated. Genau dafuer ist der Parameter da, und
- * ohne ihn mischt das Siegel gegen den falschen Grund: gemessen im Dark ueber
- * alle neun Familien 1,02-1,15:1 gegen den echten Untergrund (health 1,02),
- * also unter dem 1,19-1,33er Band, das die Vollton-Regel als Schwelle nennt.
- * Die Scheibe war dort keine Scheibe mehr, sondern ein Hauch. Light war
- * unauffaellig (1,21 vs 1,27) - deshalb faellt so etwas nur beim Messen auf. */
+ * HIER STAND `--seal-base: var(--color-surface-elevated)`, und der Grund war
+ * eine Messung: die Kachel steht nicht auf --color-surface, und ohne den
+ * Parameter mischte die 16-%-Toenung gegen den falschen Grund (im Dark
+ * 1,02-1,15:1 gegen den echten Untergrund, health 1,02). Mit dem Vollton
+ * mischt das Siegel gar nicht mehr - die Zeile ist mit ihrer Ursache
+ * entfallen, nicht vergessen worden. */
 .search-scope__seal {
-  --seal-base: var(--color-surface-elevated);
   flex-shrink: 0;
 }
 
@@ -1363,10 +1506,38 @@ html:has(.search-overlay--visible) yuvomi-install-prompt {
   height: var(--target-md);
   border-radius: var(--radius-full);
   /* Inaktiv: nacktes Icon, keine gefüllte Well-Kachel (auch im No-Glass-
-   * Fallback). Leichter, ruhiger Ton — die aktive Pille trägt den Zustand. */
+   * Fallback). Die aktive Pille trägt den Zustand. */
   background: transparent;
   box-shadow: none;
-  color: var(--color-text-tertiary);
+  /* UND DAS ZEICHEN TRAEGT SEINEN MODULTON - dieselbe Legende wie in der
+   * Sidebar, und aus demselben Grund (2026-08-17, Betreiber-Befund „die Icons
+   * im mobilen Navigationsmenue unterscheiden sich farblich deutlich von denen
+   * in der Webansicht").
+   *
+   * Die Legende war bis dahin eine DESKTOP-Regel, obwohl sie nie eine sein
+   * wollte: die Sidebar hat sie bekommen, weil dort alle Module nebeneinander
+   * stehen, und die Tab-Bar ist genau dieselbe Komponente in der anderen Form -
+   * eine App, in der die Navigation je nach Fenstergroesse eine andere Sprache
+   * spricht, hat zwei Wahrheiten. Auf Telefonen war ausserdem GAR KEIN Modulton
+   * sichtbar, und das Telefon ist die Hauptbuehne (PRODUCT.md).
+   *
+   * Es ist kein Siegel: die Herkunfts-Regel verbietet der Leiste zu Recht die
+   * Scheibe - die Leiste beantwortet „wo bin ich", nicht „woher". Sie bekommt
+   * den Ton auf dem nackten Zeichen, wie die Sidebar, und aus demselben
+   * Kontrast-Grund: ein Zeichen ist Grafik (3:1 nach 1.4.11), ein Label waere
+   * Text und muesste 4.5:1 halten - was sieben der neun Familientoene reissen.
+   *
+   * GEMESSEN GEGEN DIE KAPSEL, NICHT GEGEN DIE SEITE: die Leiste ist Glas
+   * (rgba .86 plus backdrop-filter), der echte Grund des Zeichens also die
+   * Mischung aus Kapsel und Seite - im Light #F9F9FA, im Dark #2B2825. Ueber
+   * alle neun Familientoene: Light 4,79-6,81:1, Dark 4,57-8,41:1. Beide Bereiche
+   * liegen nicht nur ueber der 3:1-Grafikschwelle, sondern ueber der
+   * 4.5:1-Textschwelle - der Ton ist hier also nicht die Grenze.
+   *
+   * Die Eine-Stimme-Regel bleibt heil: Kapsel, gleitender Indikator, Label,
+   * Fokusring und FAB tragen weiter --color-accent. Gewechselt hat das
+   * ZEICHEN, das schon immer sagte, wohin es fuehrt. */
+  color: var(--item-module-accent, var(--color-text-tertiary));
   transition:
     background-color var(--transition-fast),
     color var(--transition-fast),
@@ -3356,7 +3527,14 @@ p.field-hint--warn[hidden] {
   display: flex;
   align-items: center;
   justify-content: center;
-  overflow: hidden;
+  /* clip, NICHT hidden (#805): dieselbe Falle wie beim Panel, nur eine Ebene
+   * hoeher. hidden macht auch das Overlay zu einer Scroll-Box ohne Scrollbar -
+   * unbedienbar fuer den Nutzer, programmatisch scrollbar fuer den Browser.
+   * Bekam das Overlay einen absolut positionierten Nachfahren (das .sr-only-
+   * Input des Aufgaben-Formulars, siehe .modal-panel), wuchs seine Scroll-Box
+   * auf 1259px und Chrome schob beim Oeffnen eines <select> das komplette
+   * Panel samt Kopfzeile und Schliessen-X aus dem Bild. */
+  overflow: clip;
   padding: max(var(--space-3), env(safe-area-inset-top))
            max(var(--space-3), env(safe-area-inset-right))
            max(var(--space-3), env(safe-area-inset-bottom))
@@ -3379,7 +3557,24 @@ p.field-hint--warn[hidden] {
    * geblurten Moduls sichtbar bleibt — das Sheet wirkt als Karte über dem
    * Modul, nicht als Vollbild-Takeover. Safe-Areas bleiben respektiert. */
   max-height: min(88dvh, calc(100dvh - (2 * var(--space-3)) - env(safe-area-inset-top) - env(safe-area-inset-bottom)));
-  overflow: hidden;
+  /* clip, NICHT hidden (#805): hidden erzeugt eine Scroll-Box, die der Nutzer
+   * mangels Scrollbar nicht bedienen kann, der Browser aber programmatisch
+   * scrollt - Chrome ruft beim Fokussieren eines <select> scrollIntoView auf
+   * allen Vorfahren auf. Das Panel rutschte dadurch samt Kopfzeile und
+   * Schliessen-X aus dem Sichtfeld, ohne Weg zurueck. Ausloeser war ein
+   * .sr-only-Input (position:absolute, im Fluss), das dem overflow:auto des
+   * Bodys entkommt und die Scroll-Box des Panels auf 1245px aufblies.
+   * Gescrollt wird strukturell nur im Body; clip nimmt dem Panel die
+   * Scroll-Box, ist aber visuell deckungsgleich mit hidden. */
+  overflow: clip;
+  /* Breakpoint-UNABHAENGIG (#805, zweite Runde): das Panel muss der Containing
+   * Block seiner absolut positionierten Nachfahren sein, sonst fangen die eine
+   * Ebene hoeher am fixed .modal-overlay an und blaehen DESSEN Box auf. Bis
+   * v2.21.1 stand das nur in der Mobile-Media-Query; ab 768px hielt allein der
+   * transform-Endwert der Einfahr-Animation das Panel zufaellig in der Rolle -
+   * und genau den nimmt `prefers-reduced-motion: reduce` weg. Eine Zusage, die
+   * an einer Animation haengt, ist keine. */
+  position: relative;
   display: flex;
   flex-direction: column;
   border-radius: var(--radius-lg);
@@ -3637,8 +3832,11 @@ p.field-hint--warn[hidden] {
   flex: 0 0 auto;
   padding: var(--space-1) var(--space-2);
   border-radius: var(--radius-full);
-  background: color-mix(in srgb, var(--color-accent) var(--tint-surface), var(--color-surface));
-  color: var(--color-accent);
+  /* Eine Versionsnummer nennt weder eine Identitaet noch eine Stufe - sie ist
+   * ein Datum in Ziffernform. Hier stand die Stimme zweimal: als 16-%-Flaeche
+   * und als Schrift darauf. Neutral, wie jedes Etikett ohne Aussage. */
+  background: var(--color-fill-well);
+  color: var(--color-text-primary);
   font-size: var(--text-xs);
   font-weight: var(--font-weight-semibold);
 }
@@ -3858,9 +4056,9 @@ p.field-hint--warn[hidden] {
   }
 
   .modal-panel {
-    /* Extra top padding for the drag handle */
+    /* Extra top padding for the drag handle. position:relative steht seit #805
+     * in der Basisregel und gilt auf jeder Breite - hier stand es frueher. */
     padding-top: calc(var(--space-4) + 20px);
-    position: relative;
   }
 
   .modal-panel::before {
@@ -3950,10 +4148,16 @@ p.field-hint--warn[hidden] {
   outline-offset: var(--focus-ring-offset);
 }
 
-/* Akzentregel „Modul-Akzent führt": Primäraktionen tragen den Akzent des aktiven
- * Moduls (wie FAB und Fokusringe); Violett bleibt Shell-Flächen und modul-losen
- * Routen (Login/Setup) vorbehalten. Die 88%/76%-Abdunklung reproduziert die
- * „Action"-Abstufung des bisherigen --color-btn-primary generisch je Akzent. */
+/* EINE STIMME: der Primärknopf trägt app-weit Violett, nicht den Modulton.
+ * `--color-accent` IST die Stimme; der Modulton läuft über
+ * `--active-module-accent`, das der Router aufs Dokument setzt, und erreicht
+ * diese Regel nicht.
+ *
+ * Hier stand bis v2.2.0 die umgekehrte Ansage („Modul-Akzent führt, wie FAB und
+ * Fokusringe; Violett bleibt Shell-Flächen vorbehalten"). Die Eine-Stimme-Regel
+ * hat sie abgelöst - der Kommentar hat sie überlebt, die Deklaration darunter
+ * nicht. Die 88%/76%-Abdunklung bleibt: sie reproduziert die
+ * „Action"-Abstufung des bisherigen --color-btn-primary. */
 .btn--primary {
   background-color: color-mix(in srgb, var(--color-accent) 88%, var(--neutral-950));
   color: var(--color-ink-on-vivid);
@@ -4939,6 +5143,12 @@ textarea::placeholder {
   box-shadow: var(--shadow-lg);
   pointer-events: auto;
   animation: toast-in var(--duration-lg) var(--ease-out) forwards;
+  /* Der Wisch zum Verwerfen ist waagerecht - ohne diese Zeile hielt der Browser
+   * sich die Deutung offen, uebernahm die Geste als Bildlauf und beendete den
+   * Zeiger mit `pointercancel`, noch bevor die Schwelle erreicht war. Gemessen
+   * an #821: auf dem Telefon war der Wisch damit nie ausloesbar. Senkrecht
+   * bleibt beim Browser, damit die Seite unter dem Toast scrollbar bleibt. */
+  touch-action: pan-y;
 }
 
 .toast__icon {
@@ -6209,13 +6419,23 @@ p.field-hint--warn svg {
  * lesbar bleiben.
  *
  * DER RING IST KEINE ZIERDE, sondern die Trennung: ohne ihn laufen zwei
- * getoente Flaechen ineinander, und bei aehnlichem Ton (ein violetter Avatar
- * auf dem Kalender-Siegel) verschwindet die Kante. Er nimmt --seal-base, also
- * denselben Parameter, mit dem das Siegel schon seinen echten Untergrund
- * kennt - auf dem Toast ist das der Toast-Grund, im Modulkopf --color-bg.
+ * gesaettigte Flaechen ineinander, und bei aehnlichem Ton (ein violetter
+ * Avatar auf dem Kalender-Siegel) verschwindet die Kante. Seit dem Vollton ist
+ * er noetiger als vorher, nicht weniger.
+ *
+ * SEIN NAME SAGT JETZT, WAS ER IST. Er stand auf --seal-base, dem Parameter,
+ * mit dem das Siegel seinen Mischgrund kannte - und der ist mit der Toenung
+ * entfallen. Der Ring braucht aber weiter einen: er wird in die Flaeche
+ * geschnitten, auf der das PAAR steht, nicht auf der das Siegel mischt. Zwei
+ * verschiedene Fragen, die sich einen Namen geteilt haben; --seal-pair-ground
+ * beantwortet nur noch die zweite.
  *
  * Wer wann eines bekommt, steht in utils/seal-pair.js. */
 .seal-pair {
+  /* Der Grund, in den der Ring geschnitten wird - die Flaeche, auf der das PAAR
+   * steht. Voreinstellung ist die Kartenflaeche; wer es woanders hinsetzt,
+   * ueberschreibt hier und nicht am Ring. */
+  --seal-pair-ground: var(--color-surface);
   display: inline-flex;
   align-items: center;
   flex-shrink: 0;
@@ -6233,7 +6453,7 @@ p.field-hint--warn svg {
   height: var(--space-5);
   margin-inline-start: calc(-1 * var(--space-2));
   border-radius: var(--radius-full);
-  box-shadow: 0 0 0 2px var(--seal-base, var(--color-surface));
+  box-shadow: 0 0 0 2px var(--seal-pair-ground);
   font-size: var(--text-2xs);
   font-weight: var(--font-weight-semibold);
   line-height: 1;

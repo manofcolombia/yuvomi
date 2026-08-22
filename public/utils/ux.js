@@ -206,7 +206,7 @@ export function wireScrollFade(el, { axis = 'x' } = {}) {
  *
  * @param {HTMLElement} toolbar - eine `.page-toolbar`
  * @param {{ sealIcon?: () => SVGElement|null }} [opts] - `sealIcon` liefert das
- *   Icon des Absender-Siegels (Fabrik aus NAV_ICONS). Ohne die Angabe bleibt
+ *   Icon des Absender-Siegels (Fabrik über moduleIconEl). Ohne die Angabe bleibt
  *   der Kopf siegellos.
  * @returns {{ update: () => void, destroy: () => void }|null}
  */
@@ -512,4 +512,77 @@ export async function withBusy(control, task, { loadingClass = null } = {}) {
       control.focus({ preventScroll: true });
     }
   }
+}
+
+/**
+ * Wischen zum Verwerfen für eine kurzlebige Fläche (Toast).
+ *
+ * ZWEI FALLEN STECKEN IN DIESER GESTE, beide an #821 gemessen, und beide waren
+ * im Router-Inline-Code offen:
+ *
+ * 1. `pointermove` feuert auch mit ERHOBENER Taste. Ohne Gedrückt-Prüfung
+ *    reichte blosses Drüberfahren mit der Maus: der Startpunkt stand noch auf
+ *    0, die gemessene Strecke war damit die halbe Fensterbreite, und die Fläche
+ *    lag verschoben bei `opacity: 0` - unsichtbar, bevor der Zeiger den Knopf
+ *    darauf erreichte.
+ * 2. `setPointerCapture` schon beim `pointerdown` leitet nicht nur die
+ *    Zeigerereignisse um, sondern auch den daraus folgenden `click`: der geht
+ *    an das einfangende Element statt an den gedrückten Knopf. Der Klick auf
+ *    „Rückgängig" erreichte seinen Handler nie - app-weit, in jedem Modul, das
+ *    über den Toast zurücknimmt. Per Tastatur und per Touch ging er trotzdem;
+ *    deshalb sah die Geste lange heil aus.
+ *
+ * Der Zeiger wird deshalb erst eingefangen, wenn aus dem Druck wirklich eine
+ * Wischbewegung geworden ist. Bis dahin bleibt ein Knopf ein Knopf.
+ *
+ * Die Fläche braucht ausserdem `touch-action: pan-y` im CSS, sonst hält der
+ * Browser sich die Deutung offen, übernimmt die waagerechte Geste als Bildlauf
+ * und beendet den Zeiger mit `pointercancel`, bevor die Schwelle fällt.
+ *
+ * @param {HTMLElement} el
+ * @param {Object} opts
+ * @param {() => void} opts.onDismiss   - Läuft, wenn über die Schwelle gewischt wurde
+ * @param {number} [opts.threshold=40]  - Strecke in px, ab der verworfen wird
+ * @param {number} [opts.slop=10]       - Strecke in px, bis zu der es noch ein Klick ist
+ * @param {number} [opts.fade=120]      - Strecke in px, über die auf 0 ausgeblendet wird
+ */
+export function wireSwipeToDismiss(el, { onDismiss, threshold = 40, slop = 10, fade = 120 } = {}) {
+  let startX = 0;
+  let pressed = false;
+  let swiping = false;
+
+  const settle = () => {
+    pressed = false;
+    swiping = false;
+    el.style.transform = '';
+    el.style.opacity = '';
+  };
+
+  el.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return; // Sekundärtasten sind keine Wischgeste
+    startX = e.clientX;
+    pressed = true;
+    swiping = false;
+  });
+
+  el.addEventListener('pointermove', (e) => {
+    if (!pressed) return;
+    const dx = e.clientX - startX;
+    if (!swiping) {
+      if (Math.abs(dx) <= slop) return;
+      swiping = true;
+      el.setPointerCapture(e.pointerId);
+    }
+    el.style.transform = `translateX(${dx}px)`;
+    el.style.opacity = String(Math.max(0, 1 - Math.abs(dx) / fade));
+  });
+
+  el.addEventListener('pointerup', (e) => {
+    if (!pressed) return;
+    const dismissed = swiping && Math.abs(e.clientX - startX) > threshold;
+    settle();
+    if (dismissed) onDismiss?.();
+  });
+
+  el.addEventListener('pointercancel', settle);
 }

@@ -114,10 +114,28 @@
 }
 
 /* EINE Metazeile, und sie bricht nicht um: Countdown-Chip, dann Datum und
- * Alter, dann - wo Platz ist - die Notiz. `--space-1` und nicht `--space-2`,
- * aus demselben Grund wie in der Aufgabenzeile: der Chip hat eigene Polsterung
- * und eine eigene Fläche, zwischen ihm und dem Text liest sich der Abstand
- * optisch als das Doppelte. */
+ * Alter, dann - wo Platz ist - die Notiz. `--space-1` und nicht `--space-2`:
+ * die Teile sind durch einen Mittelpunkt getrennt, und der bringt seinen
+ * eigenen Abstand mit.
+ *
+ * DIE BEGRÜNDUNG FÜR DEN ENGEN ABSTAND WAR EINE FLÄCHE, DIE ES NICHT MEHR GIBT.
+ * Hier stand „der Chip hat eigene Polsterung und eine eigene Fläche, zwischen
+ * ihm und dem Text liest sich der Abstand optisch als das Doppelte" - richtig,
+ * solange alle drei Countdown-Stufen eine Kapsel trugen. Seit v2.23.0 trägt nur
+ * noch „Heute" eine (Skalen-Regel), und ohne sie stand „in 12 Tagen 30.08.2026
+ * · wird 37 Lindas Schwester" als ein einziger Zug da: die Kapsel war der
+ * Trenner gewesen, ohne dass es jemand aufgeschrieben hatte.
+ *
+ * Getrennt wird deshalb jetzt ausdrücklich, mit dem Mittelpunkt über den
+ * `+`-Kombinator - derselbe Träger, den `ageMeta()` schon INNERHALB von
+ * `__when` benutzt („30.08.2026 · wird 37") und den die Vorratsmeldungen seit
+ * derselben Etappe tragen. Der Trenner gehört dem ZWISCHENRAUM, nicht dem
+ * Teil davor oder danach, deshalb `::before` am zweiten Element.
+ *
+ * Die Notiz gewinnt dabei mit: sie hing schon vorher direkt am Alter („wird 37
+ * Lindas Schwester"), und das war nie beabsichtigt - es ist nur nie
+ * aufgefallen, weil links davon eine Kapsel stand und die Zeile dadurch
+ * gegliedert aussah. */
 .birthday-item__meta {
   display: flex;
   align-items: center;
@@ -126,6 +144,12 @@
   min-width: 0;
   overflow: hidden;
   unicode-bidi: plaintext;
+}
+
+.birthday-item__meta > * + *::before {
+  content: '·';
+  margin-inline-end: var(--space-1);
+  color: var(--color-text-tertiary);
 }
 
 .birthday-item__meta > .birthday-chip {
@@ -219,35 +243,55 @@
 /* --------------------------------------------------------
  * Countdown-Chip — einheitliches Wort-Register, kontrastgeprüft (AA).
  * -------------------------------------------------------- */
+/* Die Kapsel gehoert seit 2026-08-18 nur noch der Vollton-Stufe („Heute"):
+ * eine Polsterung ohne Fuellung ist ein Loch, kein Chip. Was hier bleibt, ist
+ * das gemeinsame Register - Groesse, Gewicht, kein Umbruch -, damit die drei
+ * Stufen dieselbe Zeile fuehren wie der Prioritaets-Chip der Aufgabenzeile. */
 .birthday-chip {
   flex-shrink: 0;
-  /* `0.25rem 0.6rem` stand hier als Rohwert - 0,6rem gibt es in keiner Stufe
-   * der Skala. Auf den Stufen ist der Chip zwei Pixel flacher und steht damit
-   * auf demselben Mass wie der Prioritäts-Chip der Aufgabenzeile, der dieselbe
-   * Rolle in derselben Metazeile spielt. Gemessen: Metazeile 25,6 -> 21,6px. */
-  padding: var(--space-0h) var(--space-2);
-  border-radius: var(--radius-full);
   font-size: var(--text-xs);
   font-weight: var(--font-weight-semibold);
   white-space: nowrap;
 }
 
+/* ── DREI STUFEN, DIE AUCH DREI SIND ──
+ *
+ * `countdownChip()` in birthdays.js sagt seit jeher „`mod` steuert die visuelle
+ * Stufe" und kennt drei: heute, in bis zu sieben Tagen, spaeter. Die CSS-Regeln
+ * fuer `--default` und `--soon` waren BITWEISE identisch - eine Skala mit einer
+ * Stufe, die es nicht gab. Sie ist niemandem aufgefallen, weil beide getoent
+ * waren und eine Toenung ohnehin kaum etwas sagt.
+ *
+ * Die Leiter laeuft jetzt ueber die AUFFAELLIGKEIT, nicht ueber den Farbton:
+ * heute traegt den Modulton im Vollton, „bald" tritt in die Primaertinte vor,
+ * alles Weitere bleibt Sekundaertinte. Ein Geburtstag in 40 Tagen ist keine
+ * Farbaussage, und drei Toenungen derselben Rose waeren genau der Fall, den
+ * die Vollton-Regel misst.
+ *
+ * Der Modulton ist hier ausdruecklich richtig: die Zeile beantwortet „wann",
+ * und der eine Tag, an dem die Antwort HEUTE lautet, ist der Anlass des ganzen
+ * Moduls. */
 .birthday-chip--default {
-  background: color-mix(in srgb, var(--module-accent) var(--tint-surface), transparent);
-  /* Text zur Ink-Seite gezogen → AA auf hellem Tint (statt reinem Akzent 3,9:1). */
-  color: color-mix(in srgb, var(--module-accent) var(--tint-ink), var(--color-text-primary));
+  color: var(--color-text-secondary);
+  font-weight: var(--font-weight-medium);
 }
 
 .birthday-chip--soon {
-  background: color-mix(in srgb, var(--module-accent) var(--tint-surface), transparent);
-  color: color-mix(in srgb, var(--module-accent) var(--tint-ink), var(--color-text-primary));
+  color: var(--color-text-primary);
 }
 
+/* Vollton nach der Hausbauart: Ton als Flaeche, feste Tinte darauf. Vorher
+ * stand hier der zu Schwarz vertiefte Akzent mit --color-text-on-accent, weil
+ * reines Weiss auf dem hellen Dark-Ton nur ~2,7:1 trug. Genau dafuer gibt es
+ * --color-ink-on-vivid (light weiss, dark dunkle Tinte): der ungemischte
+ * Modulton haelt damit 5,08:1 light und 7,35:1 dark - im Dark ueber dem, was
+ * die Vertiefung schaffte (4,87:1), und ohne eine zweite Farbrechnung, die
+ * nur an dieser Stelle vorkam. */
 .birthday-chip--today {
-  /* Akzent zu Schwarz vertieft, damit weißer Text in BEIDEN Themes AA hält:
-   * der helle Dark-Mode-Akzent (#FB7185) trägt reines Weiß sonst nur ~2,7:1. */
-  background: color-mix(in srgb, var(--module-accent) 72%, black);
-  color: var(--color-text-on-accent);
+  background: var(--module-accent);
+  color: var(--color-ink-on-vivid);
+  padding: var(--space-0h) var(--space-2);
+  border-radius: var(--radius-full);
 }
 
 /* --------------------------------------------------------
@@ -269,9 +313,14 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  /* Theme-aware: Surface statt hartcodiertem white → korrekt in Dark Mode. */
-  background: color-mix(in srgb, var(--module-accent) var(--tint-surface), var(--color-surface));
-  color: color-mix(in srgb, var(--module-accent) var(--tint-ink), var(--color-text-primary));
+  /* EIN KONTAKT OHNE HAUSHALTS-VERKNUEPFUNG HAT KEINE IDENTITAETSFARBE, und
+   * genau das soll die Scheibe sagen. v2.19 hat das schon so begruendet
+   * („contacts without a link keep the neutral tint on purpose"), aber der
+   * „neutrale" Ton war der MODULTON - eine Farbaussage, nur eine leise. Wer
+   * verknuepft ist, traegt seine Mitgliedsfarbe; wer es nicht ist, traegt gar
+   * keine. Vollton-Regel, zweiter Zweig (DESIGN.md, Colors). */
+  background: var(--color-fill-well);
+  color: var(--color-text-secondary);
   font-weight: var(--font-weight-bold);
 }
 

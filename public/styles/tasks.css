@@ -829,6 +829,21 @@
   flex-wrap: nowrap;
   min-width: 0;
   overflow: hidden;
+  /* DIE ZEILE TRAEGT IHRE HOEHE, NICHT DER GROESSTE CHIP DARIN.
+   *
+   * Bis 2026-08-18 war das Prioritaets-Etikett mit seiner Fuellung, seiner
+   * Kante und seiner geerbten Zeilenhoehe das hoechste Element hier (23,63px)
+   * und bestimmte damit den Abstand zwischen Titel und Metazeile. Ohne die
+   * Fuellung (Skalen-Regel) blieb die Zeile beim Etikett stehen: 22,8px, und
+   * die Zielzentren von Titel und Tag ruckten von 23,56 auf 23,15px zusammen -
+   * unter die 24px, die WCAG 2.5.8 fuer zwei untermassige Ziele verlangt.
+   * Sonde 4 der Dokument-Guards hat genau das gemeldet.
+   *
+   * Die Hoehe gehoert deshalb der ZEILE. 25px setzt den Abstand auf 24,25px
+   * (gemessen, 1440x900, de) und haelt ihn auch fuer Zeilen ohne Etikett und
+   * ohne Tag, wo die Metazeile bisher noch flacher war - eine Zusicherung, die
+   * es vorher gar nicht gab, weil sie an einem Chip hing, der fehlen darf. */
+  min-height: 25px;
 }
 
 .task-card__meta > .priority-badge,
@@ -851,6 +866,15 @@
  * und ist genau die Stelle, an der steht, dass etwas fehlt. */
 .task-card__meta > .task-tag {
   flex: 0 1 auto;
+  /* 24px, WEIL DIE ZEILE PLATZ HAT. Ein Etikett, das anfassbar ist (der
+   * Filter-Tag setzt den Filter), darf die Spacing-Ausnahme von WCAG 2.5.8 nur
+   * nehmen, wenn es sie BRAUCHT - sitzt es in einer Zeile, die ihm die vollen
+   * 24px liesse, ist die Ausnahme eine Ausrede. Sonde 4 der Dokument-Guards
+   * misst genau das („nimmt die Spacing-Ausnahme, obwohl sein Traeger Platz
+   * laesst"). Die 23px kamen aus Schriftgroesse plus Polsterung und waren nie
+   * gesetzt, sondern uebrig geblieben. */
+  min-height: 24px;
+  align-items: center;
   min-width: 3.5rem;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -915,34 +939,41 @@
   }
 }
 
-/* Prioritäts-Badge */
+/* ── PRIORITAET: EINE RANGMARKE, KEIN GETOENTES FELD ──
+ *
+ * Bis 2026-08-18 nannte dieses Etikett seinen Ton DREIMAL blass: als Fuellung
+ * (12 % light / 18 % dark), als Kante (25 % von currentColor) und als Schrift.
+ * Genau die Bauart, die die Vollton-Regel an den Marken abgeloest hat - hier
+ * auf einer SKALA, wo sie mehr kostet: gemessen (skalen-vollton.mjs, CIEDE2000
+ * gegen die Kartenflaeche) liegen die Fuellungen von „Hoch" und „Dringend"
+ * 3,47 (light) bzw. 4,01 (dark) auseinander. Das ist ueber der Schwelle von
+ * 2,3, aber ein Drittel dessen, was dieses Projekt fuer die Diagramm-Serien
+ * als Abstand akzeptiert hat, und die beiden Felder stehen nie nebeneinander,
+ * sondern jeweils allein in einer Zeile. Im Vollton sind es 12,90 und 23,62.
+ *
+ * Die Skalen-Regel hat deshalb zwei Zweige, und dieser hier ist der erste:
+ * eine RANGMARKE traegt ihren Ton in einem vollen Punkt, die Schrift bleibt
+ * neutral. Der zweite Zweig (eine MELDUNG traegt ihn in der Schrift) steht am
+ * Vorrats-Badge. Beide geben die Flaeche auf - eine Beimischung kann eine
+ * Stufe nicht benennen, sie kann sie nur andeuten.
+ *
+ * Der Nebeneffekt ist der eigentliche Gewinn in dieser Liste: das Etikett
+ * konkurriert nicht mehr mit dem Aufgabentitel um dieselbe Aufmerksamkeit,
+ * und die Tag-Chips daneben sind nicht mehr formgleich mit ihm. */
 .priority-badge {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-1);
+  gap: var(--space-1h);
   font-size: var(--text-xs);
-  font-weight: var(--font-weight-semibold);
-  padding: 2px var(--space-2);
-  border-radius: var(--radius-full);
-  border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-secondary);
 }
 
-.priority-badge--low     { color: var(--color-priority-low);    background-color: var(--color-priority-low-bg); }
-.priority-badge--medium  { color: var(--color-priority-medium); background-color: var(--color-priority-medium-bg); }
-.priority-badge--high    { color: var(--color-priority-high);   background-color: var(--color-priority-high-bg); }
-.priority-badge--urgent  { color: var(--color-priority-urgent); background-color: var(--color-priority-urgent-bg); }
-
-.priority-dot {
-  width: var(--space-1);
-  height: var(--space-1);
-  border-radius: var(--radius-full);
-  flex-shrink: 0;
-}
-
-.priority-dot--low    { background-color: var(--color-priority-low); }
-.priority-dot--medium { background-color: var(--color-priority-medium); }
-.priority-dot--high   { background-color: var(--color-priority-high); }
-.priority-dot--urgent { background-color: var(--color-priority-urgent); }
+/* `.priority-dot` STAND HIER und ist nach list-row.css gezogen: dieselbe
+ * Rangmarke steht seit dieser Etappe auch am Aufgaben-Chip des Kalenders, und
+ * ein Page-CSS je Seite heisst, dass tasks.css dort gar nicht geladen ist. Eine
+ * zweite Fassung in calendar.css waere die Bauart gewesen, an der die
+ * Prioritaet ueberhaupt erst zwei Gesichter bekommen hat. */
 
 /* Fälligkeitsdatum */
 .due-date {
@@ -1385,30 +1416,70 @@
   color: var(--color-text-tertiary);
 }
 
-/* Verknüpfte Dokumente im Aufgaben-Modal (#503). */
-.task-documents__list {
+/* Verknüpfte Dokumente in der LESEANSICHT (#503, #733).
+ *
+ * Im Formular steht seit #733 das geteilte Beleg-Feld (document-attach.css) -
+ * die eigene Auswahlliste, die hier einmal stand, ist damit weg und mit ihr
+ * ihre beiden Klassen. Was bleibt, ist der Chip: die Leseansicht nennt die
+ * Dokumente beim Namen, und Bilder zeigt sie als Vorschau. */
+.task-detail__docs {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  align-items: flex-start;
   gap: var(--space-2);
-  margin: var(--space-2) 0 var(--space-3);
 }
 
-.task-documents__empty {
-  margin: 0;
-  font-size: var(--text-xs);
-  color: var(--color-text-tertiary);
+/* Auto-fill statt fester Spaltenzahl: ein einzelnes Foto soll nicht auf
+ * Viertelbreite schrumpfen, vier sollen nicht überlaufen. */
+.task-detail__doc-previews {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(7rem, 1fr));
+  gap: var(--space-2);
+  width: 100%;
 }
 
+.task-detail__doc-preview {
+  display: block;
+  overflow: hidden;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-2);
+  line-height: 0;
+}
+
+.task-detail__doc-preview:hover {
+  border-color: var(--color-accent);
+}
+
+.task-detail__doc-preview:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* Feste Höhe mit `cover`: Hochkant-Fotos und Querformat stehen sonst in einer
+ * Reihe unterschiedlich hoch, und die Kachelreihe franst aus. */
+.task-detail__doc-preview img {
+  display: block;
+  width: 100%;
+  height: 7rem;
+  object-fit: cover;
+}
+
+/* Der Chip ist seit #733 nur noch in der Leseansicht zu Hause und dort selbst
+ * der Link: im Formular steht das geteilte Beleg-Feld, das seine eigenen Chips
+ * samt Entfernen-Knopf mitbringt. Deshalb Polsterung auf beiden Seiten gleich -
+ * die schmalere rechte gehoerte dem Knopf, den es hier nicht mehr gibt. */
 .task-doc-chip {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
   max-width: 100%;
-  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-2);
+  padding: var(--space-1) var(--space-3);
   background: var(--color-surface-2);
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-full);
   font-size: var(--text-xs);
+  text-decoration: none;
 }
 
 .task-doc-chip__icon {
@@ -1422,21 +1493,104 @@
   color: var(--color-text-primary);
   text-overflow: ellipsis;
   white-space: nowrap;
-  text-decoration: none;
 }
 
-.task-doc-chip__name:hover {
+.task-doc-chip:hover .task-doc-chip__name {
   color: var(--color-accent);
   text-decoration: underline;
 }
 
-.task-doc-chip__remove {
+.task-doc-chip:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* --------------------------------------------------------
+ * Kommentare an einer Aufgabe (#734)
+ *
+ * Bewusst keine Sprechblasen und keine Avatare in der Reihe: die Unterhaltung
+ * steht in einer Detailansicht mit zwölf anderen Zeilen, und ein Chat-Look
+ * würde sie zum lautesten Element darin machen. Was sie braucht, ist die
+ * Zuordnung (wer, wann) und Luft zwischen den Beiträgen.
+ * -------------------------------------------------------- */
+.task-comments {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: 100%;
+}
+
+.task-comments__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.task-comments__status {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--color-text-tertiary);
+}
+
+.task-comment {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.task-comment + .task-comment {
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+.task-comment__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.task-comment__author {
+  font-weight: var(--font-weight-semibold, 600);
+  font-size: var(--text-sm);
+  color: var(--color-text-primary);
+}
+
+.task-comment__when {
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+}
+
+/* Die Aktionen treten zurück, bis der Beitrag berührt wird - sie gehören zum
+ * eigenen Kommentar und nicht zur Unterhaltung. Auf Zeigegeräten ohne Hover
+ * (Telefon) bleiben sie sichtbar, sonst wären sie unerreichbar. */
+.task-comment__actions {
+  display: flex;
+  gap: var(--space-1);
+  margin-inline-start: auto;
+  opacity: 0;
+  /* Unsichtbar heißt auch unerreichbar: ein Knopf mit opacity:0, der weiter
+   * Klicks annimmt, löscht einen Kommentar, den niemand angefasst zu haben
+   * glaubt. Tastaturfokus bringt ihn über :focus-within zurück. */
+  pointer-events: none;
+  transition: opacity var(--duration-sm) var(--ease-out);
+}
+
+.task-comment:hover .task-comment__actions,
+.task-comment:focus-within .task-comment__actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (hover: none) {
+  .task-comment__actions { opacity: 1; pointer-events: auto; }
+}
+
+.task-comment__action {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  flex: 0 0 auto;
-  width: 1.375rem;
-  height: 1.375rem;
+  width: 1.75rem;
+  height: 1.75rem;
   padding: 0;
   background: transparent;
   border: none;
@@ -1445,9 +1599,99 @@
   cursor: pointer;
 }
 
-.task-doc-chip__remove:hover {
-  background: var(--color-surface-raised);
+.task-comment__action:hover {
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+}
+
+.task-comment__action--danger:hover {
   color: var(--color-danger);
+}
+
+.task-comment__action:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* Zeilenumbrüche des Verfassers bleiben stehen: ein Kommentar mit drei
+ * Aufzählungspunkten liest sich sonst als ein Absatz. */
+.task-comment__text {
+  font-size: var(--text-sm);
+  color: var(--color-text-primary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.task-comment__mention {
+  color: var(--color-accent);
+  font-weight: var(--font-weight-medium, 500);
+}
+
+/* Die eigene Erwähnung bekommt eine Fläche: „mich hat jemand gemeint" ist der
+ * Grund, aus dem der Beitrag überhaupt gelesen wird. */
+.task-comment__mention--me {
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-accent) var(--tint-surface), transparent);
+}
+
+.task-comments__form,
+.task-comment__edit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: flex-end;
+}
+
+.task-comments__field,
+.task-comment__edit {
+  position: relative;
+  width: 100%;
+}
+
+.task-comment__input {
+  width: 100%;
+  resize: vertical;
+}
+
+.task-comment__edit-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+/* Vorschläge beim Tippen eines @. Sie liegen über dem Feld und nicht darunter:
+ * in der Detailansicht steht das Eingabefeld ganz unten, eine Liste darunter
+ * fiele aus dem sichtbaren Bereich. */
+.task-comment__suggest {
+  position: absolute;
+  bottom: calc(100% + var(--space-1));
+  inset-inline-start: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  min-width: 12rem;
+  max-width: 100%;
+  padding: var(--space-1);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+}
+
+.task-comment__suggest-item {
+  padding: var(--space-1) var(--space-2);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-primary);
+  font-size: var(--text-sm);
+  text-align: start;
+  cursor: pointer;
+}
+
+.task-comment__suggest-item:hover,
+.task-comment__suggest-item.is-active {
+  background: var(--color-surface-2);
 }
 
 /* Büroklammer-Badge auf der Aufgabenkarte (Anzahl verknüpfter Dokumente). */

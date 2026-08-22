@@ -12,6 +12,7 @@ import { esc, renderMarkdownLight } from '/utils/html.js';
 import { renderSkeletonList } from '/utils/skeleton.js';
 import { renderPageSearch, wirePageSearch } from '/utils/page-search.js';
 import { findPageFab } from '/utils/fab.js';
+import { AVATAR_FALLBACK_COLOR } from '/utils/color.js';
 
 // --------------------------------------------------------
 // Konstanten
@@ -67,7 +68,7 @@ export async function render(container, { user }) {
         </button>
       </div>
       <div class="notes-filters" id="notes-filters" role="group" aria-label="${t('notes.filterCreatorLabel')}" hidden></div>
-      <div class="notes-scroll">
+      <div class="notes-scroll page-scrollport">
         <div id="notes-grid" class="notes-grid" aria-busy="true">${renderSkeletonList({ rows: 5, lines: 3 })}</div>
       </div>
       <button class="page-fab" id="fab-new-note" aria-label="${t('notes.addNoteLabel')}" data-dock-label="${t('newLabel.notes')}">
@@ -237,15 +238,17 @@ function renderGrid() {
 }
 
 function renderNoteCard(note) {
-  const initials = note.creator_name
-    ? note.creator_name.split(' ').map((w) => w[0]).join('').toUpperCase().slice(0, 2)
-    : '?';
-
-  // Zettel- und Avatarfarbe sind Nutzerfarben und deshalb nur noch Variablen:
-  // die Flaeche mischt sie im gemessenen 16-%-Rezept, den Text traegt ein
-  // Token. Eine zur Laufzeit gerechnete Textfarbe braucht es dafuer nicht mehr
-  // (DESIGN.md, User-Farben-Regel).
-  const avatarColor = note.creator_color || '#8E8E93';
+  // KEINE INITIALEN AUF EINER 16px-SCHEIBE (Initialen-Schwelle-Regel).
+  //
+  // Hier standen bis zuletzt zwei Buchstaben auf einer 16-%-Waschung - unter der
+  // 20px-Schwelle, ab der die Regel Text überhaupt erlaubt, und direkt neben dem
+  // ausgeschriebenen Namen, den sie abkürzten. Die Scheibe trägt ihre Identität
+  // jetzt so, wie die Regel es vorsieht: als Farbe allein, im Vollton. Der Name
+  // steht unverändert daneben, es geht also nichts verloren.
+  //
+  // Die Zettelfarbe darüber bleibt beim gemessenen 16-%-Rezept - sie ist eine
+  // ganze Inhaltsfläche, und für die gilt die User-Farben-Regel weiter.
+  const avatarColor = note.creator_color || AVATAR_FALLBACK_COLOR;
 
   return `
     <div class="note-card ${note.pinned ? 'note-card--pinned' : ''}"
@@ -263,7 +266,7 @@ function renderNoteCard(note) {
                 style="--avatar-color:${esc(avatarColor)};">
             ${note.creator_avatar
               ? `<img src="${esc(note.creator_avatar)}" alt="${esc(note.creator_name || '')}" loading="lazy">`
-              : initials}
+              : ''}
           </span>
           <span>${esc(note.creator_name || '')}</span>
         </div>

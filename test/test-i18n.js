@@ -108,14 +108,35 @@ for (const locale of LOCALES) {
 // Die Dateien werden von Hand und von Skripten gepflegt. JSON.stringify(o, null, 2)
 // reserialisiert sie auf 2 Leerzeichen und erzeugt ein Diff über alle 3400 Zeilen,
 // in dem die eine echte Änderung nicht mehr zu finden ist.
-test('alle Locale-Dateien sind mit 4 Leerzeichen eingerückt', () => {
+//
+// GEPRÜFT WIRD DIE GANZE DATEI, NICHT IHRE ZWEITE ZEILE. Die frühere Fassung las
+// genau eine Zeile je Locale und hieß trotzdem „alle Locale-Dateien sind mit 4
+// Leerzeichen eingerückt". Sie hätte die 2-Leerzeichen-Reserialisierung gefunden,
+// gegen die sie gebaut war - und übersah dabei acht Zeilen im inventory-Block, die
+// in ALLEN 24 Dateien ganz ohne Einrückung standen (Rückstand einer früheren
+// Einfügung, ab 2026-08-20 repariert). Folge war nicht bloß Unordnung: der
+// JSON-Round-Trip war damit nicht mehr verlustfrei, und wer die Locales einmal
+// über JSON.stringify schrieb, richtete die acht Zeilen ungewollt mit - 24 Dateien
+// mit fremdem Rauschen in einem Commit, der davon nichts wissen wollte.
+//
+// Die Zusicherung ist deshalb die schärfstmögliche und zugleich die einfachste:
+// die Datei IST, was `JSON.stringify(daten, null, 4) + '\n'` liefert. Das deckt
+// Einrückung, Zeilenumbrüche, den Schluss-Umbruch und die Zeichen-Escapes in einem
+// Satz - und macht das Ergänzen von Keys per Round-Trip wieder gefahrlos.
+test('jede Locale-Datei ist Zeile für Zeile 4-Leerzeichen-formatiert', () => {
   const wrong = [];
   for (const locale of LOCALES) {
-    const secondLine = readLocale(locale).split('\n')[1] ?? '';
-    const indent = (secondLine.match(/^ */) ?? [''])[0].length;
-    if (indent !== 4) wrong.push(`${locale}.json (${indent})`);
+    const raw = readLocale(locale);
+    const canonical = `${JSON.stringify(JSON.parse(raw), null, 4)}\n`;
+    if (raw === canonical) continue;
+    // Den ORT nennen, nicht nur die Tatsache: ohne Zeilennummer steht man vor
+    // 4600 Zeilen und dem Satz „unterscheidet sich".
+    const a = raw.split('\n');
+    const b = canonical.split('\n');
+    const i = a.findIndex((line, n) => line !== b[n]);
+    wrong.push(`${locale}.json Zeile ${i + 1}: ${JSON.stringify(a[i])} statt ${JSON.stringify(b[i])}`);
   }
-  assert.deepEqual(wrong, [], `nicht 4-Leerzeichen-eingerückt: ${wrong.join(', ')}`);
+  assert.deepEqual(wrong, [], `nicht kanonisch 4-Leerzeichen-formatiert:\n  ${wrong.join('\n  ')}`);
 });
 
 test('alle Locale-Dateien enden mit einem Zeilenumbruch', () => {
@@ -160,4 +181,29 @@ test('Modulnamen sind in nav und in den API-Token-Scopes wortgleich', () => {
   assert.ok(compared >= 12 * LOCALES.length,
     `zu wenige Paare verglichen (${compared}) - greift der Selektor noch?`);
   assert.deepEqual(drift, [], `Modulname driftet:\n  ${drift.join('\n  ')}`);
+});
+
+// Dritte Stelle desselben Namens: der Ordner, in dem die Belege der
+// Gemeinsamen Ausgaben landen. Er hiess in ELF von vierundzwanzig Sprachen
+// anders als das Modul - "Geteilte Ausgaben" gegen "Gemeinsame Ausgaben",
+// "Sdílené výdaje" gegen "Společné výdaje" - und keine der beiden Listen oben
+// sah ihn, weil er unter `documents.*` liegt statt unter `nav.*`.
+//
+// Er steht hier und nicht bei der Migration, die ihn einmalig umbenannt hat
+// (v146): die Migration ist ein historischer Fakt und laeuft genau einmal, die
+// REGEL gilt fuer jede kuenftige Uebersetzung. Ein Uebersetzer, der den Ordner
+// beim naechsten Sprachdurchgang anders nennt, laesst `ensureFolder`
+// (server/routes/documents.js) sonst still einen zweiten Ordner anlegen.
+test('der Beleg-Ordner der Gemeinsamen Ausgaben heisst wie das Modul', () => {
+  const drift = [];
+  for (const locale of LOCALES) {
+    const keys = flatten(JSON.parse(readLocale(locale)));
+    const title = keys.get('splitExpenses.title');
+    const folder = keys.get('documents.splitExpensesFolder');
+    assert.ok(title, `${locale}: splitExpenses.title fehlt`);
+    assert.ok(folder, `${locale}: documents.splitExpensesFolder fehlt`);
+    if (title !== folder) drift.push(`${locale}: Modul ${JSON.stringify(title)}, Ordner ${JSON.stringify(folder)}`);
+  }
+  assert.deepEqual(drift, [],
+    `Der Beleg-Ordner traegt einen anderen Namen als das Modul:\n  ${drift.join('\n  ')}`);
 });

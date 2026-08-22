@@ -195,9 +195,31 @@
   color: var(--color-text-secondary);
 }
 
-.day-header--today .day-header__name,
+/* „Heute" nach dem Kanon, den der Kalender führt: die DATUMSMARKE trägt die
+ * Stimme im Vollton, die Zelle bekommt weder Füllung noch Rahmen
+ * (calendar.css, `.month-day--today .month-day__number` und
+ * `.week-view__day-num--today`). Kapsel statt Kreis, weil hier „19.08." steht
+ * und nicht eine Ziffer - dieselbe --radius-full-Form, nur breiter.
+ *
+ * Hier stand `color: var(--module-accent)` auf Name UND Datum. Drei Dinge auf
+ * einmal daneben: eine Marke nannte ihre Identität als getönte SCHRIFT statt im
+ * Vollton (Vollton-Regel), sie nahm dafür den MODULTON im eigenen Modul, wo die
+ * Herkunft längst im Kopf steht (Herkunfts-Regel), und sie war die dritte
+ * Fassung von „heute" neben den zwei, die der Kalender schon führt. Der Name
+ * daneben markiert die Spalte ohne Farbe mit - ein zweiter Kanal für dieselbe
+ * Aussage, wie ihn die Skalen-Regel für alles verlangt, was nicht allein an
+ * einer Tönung hängen darf. */
+.day-header--today .day-header__name {
+  color: var(--color-text-primary);
+  font-weight: var(--font-weight-semibold);
+}
+
 .day-header--today .day-header__date {
-  color: var(--module-accent);
+  background-color: var(--color-accent);
+  color: var(--color-ink-on-vivid);
+  font-weight: var(--font-weight-semibold);
+  border-radius: var(--radius-full);
+  padding-inline: var(--space-2);
 }
 
 .day-slots {
@@ -278,12 +300,11 @@
     min-height: var(--target-lg);
   }
 
-  /* .meal-card__actions braucht hier nichts mehr: die Einblendung hängt seit
-   * dem Audit an `@media (hover: hover)` statt an der Viewport-Breite. */
-  .meal-slot__add-more-btn {
-    opacity: 1;
-  pointer-events: auto;
-  }
+  /* Die schmale Fassung von Slot und Karte steht NICHT hier, sondern hinter
+   * ihren Bauteilen (Abschnitt „Schmale Fassung"). Dieser Block läuft vor den
+   * Komponentendefinitionen, und bei gleicher Spezifität gewinnt die spätere
+   * Regel: `display: none` hier verlor gegen `display: flex` dort - gemessen an
+   * einem Wochengitter, das nach dem Umbau 358px HÖHER war statt niedriger. */
 }
 
 /* --------------------------------------------------------
@@ -446,14 +467,32 @@
 .meal-card {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: stretch;
   text-align: left;
-  padding: var(--space-4);
+  /* cursor bleibt auf der Karte: auch außerhalb des Titel-Buttons ist sie
+   * per Pointer greifbar (Drag & Drop, wireDragDrop). */
   cursor: pointer;
 }
 
 .meal-card + .meal-card {
   border-top: 1px solid var(--color-border-subtle);
+}
+
+/* Die Titelfläche ist der Öffnen-Button der Karte (edit-meal). Sie trägt das
+ * obere Karten-Padding, die Aktionszeile darunter das untere - zusammen ergibt
+ * das die frühere Klickfläche der Karte, nur ohne Buttons IM Button
+ * (invalides HTML, Critique 2026-08-17). */
+.meal-card__open {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: var(--space-4) var(--space-4) 0;
+  background: none;
+  border: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
 .meal-card__title {
@@ -522,6 +561,9 @@
   display: flex;
   gap: var(--space-4);
   margin-top: var(--space-1);
+  /* Unteres Karten-Padding, seit die Karte selbst keins mehr trägt
+   * (siehe .meal-card__open). */
+  padding: 0 var(--space-4) var(--space-4);
   align-self: stretch;
   transition: opacity var(--transition-fast);
 }
@@ -612,6 +654,104 @@
 
 .meal-card__action-btn--recipe:hover {
   color: var(--module-accent);
+}
+
+/* --------------------------------------------------------
+ * Schmale Fassung: die Mahlzeit als ZEILE
+ *
+ * Steht bewusst HINTER den Bauteilen und nicht im Mobil-Block weiter oben. Der
+ * läuft vor den Komponentendefinitionen, und bei gleicher Spezifität gewinnt
+ * die spätere Regel - der erste Anlauf setzte `display: none` und
+ * `flex-direction: row` dort und wurde von `display: flex` bzw.
+ * `flex-direction: column` der Bauteile überschrieben. Sichtbar wurde es nur an
+ * der Messung: das Wochengitter war danach 6188px hoch statt 5830px, also 358px
+ * HÖHER als vorher, obwohl an jeder einzelnen Regel nichts falsch war.
+ * -------------------------------------------------------- */
+
+@media (max-width: 640px) {
+  /* DER ZWEITE ANLEGEWEG FÄLLT WEG, UND ZWAR UNTER DERSELBEN BEDINGUNG, UNTER
+   * DER DER ERSTE ERSCHEINT.
+   *
+   * Genau bei 640px schaltet `.day-add` ein - der gesammelte „+ Mahlzeit" je
+   * Tag, den es gibt, weil die leeren Slots hier ausgeblendet sind. Daneben
+   * blieb der Per-Slot-Knopf dauerhaft stehen: gemessen 27 Slot-Knöpfe plus 7
+   * Tagesknöpfe für 27 Mahlzeiten, also 34 Anlege-Affordanzen für eine Woche,
+   * jede --target-lg hoch. Zwei sichtbare Wege zu derselben Handlung sind einer
+   * zu viel (DESIGN.md, Don't „einen zweiten Anlege-Weg neben einem sichtbaren
+   * stehen lassen"), und der teurere von beiden war der, der jede belegte Zeile
+   * um eine gestrichelte Leerzeile verlängert hat.
+   *
+   * Auf Zeigergeräten und breiten Touch-Flächen bleibt er: dort sind die leeren
+   * Slots sichtbar, `.day-add` gibt es nicht, und er ist der einzige Weg, eine
+   * ZWEITE Mahlzeit in denselben Slot zu legen. */
+  .meal-slot__add-more-btn {
+    display: none;
+  }
+
+  /* MOBIL IST EINE MAHLZEIT EINE ZEILE, KEINE KARTE.
+   *
+   * Der Wochenplan ist hier eine Liste, kein Board - und für Listen führt die
+   * Küche seit v1.58.0 EIN Vokabular (`.list-row`): eine Textspalte mit
+   * `min-width: 0`, daneben eine unschrumpfbare Bedienzone, alles in EINER
+   * Zeile. Die Mahlzeit war der letzte der vier Tabs, der stattdessen stapelte:
+   * Titel oben, Aktionszeile darunter, Anlege-Streifen darunter.
+   *
+   * Gemessen bei 375px vorher: Slot 172px, Karte 104px, Inhalt „Rührei mit
+   * Toast" = 16 Zeichen. Das Wochengitter war 5830px hoch bei 454px sichtbarer
+   * Fläche - knapp dreizehn Bildschirme für sieben Tage, in genau der Szene, die
+   * PRODUCT.md als die primäre nennt (Telefon, eine Hand, beim Kochen).
+   *
+   * Die Aktionen bleiben dabei ALLE sichtbar; verborgen wird hier nichts. Das
+   * ist die stehende Entscheidung der Zeilen-Grammatik (list-row.css,
+   * „Bedienzone": Ruhe durch Kontrast, nicht durch Unsichtbarkeit), und sie gilt
+   * in der Zeile genauso wie im Stapel - nur kostet sie in der Zeile keine
+   * eigene Höhe mehr. */
+  .meal-card {
+    flex-direction: row;
+    align-items: center;
+    gap: var(--space-1);
+  }
+
+  .meal-card__open {
+    flex: 1;
+    min-width: 0;
+    justify-content: center;
+    padding: var(--space-2) 0 var(--space-2) var(--space-3);
+    min-height: var(--target-lg);
+  }
+
+  /* Der Titel darf umbrechen statt zu ellipsieren: die Zeile wächst dann um
+   * eine Textzeile, was billiger ist als ein abgeschnittener Gerichtename -
+   * dieselbe Abwägung („Wiedererkennung vor Kompaktheit"), die das
+   * Desktop-Board mit seinem 2-Zeilen-Clamp längst getroffen hat. Fläche folgt
+   * Inhalt, in beide Richtungen. */
+  .meal-card__title-text {
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow-wrap: break-word;
+  }
+
+  /* Der `--space-4`-Abstand der Basisregel spannt die unsichtbaren Hitslops der
+   * 24px-Knöpfe auseinander. Auf Touch gibt es die nicht:
+   * `.meal-card__action-btn` ist dort selbst --target-lg groß und sein ::before
+   * liegt auf `inset: 0`. Der Abstand hätte hier also nur noch Breite gekostet -
+   * bei drei Aktionen 32px der 311px, die der Zeile insgesamt bleiben. */
+  .meal-card__actions {
+    margin-top: 0;
+    padding: 0;
+    gap: 0;
+    flex: none;
+  }
+
+  /* Das Typ-Label ist die Überschrift des Slots, nicht seine erste Zeile: es
+   * trägt nur noch, was es sagt. Vorher lief darüber und darunter das volle
+   * Karten-Padding mit. */
+  .meal-slot__type-label {
+    padding: var(--space-2) var(--space-3) 0;
+  }
 }
 
 /* --------------------------------------------------------
@@ -753,7 +893,9 @@
   padding: var(--space-3);
   border: none;
   border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--module-meals) var(--tint-wash), transparent);
+  /* Eine Notiz im eigenen Modul nennt nichts: der Modulton sagte „Mahlzeiten"
+   * auf einer Seite, deren Kopf das beantwortet (Herkunfts-Regel). */
+  background: var(--color-fill-well);
 }
 
 .meal-recurrence-note {
@@ -884,7 +1026,10 @@
     column-gap: var(--space-2);
     row-gap: var(--space-2);
     align-items: stretch;
-    padding: 0 0 var(--space-3);
+    /* Das eigene Bodenpolster als Variable, nicht als `padding-bottom`:
+     * `.page-scrollport` (layout.css) legt den Freiraum der fixierten
+     * Shell-Flächen DARAUF und überschriebe ein direktes Padding hier. */
+    --scrollport-pad: var(--space-3);
     min-width: 0;
     overflow-x: auto;
     scroll-snap-type: x proximity;

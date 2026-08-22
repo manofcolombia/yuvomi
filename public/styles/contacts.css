@@ -112,16 +112,18 @@
  * Deklarationen ein zweites Mal. Die Klasse steht am Element, diese Regel
  * bleibt als Ankerpunkt fuer die Kategorie-Toene darunter. */
 
-/* Pro Kategorie ein abgeleiteter Farbton (--cat). KEIN neuer Modul-Akzent
- * (DESIGN §2), sondern dezente, aus bestehenden AA-verifizierten Tokens
- * abgeleitete Flächen. --cat kaskadiert von der Gruppe auf Icon + Header. */
-.contact-group--doctor    { --cat: var(--color-success); }         /* Arzt → Grün (Fürsorge) */
-.contact-group--school    { --cat: var(--color-warning); }         /* Schule/Kita → Amber (Lernen) */
-.contact-group--authority { --cat: var(--color-accent); }          /* Behörde → Violett (amtlich, distinct vom Modul-Blau) */
-.contact-group--insurance { --cat: var(--module-budget); }         /* Versicherung → Teal (Absicherung) */
-.contact-group--craftsman { --cat: var(--module-meals); }          /* Handwerker → Orange (Werkstatt) */
-.contact-group--emergency { --cat: var(--color-danger); }          /* Notfall → Rot (semantisch) */
-.contact-group--misc      { --cat: var(--color-text-secondary); }  /* Sonstiges → neutral */
+/* DER TON EINER KATEGORIE KOMMT AUS DEN DATEN, nicht mehr aus sieben Regeln
+ * `.contact-group--<key>` (Migration 152). Die Gruppe setzt `--cat` und
+ * `--cat-ink` inline; ohne kuratierten Ton bleibt beides ungesetzt und die
+ * Marke neutral - das ist die Aussage, nicht ihr Fehlen.
+ *
+ * WARUM DIE LISTE WEG MUSSTE: ein Selektor auf den Kategorie-Schluessel trifft
+ * per Konstruktion nur die SEED-Kategorien. Seit #357 legt der Haushalt eigene
+ * an, und die fielen alle auf den Modulton zurueck - im Demo-Haushalt sahen
+ * „Familie" und „Dienstleistungen" deshalb gleich aus. Eine Farbe, die zwei
+ * Dinge meint, ist keine (Vollton-Regel, DESIGN.md Colors). Dieselbe Bauart,
+ * die dieselbe Regel schon zweimal eingeholt hat: was ueber einen NAMEN laeuft,
+ * deckt N Namen ab, nicht die Regel. */
 
 .contact-group__header {
   display: flex;
@@ -257,8 +259,10 @@ html:has(.contacts-page.is-selecting) {
   width: var(--target-md);
   height: var(--target-md);
   border-radius: var(--radius-full);
-  background-color: color-mix(in srgb, var(--cat, var(--c-accent)) var(--tint-surface), transparent);
-  color: var(--cat, var(--c-accent));
+  /* Haut aus .vivid-mark (layout.css), aber nur mit kuratiertem Ton - sonst
+   * neutral. Begruendung an den Kategorie-Toenen oben. */
+  --seal-accent: var(--cat, var(--color-fill-well));
+  color: var(--cat-ink, var(--color-text-secondary));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -266,12 +270,25 @@ html:has(.contacts-page.is-selecting) {
   font-size: var(--text-lg);
 }
 
-/* Personen/Familien-Kontakte: Initialen statt Kategorie-Icon, im Modul-Ton.
- * Überschreibt den Kategorie-Ton der Gruppe bewusst mit --c-accent. */
-.contact-item__icon--initials {
-  --cat: var(--c-accent);
+/* Verknüpfte Haushaltsmitglieder: das Bild oder die Initialen des Menschen, in
+ * SEINER Farbe. Fläche und Tinte kommen inline aus den Daten (die Begründung
+ * steht an `contactAvatar` in contacts.js), deshalb trägt diese Variante
+ * bewusst KEIN `.vivid-mark`: dessen Tinte ist die gemessene für kuratierte
+ * Töne, und eine frei gewählte Avatarfarbe braucht die gerechnete.
+ *
+ * Hier stand bis 2026-08-18 `--cat: var(--c-accent)`, also der Modul-Ton -
+ * dieselbe Scheibe für jedes Mitglied, während dieselben Menschen zwei Klicks
+ * weiter ihre eigene trugen. */
+.contact-item__icon--member {
+  overflow: hidden;
   font-size: var(--text-sm);
   font-weight: var(--font-weight-semibold);
+}
+
+.contact-item__icon--member img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .contact-item__body {
@@ -448,8 +465,8 @@ html:has(.contacts-page.is-selecting) {
   height: var(--target-md);
   flex-shrink: 0;
   border-radius: var(--radius-full);
-  background-color: color-mix(in srgb, var(--c-accent) var(--tint-surface), transparent);
-  color: var(--c-accent);
+  --seal-accent: var(--cat, var(--color-fill-well));
+  color: var(--cat-ink, var(--color-text-secondary));
 }
 
 .contacts-cat-select .form-input {

@@ -521,10 +521,18 @@ test('POST /holidays/sync: Admin ohne konfiguriertes Land -> 200 (netz-freier Ea
 // Defensive Parse-Fallbacks der Lese-Helfer (korrupte sync_config-Werte)
 // --------------------------------------------------------
 test('GET / verkraftet korrupte dashboard_widgets (Fallback auf Default)', async () => {
+  // BEIDE Ablagen, seit die Anordnung persönlich ist (#585): der Haushaltswert
+  // ist nur noch Fallback, und ein persönlicher Wert verdeckt ihn. Wer hier nur
+  // den Haushaltswert korrumpiert, prüft nach dem ersten PUT dieser Datei gar
+  // nichts mehr - die Antwort käme dann aus `dashboard_widgets:user:1`.
+  cfgDelete('dashboard_widgets:user:1');
   cfgSet('dashboard_widgets', '{ kaputt');
-  const widgets = (await get()).body.data.dashboard_widgets;
-  assert.deepEqual(widgets, []); // Client erweitert leer auf seine aktuellen Defaults
+  assert.deepEqual((await get()).body.data.dashboard_widgets, []); // Client erweitert leer auf seine Defaults
   cfgDelete('dashboard_widgets');
+
+  cfgSet('dashboard_widgets:user:1', '{ auch kaputt');
+  assert.deepEqual((await get()).body.data.dashboard_widgets, []);
+  cfgDelete('dashboard_widgets:user:1');
 });
 test('GET / verkraftet korrupte per-user calendar_default_reminders', async () => {
   cfgSet('calendar_default_reminders:user:1', 'nicht-json');

@@ -15,7 +15,7 @@
  *   → bypassCacheUntil (in-memory + Cache API für SW-Restart-Robustheit)
  */
 
-const APP_RELEASE   = '2.14.2';
+const APP_RELEASE   = '2.28.0';
 const SHELL_CACHE   = `yuvomi-shell-${APP_RELEASE}`;
 const PAGES_CACHE   = `yuvomi-pages-${APP_RELEASE}`;
 const LOCALES_CACHE = `yuvomi-locales-${APP_RELEASE}`;
@@ -96,9 +96,12 @@ const APP_SHELL = [
   '/utils/birthday-event.js',
   '/utils/bulk-pill.js',
   '/utils/category-labels.js',
+  '/utils/chart.js',
   '/utils/color.js',
   '/utils/contact-name.js',
   '/utils/contrast.js',
+  '/utils/countdown.js',
+  '/utils/dashboard-layout-hint.js',
   '/utils/dashboard-widgets.js',
   '/utils/date.js',
   '/utils/document-preview.js',
@@ -120,6 +123,8 @@ const APP_SHELL = [
   '/utils/inventory-warranty.js',
   '/utils/kitchen-tabs.js',
   '/utils/kitchen-transfer.js',
+  '/utils/mentions.js',
+  '/utils/module-accent.js',
   '/utils/metric-card.js',
   '/utils/money.js',
   '/utils/page-search.js',
@@ -145,6 +150,7 @@ const APP_SHELL = [
   '/utils/ux.js',
   '/utils/vcard.js',
   '/utils/version.js',
+  '/utils/upload-limit.js',
   '/utils/wall-mode.js',
   '/offline.html',
   // offline.html laedt theme-init.js, damit die Huelle dieselbe Farbwelt
@@ -241,6 +247,7 @@ const PAGE_MODULES = [
   '/settings/pages/personal-device.js',
   '/settings/pages/personal-calendar.js',
   '/settings/pages/personal-tasks.js',
+  '/settings/pages/modules-active.js',
   '/settings/pages/modules-navigation.js',
   '/settings/pages/modules-kitchen.js',
   '/settings/pages/modules-calendar.js',

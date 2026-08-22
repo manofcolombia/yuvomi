@@ -10,7 +10,8 @@
  *      geht per authentifiziertem Loopback (`fetch` → eigener HTTP-Server) und
  *      erbt exakt die Rechte des aufrufenden API-Tokens; Rollen- und
  *      CSRF-Prüfung greifen serverseitig auf `/api/v1/*` wie bei jedem Client.
- * Abhängigkeiten: server/middleware/validate.js, server/openapi.js
+ * Abhängigkeiten: server/middleware/validate.js, server/openapi.js,
+ *                  server/scopes.js + server/permissions.js (Rechte-Durchsetzung)
  *
  * Architektur: Jedes Tool ist EIN Eintrag in der Registry (Definition + Handler
  *   zusammen) — daraus werden `tools/list` und der Dispatch abgeleitet, damit
@@ -24,6 +25,7 @@ import * as v from '../middleware/validate.js';
 import { readFileSync } from 'node:fs';
 import { buildOpenApiSpec } from '../openapi.js';
 import { tokenAllows } from '../scopes.js';
+import { moduleAccessVerdict, MODULE_ACCESS_ALLOW } from '../permissions.js';
 import { visibilityWhere } from '../services/visibility.js';
 import { loadTagsFor, normalizeTags, setTags, tagKey } from '../utils/task-tags.js';
 
@@ -684,44 +686,68 @@ const TOOL_DEFINITIONS = ALL_TOOLS.map(({ name, description, inputSchema }) => (
 const TOOL_MAP = new Map(ALL_TOOLS.map((t) => [t.name, t]));
 
 /**
- * Darf der Token dieses Tool nutzen? Tools ohne `scope` (Meta-/Brücken-Tools) sind
- * immer erlaubt — die OpenAPI-Brücke setzt Scopes ohnehin serverseitig am
- * Loopback-REST-Layer durch. `scopes === null` = kein Scoping (voller Zugriff).
- * @param {string[]|null} scopes
+ * Darf dieser Akteur das Tool nutzen? Zwei voneinander unabhängige Grenzen, und
+ * BEIDE müssen zustimmen:
+ *
+ *   1. Token-Scopes — Least Privilege des Integrationstokens selbst.
+ *      `scopes === null` = kein Scoping (Legacy-Token, voller Zugriff).
+ *   2. Modulrechte des Nutzers (#467) — was das Mitglied hinter dem Token
+ *      überhaupt darf. `moduleAccess === null` = Admin oder unbeschränkt.
+ *
+ * Punkt 2 fehlte hier (#823): die Kern-Tools laufen in-process gegen SQLite und
+ * sehen die /api/v1-Middleware nie, ein Mitglied mit `tasks: none` bekam über
+ * `list_tasks` trotzdem die Aufgaben. Ein Scope kann Rechte nur einschränken,
+ * niemals erweitern — deshalb ist die Reihenfolge egal, aber die Konjunktion
+ * nicht.
+ *
+ * Tools ohne `scope` (Meta-/Brücken-Tools) bleiben erlaubt: die OpenAPI-Brücke
+ * ruft per Loopback über /api/v1 auf und erbt dort Scopes, Modulrechte und
+ * Guest-Guard vom echten Middleware-Stapel. Ausnahme sind Split-Guests, die
+ * gar keinen Haushaltszugriff haben — für sie sind alle Kern-Tools zu.
+ *
+ * @param {{ scopes?: string[]|null, moduleAccess?: object|null, splitGuest?: boolean }|null} actor
  * @param {{ scope?: { module: string, access: 'read'|'write' } }} tool
  * @returns {boolean}
  */
-function toolAllowed(scopes, tool) {
+function toolAllowed(actor, tool) {
   if (!tool.scope) return true;
-  return tokenAllows(scopes, tool.scope.module, tool.scope.access);
+  // Gast-Konten für geteilte Ausgaben erreichen unter /api/v1 nur
+  // /split-expenses; kein Kern-Tool liegt dort, also alle gesperrt.
+  if (actor && actor.splitGuest) return false;
+  const scopes = actor ? (actor.scopes ?? null) : null;
+  if (!tokenAllows(scopes, tool.scope.module, tool.scope.access)) return false;
+  const moduleAccess = actor ? (actor.moduleAccess ?? null) : null;
+  return moduleAccessVerdict(moduleAccess, tool.scope.module, tool.scope.access) === MODULE_ACCESS_ALLOW;
 }
 
 /**
- * Tool-Definitionen für `tools/list`, gefiltert auf die Scopes des Tokens —
- * ein LLM sieht nur Tools, die es auch aufrufen darf.
- * @param {string[]|null} scopes
+ * Tool-Definitionen für `tools/list`, gefiltert auf das, was der Akteur wirklich
+ * aufrufen darf — ein LLM sieht kein Tool, das ihm der nächste Aufruf verweigert.
+ * @param {{ scopes?: string[]|null, moduleAccess?: object|null, splitGuest?: boolean }|null} actor
  * @returns {Array<{ name: string, description: string, inputSchema: object }>}
  */
-function listToolDefinitions(scopes = null) {
+function listToolDefinitions(actor = null) {
   return ALL_TOOLS
-    .filter((tool) => toolAllowed(scopes, tool))
+    .filter((tool) => toolAllowed(actor, tool))
     .map(({ name, description, inputSchema }) => ({ name, description, inputSchema }));
 }
 
 /**
  * Führt ein Tool aus.
- * @param {{ db: object, actor: { id: number, role?: string, scopes?: string[]|null }, requestHeaders?: object }} ctx
+ * @param {{ db: object, actor: { id: number, role?: string, scopes?: string[]|null, moduleAccess?: object|null, splitGuest?: boolean }, requestHeaders?: object }} ctx
  * @param {string} name  - Tool-Name
  * @param {object} args  - Tool-Argumente
  * @returns {Promise<any>} rohes Ergebnis (wird vom Protokoll-Layer serialisiert)
- * @throws {ToolError} bei unbekanntem Tool, fehlender Scope-Berechtigung oder Validierungsfehler
+ * @throws {ToolError} bei unbekanntem Tool, fehlender Berechtigung oder Validierungsfehler
  */
 async function callTool(ctx, name, args = {}) {
   const tool = TOOL_MAP.get(name);
   if (!tool) throw new ToolError(`Unknown tool: ${name}`);
-  const scopes = ctx.actor ? (ctx.actor.scopes ?? null) : null;
-  if (!toolAllowed(scopes, tool)) {
-    throw new ToolError(`Tool "${name}" is not permitted by this token's scopes.`);
+  const actor = ctx.actor || null;
+  if (!toolAllowed(actor, tool)) {
+    // Eine Meldung für beide Gründe: welche der zwei Grenzen zugeschlagen hat,
+    // geht den Aufrufer nichts an (und verriete, dass es das Modul gibt).
+    throw new ToolError(`Tool "${name}" is not permitted for this account.`);
   }
   return tool.handler(ctx, args || {});
 }

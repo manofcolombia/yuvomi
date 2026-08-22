@@ -216,8 +216,16 @@
   display: grid;
   place-items: center;
   border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--module-accent) var(--tint-surface), var(--color-surface-2));
-  color: var(--module-accent);
+  /* KEIN VOLLTON, UND DAS IST DIESELBE REGEL, NICHT IHRE AUSNAHME. Die
+   * Herkunfts-Regel (DESIGN.md) laesst ein Modulzeichen an MISCHSTELLEN stehen
+   * und verbietet es als Dauer-Dekor in den Listen eines einzelnen Moduls: jede
+   * Zeile sagte hier „Geteilte Ausgaben" auf eine Seite, die genau das schon
+   * im Kopf sagt. Unterschieden werden die Eintraege ohnehin vom GLYPH, nicht
+   * vom Ton - Gruppentypen und Ausgabenkategorien fuehren keine eigenen Farben.
+   * Also neutral, bis sie welche haben; dann traegt die Marke DEREN Ton im
+   * Vollton (Vollton-Regel, erster Zweig). */
+  color: var(--color-text-secondary);
+  background: var(--color-fill-well);
 }
 
 .split-group__body,

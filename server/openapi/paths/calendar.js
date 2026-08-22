@@ -45,11 +45,13 @@ export function calendarPaths() {
       patch: op({ summary: 'Enable/disable a Google calendar to sync', tag: 'Calendar', admin: true, stateChanging: true }),
     },
     '/api/v1/calendar/google/disconnect': { delete: op({ summary: 'Disconnect Google Calendar', tag: 'Calendar', admin: true, stateChanging: true }) },
+    '/api/v1/calendar/google/mirrored-events': { delete: op({ summary: 'Delete locally mirrored Google events', tag: 'Calendar', admin: true, stateChanging: true }) },
     '/api/v1/calendar/google/readonly': { put: op({ summary: 'Set Google Calendar read-only mode', tag: 'Calendar', admin: true, stateChanging: true }) },
     '/api/v1/calendar/apple/status': { get: op({ summary: 'Get Apple Calendar status', tag: 'Calendar' }) },
     '/api/v1/calendar/apple/sync': { post: op({ summary: 'Run Apple Calendar sync', tag: 'Calendar', admin: true, stateChanging: true }) },
     '/api/v1/calendar/apple/connect': { post: op({ summary: 'Connect Apple Calendar', tag: 'Calendar', admin: true, stateChanging: true, requestBody: jsonBody(null) }) },
     '/api/v1/calendar/apple/disconnect': { delete: op({ summary: 'Disconnect Apple Calendar', tag: 'Calendar', admin: true, stateChanging: true }) },
+    '/api/v1/calendar/apple/mirrored-events': { delete: op({ summary: 'Delete locally mirrored Apple events', tag: 'Calendar', admin: true, stateChanging: true }) },
     '/api/v1/calendar/subscriptions': {
       get: op({ summary: 'List ICS subscriptions', tag: 'Calendar' }),
       post: op({ summary: 'Create ICS subscription', tag: 'Calendar', stateChanging: true, requestBody: jsonBody(null) }),
@@ -106,6 +108,25 @@ export function calendarPaths() {
     },
     '/api/v1/calendar/caldav/reminders/status': {
       get: op({ summary: 'Get CalDAV reminders sync status', tag: 'Calendar' }),
+    },
+    '/api/v1/calendar/outlook/auth': { get: op({ summary: 'Start Outlook (Microsoft) OAuth', tag: 'Calendar', admin: true }) },
+    '/api/v1/calendar/outlook/callback': { get: op({ summary: 'Outlook OAuth callback', tag: 'Calendar' }) },
+    '/api/v1/calendar/outlook/accounts': {
+      get: op({ summary: 'List connected Outlook accounts', tag: 'Calendar', admin: true }),
+    },
+    '/api/v1/calendar/outlook/accounts/{id}': {
+      put: op({ summary: 'Update Outlook account (name, auto-sync calendar, owner)', tag: 'Calendar', admin: true, params: [idParam()], stateChanging: true, requestBody: jsonBody(null) }),
+      delete: op({ summary: 'Disconnect and delete Outlook account', tag: 'Calendar', admin: true, params: [idParam()], stateChanging: true }),
+    },
+    '/api/v1/calendar/outlook/accounts/{id}/calendars': {
+      get: op({ summary: 'List calendars for an Outlook account', tag: 'Calendar', admin: true, params: [idParam()] }),
+      patch: op({ summary: 'Enable or disable an Outlook calendar as push target', tag: 'Calendar', admin: true, params: [idParam()], stateChanging: true, requestBody: jsonBody(null) }),
+    },
+    '/api/v1/calendar/outlook/sync': {
+      post: op({ summary: 'Run Outlook one-way push', tag: 'Calendar', admin: true, stateChanging: true }),
+    },
+    '/api/v1/calendar/outlook/status': {
+      get: op({ summary: 'Get Outlook push status', tag: 'Calendar' }),
     },
     '/api/v1/calendar/{id}': {
       get: op({

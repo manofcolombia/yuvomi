@@ -20,10 +20,16 @@ export function renderAvatarStack(users, { size = 28, maxVisible = 3 } = {}) {
   if (!users?.length) return '';
   const visible = users.slice(0, maxVisible);
   const overflow = users.length - visible.length;
-  // Untergrenze 9px: die Gitter-Ansichten des Kalenders rufen mit size 14–16
-  // auf, wodurch size*0.4 auf 6px fiel — für Initialen und den "+N"-Zähler
-  // unter jeder Lesbarkeitsschwelle. Ab size 23 greift wieder die Proportion.
-  const fs = Math.max(9, Math.round(size * 0.4));
+  // UNTER DER LESBARKEIT GIBT ES KEINE INITIALEN, NUR DIE FARBE (Etappe 3,
+  // 2026-08-17). Hier stand eine 9px-Untergrenze - unter jeder Schwelle, die
+  // die App sonst kennt (Caption 2 ist mit 11px die kleinste Textrolle), und
+  // die Kalender-Gitter riefen mit size 14-16 genau hinein (Sonde
+  // undersized-ui-text, 13 Fundstellen). Ab 20px Scheibe tragen 11px-Initialen
+  // (Verhaeltnis <= 0.55); darunter ist die Scheibe der Kanal - die Nutzerfarbe
+  // ist per User-Farben-Regel ohnehin das Identitaetssignal, und der Name
+  // steht weiter im title. Ein 9px-Text sagt weniger als ein sauberer Punkt.
+  const fs = Math.max(11, Math.round(size * 0.4));
+  const showText = size >= 20;
   const avatars = visible.map((u) => {
     const initials = (u.display_name ?? '')
       .split(' ')
@@ -33,7 +39,7 @@ export function renderAvatarStack(users, { size = 28, maxVisible = 3 } = {}) {
       .slice(0, 2);
     const inner = u.avatar_data
       ? `<img src="${esc(u.avatar_data)}" alt="${esc(u.display_name ?? '')}" loading="lazy">`
-      : esc(initials);
+      : (showText ? esc(initials) : '');
     return `<span class="avatar-stack__item"
       style="width:${size}px;height:${size}px;font-size:${fs}px;background-color:${esc(u.color ?? AVATAR_FALLBACK_COLOR)};color:${getReadableTextColor(u.color ?? AVATAR_FALLBACK_COLOR)}"
       title="${esc(u.display_name ?? '')}">
@@ -43,7 +49,7 @@ export function renderAvatarStack(users, { size = 28, maxVisible = 3 } = {}) {
   if (overflow > 0) {
     avatars.push(`<span class="avatar-stack__item avatar-stack__overflow"
       style="width:${size}px;height:${size}px;font-size:${fs}px"
-      title="${overflow} ${t('userMultiSelect.moreUsers')}">+${overflow}</span>`);
+      title="${overflow} ${t('userMultiSelect.moreUsers')}">${showText ? `+${overflow}` : ''}</span>`);
   }
   return `<span class="avatar-stack">${avatars.join('')}</span>`;
 }

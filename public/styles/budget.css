@@ -174,26 +174,29 @@
   font-size: var(--text-2xs);
   font-weight: var(--font-weight-semibold);
   line-height: 1.5;
-  color: color-mix(in srgb, var(--module-accent) var(--tint-ink), var(--color-text-primary));
-  background: color-mix(in srgb, var(--module-accent) var(--tint-surface), transparent);
+  color: var(--color-text-secondary);
+  background: var(--color-fill-well);
   white-space: nowrap;
 }
 
-/* Erwartete, noch nicht bestätigte Buchung (#637). Teilt die Pillen-Grammatik
- * des Haushalt-Badges, färbt aber in der Warn-Rolle: die Zeile steht in der
- * Liste, zählt aber in keiner Summe mit, und dieser Unterschied darf nicht auf
- * derselben Farbe liegen wie eine bloße Zuordnung. */
+/* Erwartete, noch nicht bestätigte Buchung (#637). Die Zeile steht in der
+ * Liste, zählt aber in keiner Summe mit.
+ *
+ * SIE TEILT DIE PILLEN-GRAMMATIK DES HAUSHALT-BADGES NICHT MEHR, und das ist
+ * der Punkt: das Haushalt-Badge ordnet ZU, dieses hier MELDET einen Zustand.
+ * Als getönte Pille unter getönter Schrift sagte es seinen Warnton zweimal
+ * blass und stand daneben in derselben Form wie die Zuordnung. Zweiter Zweig
+ * der Skalen-Regel: die Meldung trägt ihren Ton in der Schrift, im vollen Ton -
+ * gemessen 4,96:1 light und 7,13:1 dark auf der Kartenfläche, also AA für
+ * Kleintext, wofür die Ink-Mischung hier nie nötig war. */
 .budget-badge--pending {
   display: inline-block;
   vertical-align: middle;
   margin-inline-start: var(--space-1);
-  padding: var(--space-px) var(--space-2);
-  border-radius: var(--radius-full);
   font-size: var(--text-2xs);
   font-weight: var(--font-weight-semibold);
   line-height: 1.5;
-  color: color-mix(in srgb, var(--color-warning) var(--tint-ink), var(--color-text-primary));
-  background: color-mix(in srgb, var(--color-warning) var(--tint-surface), transparent);
+  color: var(--color-warning);
   white-space: nowrap;
 }
 
@@ -631,8 +634,13 @@
  * Spezifität nicht, bei gleicher Spezifität gewinnt sonst die spätere
  * Basisdeklaration und die Kompaktstufe bleibt wirkungslos (Audit A2-06). */
 @container budget-page (max-width: 479px) {
+  /* Der SCHRIFTGRAD stand hier auch (`--text-base`, 16px) und ist entfallen:
+   * die Kennzahl-Zeile klemmt ihn seit 2026-08-19 selbst, gestuft und mit
+   * Title 3 als Untergrenze (panel.css). Zwei Hosts unterboten sie lokal
+   * auf Fussnotengroesse - genau die Drift, gegen die das geteilte Bauteil
+   * gebaut wurde. Die Polsterung bleibt: sie ist eine Platzfrage, keine
+   * Typo-Entscheidung. */
   .metric-card { padding: var(--space-2); }
-  .metric-card__value { font-size: var(--text-base); }
   .metric-card__trend { display: none; }
 }
 
@@ -1403,8 +1411,15 @@
     min-height: 0;
   }
 
-  /* Doppelte FAB-Clearance vermeiden: das Panel polstert bereits unten. */
-  .budget-tab-panel--budget .budget-list { padding-bottom: 0; }
+  /* HIER STAND `.budget-tab-panel--budget .budget-list { padding-bottom: 0 }`
+   * gegen doppelte FAB-Clearance. Seit `.page-scrollport` (layout.css) den
+   * Nachlauf an genau EINEN Scrollport je Kette gibt - den innersten, per
+   * `:not(:has(.page-scrollport))` - kann er nicht mehr doppelt entstehen.
+   *
+   * Die Liste trägt ihn in beiden Zuständen: über 640px, weil sie hier scrollt,
+   * und darunter, weil sie das letzte Element des Panels ist, das dann scrollt.
+   * Bliebe die Nullung, hätte der Budget-Tab am Finger gar keinen Nachlauf und
+   * die Sammelaktions-Pille verdeckte wieder die letzten Buchungen. */
 }
 
 
@@ -1534,29 +1549,20 @@
 .budget-stats__controls { display:flex; flex-wrap:wrap; gap:var(--space-3); align-items:center; margin-bottom:var(--space-4); }
 .budget-stats__trend { width:100%; height:auto; display:block; }
 
-/* Achsenbeschriftung der Trendkurve: Skalen-Maximum oben, Zeitraumgrenzen unten.
- * Liegt als HTML außerhalb des SVG, weil preserveAspectRatio="none" jeden
- * SVG-Text horizontal verzerren würde. */
-.budget-stats__trend-wrap { position:relative; }
-.budget-stats__axis-max { display:block; font-size:var(--text-xs); color:var(--color-text-tertiary); margin-bottom:var(--space-1); }
-.budget-stats__axis-x { display:flex; justify-content:space-between; font-size:var(--text-xs); color:var(--color-text-tertiary); margin-top:var(--space-1); }
+.budget-stats__trend-wrap { position:relative; width:100%; }
 
-/* Werteachse statt einer einzelnen Max-Zahl (Audit A2-05): Gitterlinien im
- * SVG (25/50/75%), das Halbwert-Label liegt am linken Rand auf halber Höhe.
- * Der Bezugsrahmen dafür (`.budget-stats__trend-wrap { position: relative }`)
- * steht schon vier Zeilen darüber - hier stand er ein zweites Mal. */
-.budget-stats__axis-mid {
-  position: absolute;
-  left: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  font-size: var(--text-xs);
-  color: var(--color-text-tertiary);
-  background: color-mix(in srgb, var(--color-surface) 82%, transparent);
-  padding-inline: var(--space-0h);
-  pointer-events: none;
-}
-.budget-stats__grid { stroke: var(--color-border-subtle); stroke-width: 1; }
+/* HIER STANDEN DREI ACHSEN-REGELN UND EIN GITTER, alle ausserhalb des SVG:
+ * `__axis-max` als Zeile darueber, `__axis-mid` absolut auf halber Hoehe,
+ * `__axis-x` als Zeile darunter, dazu ein eigenes `__grid`. Die Begruendung
+ * dafuer stand daneben - „weil preserveAspectRatio='none' jeden SVG-Text
+ * horizontal verzerren wuerde" - und sie las die Kausalitaet verkehrt herum:
+ * das `none` war die Ursache, nicht die Randbedingung.
+ *
+ * Seit der Extraktion (utils/chart.js) bringt die geteilte Geometrie ihren
+ * linken Gutter mit, die Achse steht im Bild und traegt `.chart__axis` aus
+ * panel.css - dieselbe wie die drei Charts der Gesundheit. Ein Halbwert-Label
+ * mit halbtransparenter Hinterlegung, damit es die Gitterlinie ueberdeckt,
+ * unter der es steht, braucht es dann auch nicht mehr. */
 
 /* Ablesbare Einzelwerte: unsichtbare Schaltfläche je Datenpunkt über der Kurve.
  * Der Wert selbst steht im aria-label — das hier ist nur die Trefferfläche und

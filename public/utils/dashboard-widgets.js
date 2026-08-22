@@ -39,7 +39,7 @@
  * „Bestandslayout ohne genau eine Id liest sich nicht als umsortiert", über
  * JEDE Id dieser Liste. Wer hier umsortiert, prüft ihn - er ist der Ort, an dem
  * ein Fehler auffällt. */
-export const WIDGET_IDS = ['tasks', 'calendar', 'meals', 'shopping', 'birthdays', 'budget', 'rewards', 'health', 'cycle', 'housekeeping', 'family', 'notes', 'weather', 'clock', 'metrics'];
+export const WIDGET_IDS = ['tasks', 'calendar', 'meals', 'shopping', 'birthdays', 'countdown', 'budget', 'rewards', 'health', 'cycle', 'housekeeping', 'family', 'notes', 'weather', 'clock', 'metrics'];
 
 // Vier kuratierte Formen statt sechs: über vier Auswahlmöglichkeiten pro Widget
 // (× bis zu 12 Widgets) kippt der Anpassen-Modus in Mikro-Entscheidungs-Overhead
@@ -91,7 +91,11 @@ export function defaultWidgetSize(id) {
   // brauchen Hoehe, nicht Breite: mit 1x2 fuellen die vier Standard-Widgets
   // die Zeile lueckenlos. Bestandslayouts bleiben unberuehrt - gespeichert
   // wird die Groesse, nicht dieser Default.
-  if (['tasks', 'calendar', 'rewards', 'budget', 'family', 'notes', 'birthdays'].includes(id)) return '1x2';
+  // `countdown` steht bei den Geburtstagen, weil es dieselbe Kachel ist: eine
+  // nach Nähe sortierte Liste aus Name und „noch so lange". Es ist zugleich das
+  // einzige Widget, das erst existiert, sobald jemand etwas markiert hat -
+  // siehe die Verfügbarkeitsregel in pages/dashboard.js.
+  if (['tasks', 'calendar', 'rewards', 'budget', 'family', 'notes', 'birthdays', 'countdown'].includes(id)) return '1x2';
   // Die Uhr startet breit statt quadratisch: Uhrzeit und darunter der ausgeschriebene
   // Wochentag brauchen Zeile, nicht Höhe - auf 1x1 bräche das Datum um (#651).
   if (['weather', 'shopping', 'health', 'cycle', 'meals', 'clock'].includes(id)) return '2x1';

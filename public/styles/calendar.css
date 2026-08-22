@@ -253,10 +253,11 @@
 /* Wochenende dezent zur Orientierung getönt (Richtung Modul-Akzent). Nur Tage
  * außerhalb des Monats sind ausgenommen (eigene, gedimmte Fläche). "Heute"
  * braucht keine Ausnahme mehr: die Markierung trägt seit dem Kanon-Umbau
- * allein die Ziffer, die Zelle hat keine eigene Fläche. Mo-basiertes
- * 7-Spalten-Raster: 7n = Sonntag, 7n-1 = Samstag. */
-.month-day:nth-child(7n):not(.month-day--outside),
-.month-day:nth-child(7n-1):not(.month-day--outside) {
+ * allein die Ziffer, die Zelle hat keine eigene Fläche. Welche Zelle Wochenende
+ * ist, entscheidet die Klasse aus renderMonthDay und nicht die Spaltenposition:
+ * `:nth-child(7n)`/`7n-1` traf nur bei Wochenstart Montag Sa/So, bei Sonntag-
+ * oder Samstag-Start färbte es Fr/Sa bzw. Do/Fr (#780). */
+.month-day--weekend:not(.month-day--outside) {
   background-color: color-mix(in srgb, var(--module-accent) var(--tint-wash), var(--color-surface-work));
 }
 
@@ -310,8 +311,19 @@
   line-height: 1.4;
   background: color-mix(in srgb, var(--ev-color) var(--tint-surface), var(--color-surface-work));
   color: color-mix(in srgb, var(--ev-color) 35%, var(--color-text-primary));
+  /* Dieselbe Vollton-Kante wie .allday-event, und aus demselben Grund: die
+   * Monatszelle zeichnet denselben BALKEN, nur kuerzer. Etappe 3 hat Woche und
+   * Ganztag umgestellt, Monat und Tag ausgelassen - ein Termin sprach damit
+   * zwei Sprachen, je nachdem welchen Ansichtsknopf man gedrueckt hatte.
+   *
+   * ES GIBT JETZT ZWEI FORMEN FUER EINE EREIGNISFARBE, nicht vier: die Kante am
+   * BALKEN (Woche, Tag, Ganztag, Monat) und den 8px-Punkt an der ZEILE
+   * (.agenda-event__color). Auf der Mobil-Monatszelle wird der Balken selbst
+   * zum Punkt - die Regel bleibt dieselbe, nur der Traeger wechselt. */
+  border-inline-start: 3px solid var(--ev-color);
   transition: background-color var(--transition-fast);
 }
+
 
 .month-day__event:hover {
   background: color-mix(in srgb, var(--ev-color) var(--tint-raised), var(--color-surface-work));
@@ -540,6 +552,16 @@
   background: color-mix(in srgb, var(--ev-color) var(--tint-surface), var(--color-surface-work));
   color: color-mix(in srgb, var(--ev-color) 38%, var(--color-text-primary));
   border: var(--space-px) solid color-mix(in srgb, var(--ev-color) var(--tint-hint), transparent);
+  /* DIE VOLLTON-KANTE IST DAS FARBSIGNAL DES BLOCKS (Etappe 3, 2026-08-17).
+   * Im Dark war der Block eine entsaettigte Nebelflaeche: 16-%-Fuellung plus
+   * eine 1px-Kante auf halber Deckung - dieselbe Beimischungs-Falle, die
+   * dark-chroma.mjs am Absenderband zerlegt hat (eine Waschung hellt auf,
+   * sie faerbt nicht). Der Kanon der Messlatte (Apple Kalender, Fantastical)
+   * setzt die Zeitleisten-Kante im Vollton, und die User-Farben-Regel erlaubt
+   * die Nutzerfarbe ausdruecklich als BORDER. Die Fuellung bleibt beim
+   * gemessenen 16-%-Rezept, die Tinte beim 38-%-Mix - beide Zusagen gelten
+   * unveraendert, die Kante traegt die Farbe. */
+  border-inline-start: 3px solid var(--ev-color);
   overflow: hidden;
   cursor: pointer;
   z-index: 1;
@@ -711,6 +733,12 @@
   border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--ev-color) var(--tint-surface), var(--color-surface));
   color: color-mix(in srgb, var(--ev-color) 38%, var(--color-text-primary));
+  /* Dieselbe Vollton-Kante wie .week-event (Begruendung dort): die Tagesansicht
+   * zeichnet DENSELBEN Block, nur mit einer Spalte. Etappe 3 hat Woche und
+   * Ganztag umgestellt und diese beiden Ansichten ausgelassen; damit sprach ein
+   * Termin in derselben Woche zwei Sprachen, je nachdem welchen Knopf man
+   * gedrueckt hatte. */
+  border-inline-start: 3px solid var(--ev-color);
   overflow: hidden;
   cursor: pointer;
   z-index: 1;
@@ -939,9 +967,19 @@
   flex: 1;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  /* Bottom-Freiraum für den schwebenden FAB, damit das letzte Event nicht
-   * unter der Aktion verschwindet. */
-  padding: var(--space-2) var(--space-4) calc(var(--space-16) + var(--space-4));
+  padding: var(--space-2) var(--space-4);
+  /* Das eigene Bodenpolster - den Freiraum für die fixierten Shell-Flächen legt
+   * `.page-scrollport` darauf (layout.css).
+   *
+   * HIER STAND `calc(var(--space-16) + var(--space-4))` mit der Begründung
+   * „Bottom-Freiraum für den schwebenden FAB". Das ist die achte Kopie jener
+   * sieben `padding-bottom: *-fab-clearance`, die 2026-08-12 abgeschafft
+   * wurden - sie hat den Umbau überlebt, weil sie im `padding`-Shorthand
+   * steckte und kein Token beim Namen nannte. Der Guard, der Eigenbau-Tokens
+   * sucht, konnte sie deshalb nicht sehen. Sie reservierte 80px, unabhängig
+   * davon, ob überhaupt ein FAB da war - am Zeiger ist er in der Agenda
+   * ausgeblendet (`.toolbar-new-btn`), dort waren es 80px für nichts. */
+  --scrollport-pad: var(--space-2);
 }
 
 .agenda-day {
@@ -1098,6 +1136,23 @@
 
 .event-title-picker__title {
   min-width: 0;
+}
+
+/* HINWEISZEILE IM TERMIN-DIALOG (#647, Critique 2026-08-17).
+ *
+ * Dieselben drei Werte wie `.task-field-hint` in tasks.css - derselbe Satz in
+ * derselben Rolle darf nicht zweimal verschieden aussehen. Sie steht HIER und
+ * nicht als `.form-hint`, weil die Regel dafuer in settings.css liegt und der
+ * Router pro Seite genau ein Page-CSS laedt: auf /calendar ist sie nicht
+ * geladen, und der Hinweis fiel auf den geerbten Koerpertext zurueck (16px,
+ * volle Primaertinte). Er war damit lauter als sein eigener Schalter.
+ *
+ * Der eigentliche Fehler sitzt eine Ebene hoeher - `.form-hint` gehoert nicht
+ * in ein Page-CSS, wenn elf Module sie benutzen. Das ist ein eigener Umzug. */
+.cal-field-hint {
+  margin-top: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
 }
 
 .event-icon-picker__trigger {
@@ -1436,6 +1491,9 @@
   padding: var(--space-px) var(--space-1);
   border-radius: var(--radius-xs);
   border: var(--space-px) solid color-mix(in srgb, var(--ev-color) var(--tint-hint), transparent);
+  /* Dieselbe Vollton-Kante wie .week-event (Begruendung dort): der
+   * Ganztages-Balken ist derselbe Block, nur ohne Zeitachse. */
+  border-inline-start: 3px solid var(--ev-color);
   background: color-mix(in srgb, var(--ev-color) var(--tint-surface), var(--color-surface-work));
   color: color-mix(in srgb, var(--ev-color) 35%, var(--color-text-primary));
   white-space: nowrap;
@@ -1486,7 +1544,11 @@
   display: flex;
   align-items: center;
   gap: var(--space-1);
-  padding: var(--space-0h) var(--space-2);
+  /* 4px vertikal statt 2px (Etappe 3, 2026-08-17): in Agenda und
+   * Ganztages-Zeile stand der Text buendig an der Toenungskante (Sonde
+   * cramped-padding, 7 Fundstellen). Das Monatsraster behaelt seine dichte
+   * Fassung ueber den .month-day-Override weiter unten. */
+  padding: var(--space-1) var(--space-2);
   border-radius: var(--radius-xs);
   font-size: var(--text-xs);
   font-weight: var(--font-weight-medium);
@@ -1498,19 +1560,26 @@
   line-height: 1.3;
   user-select: none;
   margin-bottom: var(--space-0h);
-  /* FLACHE Tint-Bar, wie .month-day__event - kein Rahmen, kein Schatten. Die
-   * Tönung IST der zweite Kanal neben der Textfarbe; Kante und Schatten waren
-   * ein dritter und vierter Träger derselben Information, und im Monatsraster
-   * standen dadurch flache Event-Bars neben umrandeten Aufgaben-Bars. In der
-   * Agenda fiel es auf, sobald die Terminzeile darüber flach wurde.
+  /* FLACHE BAR, WIE .month-day__event - und ihre Fläche sagt nichts mehr.
    *
-   * 13 % UND NICHT 16 %, obwohl 16 % das dokumentierte Tönungsrezept ist:
-   * dieser Chip tönt aus `currentColor`, und das ist hier ein PRIORITÄTSTON,
-   * kein kuratierter Modulton. Gemessen am gerenderten Pixel (Sonde 2, light,
-   * mobil UND desktop): #B4400E auf der 16-%-Tönung #F3E0D8 ergibt 4.49:1 und
-   * reisst AA um einen Hundertstel. Das ist die in §2 benannte Grenze der
-   * Tönungsregel - bei nicht kuratierten Tönen ist die Reserve schon weg. */
-  background: color-mix(in srgb, currentColor 13%, var(--color-surface-work));
+   * Hier stand eine 13-%-Tönung aus `currentColor`, also aus dem Prioritätston,
+   * mit demselben Ton als Schrift darauf. Der Kommentar, der die 13 % gegen die
+   * dokumentierten 16 % begründete, war korrekt und ist trotzdem hinfällig: er
+   * argumentierte gegen die alte Tönungsregel („wieviel Prozent verträgt die
+   * Fläche"), während die Skalen-Regel aus v2.23.0 die Fläche für eine Rangmarke
+   * ganz abgeschafft hat. Sie war schon damals eine Warnung - bei nicht
+   * kuratierten Tönen sei „die Reserve schon weg".
+   *
+   * GEMESSEN, warum das mehr als eine Formfrage war: die vier getönten Felder
+   * lagen wahrnehmungsnah 6,61 (medium↔high) und 6,77 (high↔urgent) auseinander,
+   * bei 11,3 für die Diagrammserien dieses Projekts - und in der Aufgabenliste
+   * stand dieselbe Stufe längst als 8px-Vollton-Punkt. Dieselbe Aufgabe sprach
+   * zwei Sprachen, je nachdem in welchem Modul man sie ansah.
+   *
+   * Die Bar bleibt eine Bar (das Monatsraster stellt sie neben die Event-Bars),
+   * ihre Fläche ist jetzt neutral, und die Stufe trägt der Punkt davor. */
+  background: var(--color-fill-well);
+  color: var(--color-text-primary);
 }
 
 .cal-task-chip:hover,
@@ -1526,23 +1595,20 @@
   white-space: nowrap;
 }
 
-/* Prioritätsvarianten – nutzt dieselben -bg/-text-Token wie tasks.css */
-.cal-task-chip--urgent {
-  color: var(--color-priority-urgent);
-}
-.cal-task-chip--high {
-  color: var(--color-priority-high);
-}
-.cal-task-chip--medium {
-  color: var(--color-priority-medium);
-}
-.cal-task-chip--low {
-  color: var(--color-priority-low);
-}
-.cal-task-chip--none {
-  color: var(--color-text-primary);
-  border-color: var(--color-border);
-}
+/* Die vier Prioritätsvarianten standen hier als TEXTFARBEN - der zweite Kanal
+ * neben der getönten Fläche. Die Skalen-Regel gibt einer Rangmarke genau einen,
+ * und der ist der Punkt (`.priority-dot`, list-row.css). Was die Klassen jetzt
+ * tun, ist ihren Ton zu BENENNEN, ohne ihn selbst zu malen: die kompakte
+ * Monatsansicht am Finger schrumpft den ganzen Chip auf 8px, und dann IST der
+ * Chip der Punkt und braucht die Farbe an sich (siehe den Block ganz unten,
+ * derselbe Weg, den die Termin-Bars über `--ev-color` gehen).
+ *
+ * „Ohne Priorität" benennt bewusst nichts - der Fallback dort unten ist
+ * neutral, und eine Marke für eine Abwesenheit wäre eine fünfte Stufe. */
+.cal-task-chip--urgent { --prio-color: var(--color-priority-urgent); }
+.cal-task-chip--high   { --prio-color: var(--color-priority-high); }
+.cal-task-chip--medium { --prio-color: var(--color-priority-medium); }
+.cal-task-chip--low    { --prio-color: var(--color-priority-low); }
 
 /* Im Monatsgrid werden auch Aufgaben-Chips zu flachen Bars nach Kanon: die
  * currentColor-Tönung bleibt, Border und Schatten entfallen; das check-square-
@@ -1635,8 +1701,16 @@
     background: var(--holi-color, var(--color-text-secondary));
   }
 
-  /* Task-Punkte durch einen dünnen Ring von Termin-Punkten unterscheidbar. */
+  /* HIER IST DER CHIP DER PUNKT - also trägt er die Stufe im Vollton, genau wie
+   * die Termin-Bar darüber ihre --ev-color. Die neutrale Bar-Fläche der großen
+   * Ansicht wäre hier ein Informationsverlust: vier Prioritäten sähen als vier
+   * graue Punkte gleich aus. Der eingelegte Punkt aus dem Markup ist auf dieser
+   * Größe ausgeblendet (`> * { display: none }` oben), seine Aufgabe übernimmt
+   * die Fläche.
+   *
+   * Der dünne Ring bleibt: er unterscheidet Aufgaben- von Terminpunkten. */
   .month-day .cal-task-chip {
+    background: var(--prio-color, var(--color-text-secondary));
     box-shadow: inset 0 0 0 var(--space-px) var(--color-surface-work);
   }
 

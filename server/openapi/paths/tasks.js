@@ -81,5 +81,13 @@ export function tasksPaths() {
       get: op({ summary: 'List documents linked to a task', tag: 'Tasks', params: [idParam()], description: 'Returns family documents linked to the task that are visible to the current user.' }),
       put: op({ summary: 'Set documents linked to a task', tag: 'Tasks', params: [idParam()], stateChanging: true, requestBody: jsonBody(null), description: 'Replace-set of document_ids; only documents visible to the user are linked.' }),
     },
+    '/api/v1/tasks/{id}/comments': {
+      get: op({ summary: 'List comments on a task', tag: 'Tasks', params: [idParam()], description: 'Oldest first. Anyone who may see the task may read its comments; a task the caller cannot see answers 404.' }),
+      post: op({ summary: 'Comment on a task', tag: 'Tasks', params: [idParam()], stateChanging: true, requestBody: jsonBody(null), description: 'Body: { comment }. `@Name` mentions are read from the text and push-notify the mentioned members that may see the task.' }),
+    },
+    '/api/v1/tasks/{id}/comments/{commentId}': {
+      patch: op({ summary: 'Edit a comment', tag: 'Tasks', params: [idParam(), idParam('commentId', 'Comment ID')], stateChanging: true, requestBody: jsonBody(null), description: 'Body: { comment }. The author only; sets updated_at.' }),
+      delete: op({ summary: 'Delete a comment', tag: 'Tasks', params: [idParam(), idParam('commentId', 'Comment ID')], stateChanging: true, description: 'The author, or an admin moderating.' }),
+    },
   };
 }

@@ -55,7 +55,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out (for the authored Umbrel release notes)
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Resolve version
         id: ver
@@ -82,7 +82,60 @@ jobs:
           echo "version=$V" >> "$GITHUB_OUTPUT"
           echo "Resolved version: $V"
 
+      # DER STORE GEHT NIE RUECKWAERTS, und die Marken-Pruefung unten faengt das
+      # NICHT - das ist am 2026-08-17 gemessen worden, nicht vermutet.
+      #
+      # Die Lage: v2.19.0 hatte nie eine Release-Seite bekommen (der Tag war da,
+      # der Release fehlte), und sie wurde nachgetragen, waehrend der Store
+      # laengst auf 2.21.0 zeigte. Der Lauf war GRUEN und hat den offenen
+      # Store-PR von 2.21.0 auf 2.19.0 zurueckgedreht - ein Downgrade, das ein
+      # Maintainer haette mergen koennen.
+      #
+      # WARUM DER MARKEN-GUARD DAS DURCHLAESST: `actions/checkout` holt beim
+      # release-Event den TAG, nicht `main`. Dort steht
+      # `<!-- version: 2.19.0 -->`, weil sie im Release-Commit von 2.19.0
+      # geschrieben wurde - die Marke passt per Konstruktion, und zwar fuer JEDES
+      # nachgetragene Release. Sie sichert zu, dass die Notiz zur Version passt;
+      # sie sagt nichts darueber, ob die Version die neueste ist. Zwei Fragen,
+      # ein Guard, und der zweite war nie gestellt.
+      #
+      # Verglichen wird gegen den HOECHSTEN veroeffentlichten Release, nicht
+      # gegen das `latest`-Flag: das Flag laesst sich beim Anlegen setzen
+      # (`--latest=false`), waere hier also genau von der Sorgfalt abhaengig, die
+      # dieser Guard ersetzen soll. Entwuerfe und Vorabversionen zaehlen nicht -
+      # der Store folgt nur stabilen Releases.
+      #
+      # NUR FUER DAS release-EREIGNIS. Ein `workflow_dispatch` mit ausdruecklich
+      # genannter Version ist eine Handlung, kein Automatismus: er ist der Weg,
+      # den Store nach genau diesem Unfall wieder geradezuruecken, und derselbe
+      # Weg traegt einen bewussten Rollback auf eine aeltere Version.
+      - name: Refuse to walk the store backwards
+        id: gate
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.ver.outputs.version }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          NEWEST="$(gh api "repos/$REPO/releases" --paginate \
+            --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name' \
+            | sed 's/^v//' | sort -V | tail -1)"
+          if [ -z "$NEWEST" ]; then
+            echo "::error::Kein veroeffentlichter Release gefunden - der Vergleich haette nichts zu vergleichen, und ein Guard ueber eine leere Liste ist keiner."
+            exit 1
+          fi
+          echo "Neuester stabiler Release: $NEWEST, veroeffentlicht wird: $VERSION"
+          # `sort -V | tail -1` liefert bei Gleichstand den Wert selbst - ein
+          # erneutes Veroeffentlichen derselben Version laeuft also durch.
+          HIGHER="$(printf '%s\n%s\n' "$VERSION" "$NEWEST" | sort -V | tail -1)"
+          if [ "$HIGHER" != "$VERSION" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::v$VERSION ist aelter als der neueste Release v$NEWEST - der Store-Eintrag bleibt, wo er ist. Ein nachgetragenes altes Release ist Archivpflege und darf Haushalten kein Downgrade vorschlagen. Fuer einen GEWOLLTEN Rueckschritt diesen Workflow von Hand mit der Zielversion starten."
+          fi
+
       - name: Log in to GHCR
+        if: steps.gate.outputs.skip != 'true'
         uses: docker/login-action@v4
         with:
           registry: ghcr.io
@@ -94,6 +147,7 @@ jobs:
       # Minuten Registry-Warteschlange.
       - name: Verify the authored Umbrel release notes
         id: notes
+        if: steps.gate.outputs.skip != 'true'
         env:
           VERSION: ${{ steps.ver.outputs.version }}
         run: |
@@ -128,6 +182,7 @@ jobs:
 
       - name: Resolve multi-arch image digest (wait for the image to publish)
         id: digest
+        if: steps.gate.outputs.skip != 'true'
         run: |
           set -euo pipefail
           IMG="ghcr.io/${{ github.repository_owner }}/yuvomi:${{ steps.ver.outputs.version }}"
@@ -152,6 +207,7 @@ jobs:
       # war bisher eine Annahme. Der PR-Body behauptet es, also wird es gemessen.
       - name: Verify the image covers amd64 and arm64
         id: arch
+        if: steps.gate.outputs.skip != 'true'
         run: |
           set -euo pipefail
           IMG="ghcr.io/${{ github.repository_owner }}/yuvomi:${{ steps.ver.outputs.version }}"
@@ -167,6 +223,7 @@ jobs:
           echo "platforms=$PLATFORMS" >> "$GITHUB_OUTPUT"
 
       - name: Open / update PR on getumbrel/umbrel-apps
+        if: steps.gate.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ secrets.UMBREL_FORK_TOKEN }}
           NOTES_FILE: ${{ steps.notes.outputs.path }}
@@ -248,12 +305,30 @@ jobs:
           import re, sys, textwrap
           notes = open(sys.argv[1], encoding="utf-8").read().strip()
 
+          # KEIN UMBRUCH INNERHALB EINES WORTES, und das ist keine Kosmetik,
+          # sondern der Unterschied zwischen dem geschriebenen und dem
+          # gelesenen Text. In folded style wird JEDER Zeilenumbruch zu einem
+          # Leerzeichen - auch einer, den `textwrap` mitten in ein Wort gesetzt
+          # hat. Mit den Voreinstellungen bricht es an Bindestrichen
+          # (`break_on_hyphens`) und in ueberlangen Woertern
+          # (`break_long_words`), und aus „increase-contrast" wurde beim
+          # Zurueckparsen „increase- contrast": ein Zeichen mehr, ein Wort
+          # kaputt. Gefunden hat es der Round-Trip-Guard unten, im v2.21.0-Lauf,
+          # nachdem der erste Bindestrich-Begriff zufaellig auf einer
+          # Zeilengrenze landete - die Faltung ist bis dahin nie aufgefallen,
+          # weil kein Text sie ausgeloest hatte. Ein zu langes Wort (eine URL)
+          # ragt jetzt lieber ueber die Spaltenbreite hinaus, als sich zerlegen
+          # zu lassen; YAML stoert das nicht, den Leser auch nicht.
           def folded(s, indent="  ", width=78):
             out = []
             for i, para in enumerate(s.split("\n\n")):
               if i:
                 out += ["", ""]   # zwei Leerzeilen = EIN Absatzumbruch
-              out += [indent + l for l in textwrap.wrap(para.strip(), width=width)]
+              wrapped = textwrap.wrap(
+                para.strip(), width=width,
+                break_on_hyphens=False, break_long_words=False,
+              )
+              out += [indent + l for l in wrapped]
             return "releaseNotes: >-\n" + "\n".join(out) + "\n"
 
           # The upstream value is a BLOCK scalar spanning many indented lines:

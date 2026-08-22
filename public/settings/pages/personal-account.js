@@ -114,7 +114,67 @@ function consumeAccessNotice() {
   return notice === 'accessRedirected' ? t('settings.accessRedirected') : null;
 }
 
-function renderPage(container, user, refreshFailed, accessNotice) {
+/**
+ * Karte für die Verknüpfung mit dem Single-Sign-on-Konto (#832).
+ *
+ * Ohne sie bekam ein Nutzer, dessen IdP-Kontoname zufällig einem bestehenden
+ * Yuvomi-Konto entspricht, bei der ersten SSO-Anmeldung ein zweites Konto -
+ * gleicher Name, angehängte Ziffer, leere Daten. Zusammengeführt wird hier,
+ * angemeldet: erst die Sitzung und dann der Provider belegen, dass beide Konten
+ * derselben Person gehören.
+ *
+ * Ausgeblendet, solange kein OIDC konfiguriert ist - eine Karte, die von einer
+ * Anmeldeart spricht, die es hier nicht gibt, erklärt nichts.
+ */
+function oidcCardHtml(state, notice) {
+  if (!state?.enabled) return '';
+
+  return `
+    <div class="settings-card">
+      <h3 class="settings-card__title">${t('settings.oidcLinkTitle')}</h3>
+      ${notice ? `<p class="${notice.kind === 'error' ? 'form-error' : 'form-hint'}" role="${notice.kind === 'error' ? 'alert' : 'status'}">${esc(notice.text)}</p>` : ''}
+      ${state.linked ? `
+        <p class="form-hint">${state.provider
+          ? t('settings.oidcLinkedWithProvider', { provider: state.provider })
+          : t('settings.oidcLinked')}</p>
+        ${state.can_unlink
+          ? `<button type="button" class="btn btn--danger-outline" id="oidc-unlink">${t('settings.oidcUnlink')}</button>`
+          : `<p class="form-hint">${t('settings.oidcUnlinkNeedsPassword')}</p>`}
+      ` : `
+        <p class="form-hint">${t('settings.oidcLinkHint')}</p>
+        <button type="button" class="btn btn--secondary" id="oidc-link">${t('settings.oidcLink')}</button>
+      `}
+      <div id="oidc-error" class="form-error" role="alert" hidden></div>
+    </div>
+  `;
+}
+
+/**
+ * Rückmeldung des Verknüpfungs-Laufs. Der Provider schickt den Browser zurück
+ * auf diese Seite, nicht in einen fetch - der Ausgang steht deshalb in der
+ * Adresszeile und wird beim Lesen entfernt, damit ein Neuladen ihn nicht
+ * wiederholt.
+ */
+function consumeOidcNotice() {
+  const params = new URLSearchParams(location.search);
+  const ok     = params.get('oidc_linked');
+  const err    = params.get('oidc_link_error');
+  if (!ok && !err) return null;
+
+  params.delete('oidc_linked');
+  params.delete('oidc_link_error');
+  const query = params.toString();
+  history.replaceState(null, '', location.pathname + (query ? `?${query}` : ''));
+
+  if (ok) return { kind: 'ok', text: t('settings.oidcLinkSuccess') };
+  const known = ['already_linked', 'sub_taken'].includes(err);
+  return {
+    kind: 'error',
+    text: known ? t(`settings.oidcLinkError_${err}`) : t('settings.oidcLinkErrorGeneric'),
+  };
+}
+
+function renderPage(container, user, refreshFailed, accessNotice, oidcState, oidcNotice) {
   container.replaceChildren();
   container.insertAdjacentHTML('beforeend', `
     ${accessNotice ? `
@@ -200,6 +260,8 @@ function renderPage(container, user, refreshFailed, accessNotice) {
           <button type="submit" class="btn btn--primary">${t('settings.savePassword')}</button>
         </form>
       </div>
+
+      ${oidcCardHtml(oidcState, oidcNotice)}
     </section>
 
     <section class="settings-section">
@@ -208,7 +270,47 @@ function renderPage(container, user, refreshFailed, accessNotice) {
   `);
 }
 
+/**
+ * Verknüpfen und Lösen (#832).
+ *
+ * Der Start ist ein POST und keine Verlinkung: als GET genügte ein
+ * untergeschobener Link, um das Konto eines Angreifers an die fremde Sitzung zu
+ * heften. Die Antwort trägt die Adresse des Providers, dorthin geht der Browser
+ * danach selbst.
+ */
+function bindOidcEvents(container) {
+  const error = container.querySelector('#oidc-error');
+
+  container.querySelector('#oidc-link')?.addEventListener('click', async (event) => {
+    const button = event.currentTarget;
+    clearError(error);
+    button.disabled = true;
+    try {
+      const { url } = await api.post('/auth/oidc/link/start', {});
+      if (url) location.href = url;
+      else throw new Error('missing url');
+    } catch (err) {
+      button.disabled = false;
+      showError(error, err?.message || t('settings.oidcLinkErrorGeneric'));
+    }
+  });
+
+  container.querySelector('#oidc-unlink')?.addEventListener('click', async (event) => {
+    const button = event.currentTarget;
+    clearError(error);
+    button.disabled = true;
+    try {
+      await api.delete('/auth/oidc/link');
+      location.reload();
+    } catch (err) {
+      button.disabled = false;
+      showError(error, err?.message || t('settings.oidcLinkErrorGeneric'));
+    }
+  });
+}
+
 function bindEvents(container, user, profileState) {
+  bindOidcEvents(container);
   const profileError = container.querySelector('#profile-error');
   const avatarFile = container.querySelector('#profile-avatar-file');
   const displayName = container.querySelector('#profile-display-name');
@@ -337,9 +439,19 @@ export async function render(container, { user }) {
   }
 
   const accessNotice = consumeAccessNotice();
+  const oidcNotice   = consumeOidcNotice();
+
+  // Ein Ausfall dieser Abfrage darf die Kontoseite nicht kosten: ohne Stand
+  // bleibt die Karte weg, alles andere bleibt bedienbar.
+  let oidcState = null;
+  try {
+    oidcState = await api.get('/auth/oidc/link');
+  } catch {
+    oidcState = null;
+  }
 
   try {
-    renderPage(container, currentUser, refreshFailed, accessNotice);
+    renderPage(container, currentUser, refreshFailed, accessNotice, oidcState, oidcNotice);
     bindEvents(container, currentUser, {
       avatarData: currentUser?.avatar_data ?? null,
     });

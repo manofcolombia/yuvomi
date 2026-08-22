@@ -584,8 +584,16 @@
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-md);
-  color: var(--module-accent);
-  background: color-mix(in srgb, var(--module-accent) var(--tint-surface), transparent);
+  /* KEIN VOLLTON, UND DAS IST DIESELBE REGEL, NICHT IHRE AUSNAHME. Die
+   * Herkunfts-Regel (DESIGN.md) laesst ein Modulzeichen an MISCHSTELLEN stehen
+   * und verbietet es als Dauer-Dekor in den Listen eines einzelnen Moduls: hier
+   * saehe man neunmal untereinander „Dokumente" auf einer Seite, die genau das
+   * schon im Kopf sagt. Unterschieden werden die Eintraege ohnehin vom GLYPH,
+   * nicht vom Ton - Dokumentkategorien fuehren keine eigenen Farben.
+   * Also neutral, bis sie welche haben; dann traegt die Marke DEREN Ton im
+   * Vollton (Vollton-Regel, erster Zweig). */
+  color: var(--color-text-secondary);
+  background: var(--color-fill-well);
 }
 
 .document-card__icon svg,
@@ -1285,8 +1293,13 @@
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-glass-inner);
-  background: color-mix(in srgb, var(--module-accent) var(--tint-surface), transparent);
-  color: var(--module-accent);
+  /* NENNT NICHTS: ein Platzhalter, kein Absenderzeichen. Er trug den Modulton
+   * als Waschung und sagte damit „Dokumente" auf einer Seite, die das schon
+   * beantwortet. Neutral ist hier die Aussage, nicht der Rückzug - siehe die
+   * Vollton-Regel in DESIGN.md (Colors): entweder es nennt etwas, dann im
+   * Vollton, oder es nennt nichts, dann neutral. */
+  background: var(--color-fill-well);
+  color: var(--color-text-secondary);
   flex-shrink: 0;
 }
 
@@ -1386,14 +1399,23 @@
   width: 72px;
   height: 96px;
   padding: 0;
-  border: 1px solid var(--color-border);
+  /* KEINE eigene Kante mehr: das Feld traegt seit der Vollton-Regel den
+   * dokumentierten Well-Grund statt einer Modul-Waschung, und ein Well ist eine
+   * Vertiefung, kein umrandeter Kasten (Kasten-in-Kasten-Regel, tokens.css).
+   * Die Kante stand hier, weil die Waschung allein zu schwach trug - der Well
+   * traegt selbst (1.19:1 light, 1.22:1 dark, gemessen). */
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-md);
   overflow: hidden;
-  background: color-mix(in srgb, var(--module-accent) var(--tint-surface), transparent);
-  color: var(--module-accent);
+  /* NENNT NICHTS: ein Platzhalter, kein Absenderzeichen. Er trug den Modulton
+   * als Waschung und sagte damit „Dokumente" auf einer Seite, die das schon
+   * beantwortet. Neutral ist hier die Aussage, nicht der Rückzug - siehe die
+   * Vollton-Regel in DESIGN.md (Colors): entweder es nennt etwas, dann im
+   * Vollton, oder es nennt nichts, dann neutral. */
+  background: var(--color-fill-well);
+  color: var(--color-text-secondary);
 }
 
 .dms-result__media svg {

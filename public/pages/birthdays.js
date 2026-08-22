@@ -8,6 +8,7 @@ import { renderSkeletonList } from '/utils/skeleton.js';
 import { toLocalDateKey } from '/utils/date.js';
 import { renderPageSearch, wirePageSearch } from '/utils/page-search.js';
 import { findPageFab } from '/utils/fab.js';
+import { getReadableTextColor, AVATAR_FALLBACK_COLOR } from '/utils/color.js';
 
 let state = {
   birthdays: [],
@@ -85,9 +86,37 @@ function countdownChip(birthday) {
   return { label: t('birthdays.inDays', { days: birthday.days_until }), mod };
 }
 
+/**
+ * DIE PERSON SCHLAEGT DIE LISTE, IN DER SIE STEHT.
+ *
+ * `.birthday-avatar--fallback` verspricht seit 2026-08-18 „wer verknuepft ist,
+ * traegt seine Mitgliedsfarbe" - eingeloest war das nur auf der Uebersichts-
+ * kachel. Auf der Modulseite sass jedes Haushaltsmitglied auf derselben
+ * neutralen Scheibe wie eine Tante ohne Zugang (Identitaetsfarben-Regel,
+ * DESIGN.md).
+ *
+ * Reihenfolge: ein Bild, das FUER DIESEN EINTRAG hinterlegt wurde, ist die
+ * genaueste Auskunft und gewinnt; danach kommt das Profilbild des Mitglieds,
+ * danach seine Farbe mit den Initialen. Wer zu niemandem im Haushalt gehoert,
+ * bleibt neutral - er hat keine Identitaetsfarbe, und genau das soll die
+ * Scheibe sagen.
+ *
+ * Die Tinte kommt aus `getReadableTextColor`: eine Avatarfarbe ist frei
+ * gewaehlt, ihre Helligkeit damit unbestimmt - dieselbe Rechnung wie in den
+ * Kontakten.
+ */
 function photoAvatar(birthday, extraClass = '') {
   if (birthday.photo_data) {
     return `<img class="birthday-avatar ${extraClass}" src="${birthday.photo_data}" alt="${esc(birthday.name)}">`;
+  }
+  if (birthday.family_user_id && birthday.family_avatar_data) {
+    return `<img class="birthday-avatar ${extraClass}" src="${esc(birthday.family_avatar_data)}" alt="${esc(birthday.name)}">`;
+  }
+  if (birthday.family_user_id) {
+    const color = birthday.family_avatar_color || AVATAR_FALLBACK_COLOR;
+    const name = birthday.family_display_name || birthday.name;
+    return `<span class="birthday-avatar birthday-avatar--fallback ${extraClass}"
+      style="background-color:${esc(color)};color:${getReadableTextColor(color)}">${esc(initials(name))}</span>`;
   }
   return `<span class="birthday-avatar birthday-avatar--fallback ${extraClass}">${esc(initials(birthday.name))}</span>`;
 }

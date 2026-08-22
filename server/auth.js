@@ -156,6 +156,35 @@ if (!process.env.SESSION_SECRET) {
   throw new Error('[Auth] SESSION_SECRET must be set in .env. Run: node setup.js');
 }
 
+/**
+ * Ein Platzhalter aus `.env.example` ist kein Geheimnis.
+ *
+ * `.env.example` liefert `SESSION_SECRET=REPLACE_WITH_A_LONG_RANDOM_STRING`.
+ * Wer die Quick-Start-Zeilen am Stueck kopiert und das Bearbeiten von `.env`
+ * ueberspringt, signiert seine Session-Cookies gegen eine Konstante, die in
+ * diesem Repository steht - also gegen nichts. Wer die Instanz erreicht, kann
+ * sich damit ein Admin-Cookie ausstellen; das wiegt schwerer als ein
+ * mitgelesener Datenbankschluessel, der nur die Datei im Ruhezustand betrifft.
+ *
+ * ANDERS ALS BEIM DATENBANKSCHLUESSEL (server/db.js) bricht dieser Guard auch
+ * bei einer BESTEHENDEN Installation ab, statt nur zu warnen. Dort waere der
+ * Abbruch teurer als der Fehler: ein Schluesselwechsel macht die Datenbank
+ * unlesbar, eine laufende Instanz haette also ihre Daten verloren. Hier kostet
+ * die Reparatur eine neue Zeile in `.env` und einen erneuten Login - alle
+ * Sessions werden ungueltig, sonst nichts. Weiterlaufen zu lassen hiesse, ein
+ * offenes Tor offen zu halten, solange niemand die Warnung liest.
+ */
+if (process.env.SESSION_SECRET.startsWith('REPLACE_WITH_')) {
+  throw new Error(
+    '[Auth] SESSION_SECRET is still the placeholder from .env.example ' +
+    `(${process.env.SESSION_SECRET}). That value is published in this ` +
+    'repository, so anyone who can reach this instance could forge a session ' +
+    'cookie and sign in as any user. Generate a real one with ' +
+    '`openssl rand -base64 48` and put it in .env. Everyone will have to sign ' +
+    'in again once - nothing else is lost.'
+  );
+}
+
 // Session-Cookie-Name. Legacy „Oikos"-Installationen nutzten `oikos.sid`; der
 // Name ist nun `yuvomi.sid`. Der Wechsel ist NAHTLOS (kein Zwangs-Logout): der
 // signierte Session-Wert ist nur über den Wert (die sid) signiert, nicht über den
@@ -581,6 +610,13 @@ function sanitizeOidcUsername(raw) {
 }
 
 /**
+ * Passwort-Platzhalter eines rein per SSO angelegten Kontos. Kein Hash, also
+ * kann sich damit niemand anmelden - und genau daran erkennt das Lösen einer
+ * Verknüpfung, dass es den letzten Zugang wegnähme.
+ */
+const OIDC_PASSWORD_SENTINEL = '$oidc$';
+
+/**
  * Findet oder erstellt einen User anhand der (validierten) OIDC-Claims.
  *
  * Identität primär über den (kryptografisch validierten) `sub`. Existiert kein
@@ -656,10 +692,66 @@ export function findOrCreateOidcUser(database, claims) {
   // oidc_provider = Issuer-URL (zukunftssicher für mehrere Provider)
   const result = database.prepare(`
     INSERT INTO users (username, display_name, password_hash, avatar_color, role, oidc_sub, oidc_provider)
-    VALUES (?, ?, '$oidc$', ?, 'member', ?, ?)
-  `).run(username, display_name, avatar_color, sub, provider);
+    VALUES (?, ?, ?, ?, 'member', ?, ?)
+  `).run(username, display_name, OIDC_PASSWORD_SENTINEL, avatar_color, sub, provider);
 
   return database.prepare('SELECT * FROM users WHERE id = ?').get(result.lastInsertRowid);
+}
+
+/**
+ * Verknüpft ein OIDC-Konto mit einem bereits angemeldeten lokalen Konto (#832).
+ *
+ * Die automatische Zuordnung greift nur über den `sub` oder eine verifizierte
+ * E-Mail; gleiche Benutzernamen zählen bewusst nicht, sonst nähme sich jeder,
+ * der sich im IdP `admin` nennt, das lokale Admin-Konto. Wer beide Konten
+ * wirklich besitzt, hatte damit aber gar keinen Weg: er bekam bei der ersten
+ * SSO-Anmeldung ein zweites Konto (`test1-1`), seine Daten blieben im ersten.
+ *
+ * Diesen Weg geht der Nutzer deshalb selbst und angemeldet: die Session belegt
+ * das lokale Konto, der validierte `sub` das entfernte. Beides zusammen ist der
+ * Besitznachweis, den ein gleicher Benutzername nie erbracht hat.
+ *
+ * @returns {{ ok: true } | { ok: false, reason: 'user_gone'|'already_linked'|'sub_taken' }}
+ */
+export function linkOidcAccount(database, userId, { sub, iss }) {
+  const user = database.prepare('SELECT id, oidc_sub FROM users WHERE id = ?').get(userId);
+  if (!user) return { ok: false, reason: 'user_gone' };
+
+  // Schon verknüpft: denselben sub erneut zu binden ist folgenlos, ein anderer
+  // wäre ein stiller Wechsel des Zugangs - der gehört über das Lösen.
+  if (user.oidc_sub) {
+    return user.oidc_sub === sub ? { ok: true } : { ok: false, reason: 'already_linked' };
+  }
+
+  // Der sub ist der Identitätsanker: hinge er an zwei Konten, entschiede die
+  // Zeilenreihenfolge, wer sich damit anmeldet.
+  const taken = database.prepare('SELECT id FROM users WHERE oidc_sub = ?').get(sub);
+  if (taken) return { ok: false, reason: 'sub_taken' };
+
+  database.prepare('UPDATE users SET oidc_sub = ?, oidc_provider = ? WHERE id = ?')
+    .run(sub, iss || process.env.OIDC_ISSUER || null, userId);
+  return { ok: true };
+}
+
+/**
+ * Löst eine Verknüpfung wieder.
+ *
+ * Verweigert wird das nur in dem einen Fall, in dem es den Zugang kostet: ein
+ * per SSO angelegtes Konto trägt kein Passwort, sondern den Platzhalter - ohne
+ * OIDC käme dort niemand mehr hinein. Erst ein gesetztes Passwort macht das
+ * Lösen gefahrlos.
+ *
+ * @returns {{ ok: true } | { ok: false, reason: 'user_gone'|'not_linked'|'no_password' }}
+ */
+export function unlinkOidcAccount(database, userId) {
+  const user = database
+    .prepare('SELECT id, oidc_sub, password_hash FROM users WHERE id = ?').get(userId);
+  if (!user) return { ok: false, reason: 'user_gone' };
+  if (!user.oidc_sub) return { ok: false, reason: 'not_linked' };
+  if (user.password_hash === OIDC_PASSWORD_SENTINEL) return { ok: false, reason: 'no_password' };
+
+  database.prepare('UPDATE users SET oidc_sub = NULL, oidc_provider = NULL WHERE id = ?').run(userId);
+  return { ok: true };
 }
 
 // --------------------------------------------------------
@@ -1094,38 +1186,112 @@ router.get('/oidc/config', (_req, res) => {
  * state + nonce + PKCE-code_verifier werden in der Session abgelegt (CSRF-,
  * Replay- und Code-Injection-Schutz) und im Callback einmalig verbraucht.
  */
+/**
+ * Legt state/nonce/PKCE in der Session ab und baut die Authorization-URL.
+ * Geteilt von der Anmeldung und dem Verknüpfen (#832) - zwei Fassungen wären
+ * zwei Gelegenheiten, einen der Schutzwerte zu vergessen.
+ *
+ * @param {object} extra  zusätzliche Session-Felder, z. B. { linkUserId }
+ */
+async function beginOidcFlow(req, config, extra = {}) {
+  const state         = oidcClient.randomState();
+  const nonce         = oidcClient.randomNonce();
+  const codeVerifier  = oidcClient.randomPKCECodeVerifier();
+  const codeChallenge = await oidcClient.calculatePKCECodeChallenge(codeVerifier);
+
+  req.session.oidc = { state, nonce, codeVerifier, ...extra };
+
+  await new Promise((resolve, reject) =>
+    req.session.save(err => (err ? reject(err) : resolve()))
+  );
+
+  return oidcClient.buildAuthorizationUrl(config, {
+    redirect_uri:          process.env.OIDC_REDIRECT_URI,
+    scope:                 'openid email profile',
+    state,
+    nonce,
+    code_challenge:        codeChallenge,
+    code_challenge_method: 'S256',
+  }).href;
+}
+
 router.get('/oidc/start', async (req, res) => {
   try {
     const config = await getOidcConfig();
     if (!config) {
       return res.status(404).json({ error: 'OIDC is not configured.', code: 404 });
     }
-
-    const state         = oidcClient.randomState();
-    const nonce         = oidcClient.randomNonce();
-    const codeVerifier  = oidcClient.randomPKCECodeVerifier();
-    const codeChallenge = await oidcClient.calculatePKCECodeChallenge(codeVerifier);
-
-    req.session.oidc = { state, nonce, codeVerifier };
-
-    await new Promise((resolve, reject) =>
-      req.session.save(err => (err ? reject(err) : resolve()))
-    );
-
-    const authUrl = oidcClient.buildAuthorizationUrl(config, {
-      redirect_uri:          process.env.OIDC_REDIRECT_URI,
-      scope:                 'openid email profile',
-      state,
-      nonce,
-      code_challenge:        codeChallenge,
-      code_challenge_method: 'S256',
-    });
-
-    res.redirect(authUrl.href);
+    res.redirect(await beginOidcFlow(req, config));
   } catch (err) {
     log.error('OIDC start error:', err);
     res.status(500).json({ error: 'OIDC initialization failed.', code: 500 });
   }
+});
+
+/**
+ * GET /api/v1/auth/oidc/link
+ * Verknüpfungsstand des eigenen Kontos (#832).
+ * Response: { enabled, linked, provider, can_unlink }
+ */
+router.get('/oidc/link', requireAuth, (req, res) => {
+  const user = db.get()
+    .prepare('SELECT oidc_sub, oidc_provider, password_hash FROM users WHERE id = ?')
+    .get(req.authUserId);
+  if (!user) return res.status(404).json({ error: 'User not found.', code: 404 });
+
+  res.json({
+    enabled:    isOidcEnabled(),
+    linked:     !!user.oidc_sub,
+    provider:   user.oidc_provider ?? null,
+    // Ein per SSO angelegtes Konto hat kein Passwort - das Lösen nähme ihm den
+    // einzigen Zugang. Die Oberfläche erklärt das, statt den Fehler abzuwarten.
+    can_unlink: !!user.oidc_sub && user.password_hash !== OIDC_PASSWORD_SENTINEL,
+  });
+});
+
+/**
+ * POST /api/v1/auth/oidc/link/start
+ * Startet den Verknüpfungs-Flow für das angemeldete Konto (#832).
+ *
+ * Bewusst POST mit CSRF-Prüfung und nicht der Redirect von /oidc/start: sonst
+ * genügte ein untergeschobener Link, um das Konto eines Angreifers an die
+ * fremde Sitzung zu heften (Login-CSRF). Die Weiterleitung übernimmt der
+ * Browser mit der zurückgegebenen URL.
+ *
+ * Response: { url: string }
+ */
+router.post('/oidc/link/start', requireAuth, csrfMiddleware, async (req, res) => {
+  try {
+    const config = await getOidcConfig();
+    if (!config) return res.status(404).json({ error: 'OIDC is not configured.', code: 404 });
+
+    const user = db.get().prepare('SELECT oidc_sub FROM users WHERE id = ?').get(req.authUserId);
+    if (user?.oidc_sub) {
+      return res.status(409).json({ error: 'Account is already linked.', code: 409 });
+    }
+
+    res.json({ url: await beginOidcFlow(req, config, { linkUserId: req.authUserId }) });
+  } catch (err) {
+    log.error('OIDC link start error:', err);
+    res.status(500).json({ error: 'OIDC initialization failed.', code: 500 });
+  }
+});
+
+/**
+ * DELETE /api/v1/auth/oidc/link
+ * Löst die Verknüpfung des eigenen Kontos (#832).
+ * Response: { ok: true }
+ */
+router.delete('/oidc/link', requireAuth, csrfMiddleware, (req, res) => {
+  const result = unlinkOidcAccount(db.get(), req.authUserId);
+  if (result.ok) return res.json({ ok: true });
+
+  if (result.reason === 'user_gone')   return res.status(404).json({ error: 'User not found.', code: 404 });
+  if (result.reason === 'not_linked')  return res.status(409).json({ error: 'Account is not linked.', code: 409 });
+  return res.status(409).json({
+    error: 'Set a password before unlinking - it is currently the only way into this account.',
+    code:  409,
+  });
 });
 
 /**
@@ -1164,6 +1330,24 @@ router.get('/oidc/callback', async (req, res) => {
     // Identität aus dem validierten ID-Token; fetchUserInfo erzwingt sub-Abgleich
     const claims   = tokens.claims();
     const userinfo = await oidcClient.fetchUserInfo(config, tokens.access_token, claims.sub);
+
+    // Verknüpfungs-Lauf (#832): der Nutzer ist bereits angemeldet und bindet
+    // sein OIDC-Konto an genau dieses Konto. Kein Anlegen, kein Zuordnen über
+    // E-Mail - die Session hat das lokale Konto schon benannt, bevor der Flow
+    // begann, und der linkUserId stammt aus derselben signierten Session wie
+    // der state.
+    if (stored.linkUserId) {
+      const result = linkOidcAccount(db.get(), stored.linkUserId, {
+        sub: claims.sub,
+        iss: claims.iss,
+      });
+      if (!result.ok) {
+        log.warn(`OIDC link rejected for user ${stored.linkUserId}: ${result.reason}`);
+      }
+      return res.redirect(result.ok
+        ? '/settings/personal/account?oidc_linked=1'
+        : `/settings/personal/account?oidc_link_error=${result.reason}`);
+    }
 
     const user = findOrCreateOidcUser(db.get(), {
       sub:                claims.sub,

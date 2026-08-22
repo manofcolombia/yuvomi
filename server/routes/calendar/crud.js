@@ -22,6 +22,7 @@ import {
   parseAttachment,
   caldavTarget,
   googleTarget,
+  outlookTarget,
   createAttachmentDocument,
   parseAssignedTo,
   setEventAssignments,
@@ -70,7 +71,7 @@ router.get('/:id', (req, res) => {
 // Neuen Termin anlegen.
 // Body: { title, description?, start_datetime, end_datetime?,
 //         all_day?, location?, color?, icon?, assigned_to?,
-//         recurrence_rule? }
+//         recurrence_rule?, countdown? }
 // Response: { data: Event }
 // --------------------------------------------------------
 router.post('/', async (req, res) => {
@@ -97,7 +98,8 @@ router.post('/', async (req, res) => {
     const vRrule = rrule(req.body.recurrence_rule, 'Wiederholung');
     const vCaldav = caldavTarget(req.body);
     const vGoogle = googleTarget(req.body);
-    const errors = collectErrors([vTitle, vDesc, vStart, vEnd, vColor, vLoc, vRrule, vCaldav, vGoogle]);
+    const vOutlook = outlookTarget(req.body);
+    const errors = collectErrors([vTitle, vDesc, vStart, vEnd, vColor, vLoc, vRrule, vCaldav, vGoogle, vOutlook]);
     if (errors.length) return res.status(400).json({ error: errors.join(' '), code: 400 });
     if (!vIcon) return res.status(400).json({ error: 'icon: invalid calendar event icon.', code: 400 });
 
@@ -130,8 +132,10 @@ router.post('/', async (req, res) => {
           (title, description, start_datetime, end_datetime, all_day,
            location, color, icon, assigned_to, created_by, recurrence_rule,
            attachment_name, attachment_mime, attachment_size, attachment_data, attachment_document_id,
-           target_caldav_account_id, target_caldav_calendar_url, target_google_calendar_id, visibility)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           target_caldav_account_id, target_caldav_calendar_url, target_google_calendar_id,
+           target_outlook_account_id, target_outlook_calendar_id, visibility,
+           countdown)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         vTitle.value, vDesc.value,
         vStart.value, vEnd.value,
@@ -146,7 +150,10 @@ router.post('/', async (req, res) => {
         vCaldav.value.accountId,
         vCaldav.value.calendarUrl,
         vGoogle.value,
-        normalizeVisibility(req.body.visibility)
+        vOutlook.value.accountId,
+        vOutlook.value.calendarId,
+        normalizeVisibility(req.body.visibility),
+        req.body.countdown ? 1 : 0
       );
       setEventAssignments(db.get(), result.lastInsertRowid, userIds);
       return result.lastInsertRowid;
@@ -228,6 +235,11 @@ router.put('/:id', async (req, res) => {
     const googleProvided = req.body.target_google_calendar_id !== undefined;
     const vGoogle = googleProvided ? googleTarget(req.body) : null;
     if (vGoogle) checks.push(vGoogle);
+    // Outlook-Ziel nur prüfen, wenn der Client es mitschickt; sonst bestehenden Wert behalten.
+    const outlookProvided = req.body.target_outlook_account_id !== undefined
+      || req.body.target_outlook_calendar_id !== undefined;
+    const vOutlook = outlookProvided ? outlookTarget(req.body) : null;
+    if (vOutlook) checks.push(vOutlook);
     const errors = collectErrors(checks);
     if (errors.length) return res.status(400).json({ error: errors.join(' '), code: 400 });
     const vIcon = req.body.icon !== undefined ? eventIcon(req.body.icon) : event.icon;
@@ -280,6 +292,8 @@ router.put('/:id', async (req, res) => {
     const caldavAccountId = vCaldav ? vCaldav.value.accountId : event.target_caldav_account_id;
     const caldavCalendarUrl = vCaldav ? vCaldav.value.calendarUrl : event.target_caldav_calendar_url;
     const googleTargetId = vGoogle ? vGoogle.value : event.target_google_calendar_id;
+    const outlookAccountId = vOutlook ? vOutlook.value.accountId : event.target_outlook_account_id;
+    const outlookCalendarId = vOutlook ? vOutlook.value.calendarId : event.target_outlook_calendar_id;
 
     db.get().transaction(() => {
       const documentId = replacementRequested
@@ -331,7 +345,15 @@ router.put('/:id', async (req, res) => {
             target_caldav_account_id   = ?,
             target_caldav_calendar_url = ?,
             target_google_calendar_id  = ?,
+            target_outlook_account_id  = ?,
+            target_outlook_calendar_id = ?,
             visibility      = ?,
+            -- Anzeigeeinstellung, kein gespiegeltes Feld (#647): sie steht nicht
+            -- in MIRRORED_FIELDS und löst deshalb keinen Push aus. Wie bei den
+            -- Nachbarfeldern gilt „nicht mitgeschickt" als „nicht angefasst" -
+            -- das PUT eines Clients, der das Feld nicht kennt (Modul, ältere
+            -- App), darf eine gesetzte Markierung nicht stillschweigend löschen.
+            countdown       = ?,
             user_modified   = ?
         WHERE id = ?
       `).run(
@@ -353,9 +375,12 @@ router.put('/:id', async (req, res) => {
         caldavAccountId,
         caldavCalendarUrl,
         googleTargetId,
+        outlookAccountId,
+        outlookCalendarId,
         req.body.visibility !== undefined
           ? normalizeVisibility(req.body.visibility, event.visibility)
           : event.visibility,
+        req.body.countdown !== undefined ? (req.body.countdown ? 1 : 0) : event.countdown,
         userModified,
         id
       );

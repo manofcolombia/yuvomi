@@ -606,6 +606,28 @@ async function sync({ createClient: makeClient } = {}) {
         log.error(`Uploading local tasks failed for account ${account.id}:`, err.message);
       }
 
+      // Dasselbe für den Einkauf (#831). Ein Artikel trägt kein eigenes Ziel -
+      // die Zuordnung Server-Liste ↔ Yuvomi-Liste ist die Zielangabe, also
+      // reicht sie hier hinein.
+      try {
+        const shoppingSelections = enabledLists.filter((s) => s.target_module === 'shopping');
+        const shoppingLists = new Map(
+          shoppingSelections
+            .map((s) => [s.list_url, serverCals.find((c) => c.url === s.list_url)])
+            .filter(([, cal]) => cal)
+        );
+        const created = await todoOutbound.processPendingShoppingCreations(
+          client,
+          account.id,
+          shoppingSelections.map((s) => ({ listUrl: s.list_url, targetListId: s.target_list_id })),
+          shoppingLists
+        );
+        totalPushed += created;
+        if (created) log.info(`${created} locally created shopping item(s) uploaded to the server.`);
+      } catch (err) {
+        log.error(`Uploading local shopping items failed for account ${account.id}:`, err.message);
+      }
+
       db.get().prepare('UPDATE caldav_accounts SET last_sync = ? WHERE id = ?')
         .run(new Date().toISOString(), account.id);
       successfulAccounts++;

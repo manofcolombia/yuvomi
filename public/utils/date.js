@@ -76,6 +76,18 @@ export function weekStartIndex(value) {
 }
 
 /**
+ * Wochenende (Samstag/Sonntag) für einen Datums-Key, unabhängig davon, an
+ * welcher Stelle der Tag in einem Anzeigeraster landet. Das Monatsgitter hat
+ * das früher über die Spaltenposition gelöst (`:nth-child(7n)`/`7n-1`), was nur
+ * bei Wochenstart Montag stimmte: bei Sonntag- oder Samstag-Start tönte es die
+ * letzten beiden Spalten und damit die falschen Tage (#780).
+ */
+export function isWeekendKey(dateKey) {
+  const day = parseLocalDateKey(dateKey).getDay();
+  return day === 0 || day === 6;
+}
+
+/**
  * Liefert die sieben getDay()-Indizes in Anzeigereihenfolge für einen gegebenen
  * Wochenstart. `weekStart` darf ein Index (0/1/6) oder eine Präferenz ('monday'
  * …) sein. Beispiel: weekStart='sunday' → [0,1,2,3,4,5,6].

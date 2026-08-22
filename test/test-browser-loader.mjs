@@ -78,6 +78,11 @@ const STUBS = {
     export const refreshDirtySnapshot = () => {};
     export const focusFirstField = () => null;
     export const updateHeaderAction = () => null;
+    export const validateAll = () => true;
+    export const promptModal = async () => null;
+    export const btnLoading = () => {};
+    export const btnSuccess = () => {};
+    export const btnError = () => {};
   `,
   '/components/detail-view.js': `
     export const openDetailView = () => ({ update: () => true, isOpen: () => true });

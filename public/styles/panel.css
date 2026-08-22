@@ -15,14 +15,19 @@
  * (.segmented), und darüber eine Kennzahl-Zeile (.metric-grid) aus Karten
  * (.metric-card).
  *
- * DIE RESPONSIVE KOMPAKTSTUFE GEHÖRT DEM HOST, NICHT DIESER DATEI. Die
- * Kennzahl-Zeile und die Karte werden im Budget über `@container budget-page`
- * enger gestellt; diese Stufen stehen in budget.css. Grund: der Container ist
- * eine Eigenschaft der Seite, die das Bauteil einsetzt, und der Name ist es
- * auch. Eine unbenannte Query hier hätte im Aufteilen-Tab den näheren
- * Container `split-page` gemessen statt `budget-page` und die Stufen dort
- * verschoben. Wer die Karte in einem anderen Modul einsetzt, setzt seinen
- * eigenen Container und wiederholt die Stufe.
+ * DIE RESPONSIVE KOMPAKTSTUFE GEHÖRT DEM HOST - MIT EINER AUSNAHME SEIT
+ * 2026-08-19. Polsterung und Kartenzahl werden im Budget über
+ * `@container budget-page` enger gestellt; diese Stufen stehen in budget.css.
+ * Grund: der Container ist eine Eigenschaft der Seite, die das Bauteil
+ * einsetzt, und der Name ist es auch.
+ *
+ * Der SCHRIFTGRAD des Werts ist die Ausnahme und steht hier. Er hing an zwei
+ * Hosts, die ihn beide auf `--text-base` (16px) klemmten - also auf
+ * Fussnotengroesse, wo DESIGN.md Title 1 zusagt. Die Frage „wieviel Platz hat
+ * eine Karte" beantwortet ohnehin die REIHE, nicht die Seite: sie kennt ihre
+ * Kartenzahl. `.metric-grid` deklariert deshalb den Container `metric-grid`,
+ * und wer eine eigene Reihe aus `.metric-card` baut, tut dasselbe (siehe
+ * `.health-overview__vitals-grid`).
  *
  * SEIT BLOCK 2 AUCH DIE WÄHLBARE KACHEL: `.health-metric-card` stand hier als
  * „anderes Bauteil" abgegrenzt - eine anklickbare Kachel, die eine Metrik
@@ -163,6 +168,16 @@
   gap: var(--space-2);
   padding-block: var(--space-3);
   flex-shrink: 0;
+  /* DIE ZEILE IST DER CONTAINER, NICHT DIE KARTE.
+   *
+   * Der Wert braucht eine Kompaktstufe (siehe unten), und die Frage dahinter
+   * ist „wieviel Platz hat eine Karte" - das weiss die ZEILE, weil sie ihre
+   * Kartenzahl kennt. Der erste Versuch stellte `container-type` an
+   * `.metric-card` selbst: damit greift `contain: inline-size` an einem
+   * Grid-ITEM, dessen intrinsische Breite dadurch wegfaellt, und die Karten
+   * fielen gemessen auf 18px zusammen. Ein Grid-CONTAINER voller Breite hat
+   * dieses Problem nicht - seine Breite kommt ohnehin von aussen. */
+  container: metric-grid / inline-size;
 }
 
 /* „Nur Ausgaben" (#504): die einzelne Ausgaben-Karte trägt die volle Breite,
@@ -278,10 +293,77 @@
   overflow-wrap: break-word;
 }
 
+/* TITLE 1, NICHT TITLE 3.
+ *
+ * Hier stand `--text-xl` (20px, Title 3), während DESIGN.md für die Kennzahl
+ * einer Karte Title 1 vorschreibt und den Grund gleich mitliefert: „sonst sieht
+ * die Hauptaussage der Karte aus wie ihre Fussnote". Zwei Wahrheiten in zwei
+ * Dateien, und die gebaute war die leisere - der Kontosaldo trug denselben Grad
+ * wie die Überschrift der Karte darüber.
+ *
+ * Der Wert bleibt in der schmalsten Spalte lesbar, weil er nicht umbrechen
+ * DARF: `--text-3xl` mit dem Tracking von Title 1, und lange Beträge klemmen
+ * sich über die Container-Query weiter unten auf Title 2 herunter statt in
+ * zwei Zeilen zu fallen. Ein Betrag über zwei Zeilen ist keine Kennzahl mehr. */
 .metric-card__value {
-  font-size: var(--text-xl);
+  font-size: var(--text-3xl);
   font-weight: var(--font-weight-bold);
+  line-height: var(--line-height-tight);
+  letter-spacing: var(--tracking-tight);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* Eine schmale Zeile klemmt ihre Werte auf Title 2.
+ *
+ * GEMESSEN, nicht geschaetzt: bei 375px teilen sich drei Karten die Zeile und
+ * bekommen 109px - „24.503,00 €" braucht bei 28px 190px und stand dort 81px
+ * ueber der Kante. Die Schwelle liegt bei der Zeile, nicht bei der Karte: 600px
+ * ist die Breite, unter der eine Dreier-Reihe ihre Karten unter die ~150px
+ * drueckt, die ein Geldbetrag in Title 1 braucht. Auf dem Desktop bleiben alle
+ * gemessenen Reihen darueber (Budget 990px, Gesundheit ~900px) und behalten
+ * ihre 28px. */
+@container metric-grid (max-width: 600px) {
+  .metric-card__value {
+    font-size: var(--text-2xl);
+  }
+}
+
+/* Und eine dritte Stufe fuer die engsten Reihen. Title 3 ist die Untergrenze -
+ * darunter waere die Kennzahl so gross wie die Ueberschrift ueber ihr, und
+ * genau das wollte die Regel verhindern. Werte, die auch hier nicht passen,
+ * sind zu LANG und gehoeren geteilt (Wert plus `.metric-card__note`), nicht
+ * weiter verkleinert - so hat es die „Letzter Besuch"-Karte der Haushaltshilfe
+ * bekommen, deren Wert Datum UND Uhrzeit trug. */
+@container metric-grid (max-width: 400px) {
+  .metric-card__value {
+    font-size: var(--text-xl);
+  }
+}
+
+/* UND DIE REIHE BRICHT, STATT IHRE KARTEN ZU ZERQUETSCHEN.
+ *
+ * „Immer eine volle Zeile" (oben) beantwortete die Frage gegen einen
+ * Mobil-STAPEL: drei volle Karten uebereinander sind ~600px und schieben jeden
+ * Inhalt unter den Fold. Der Umkehrschluss - drei Karten in JEDER Breite - war
+ * nie gemessen: bei 375px bleiben 109px je Karte, und gesehen hat man
+ * „GEGENSTAEN/DE", „GESAMTWE/RT" und „BRAUCHT AUFMERKSA/MKEIT" ueber drei
+ * Zeilen, dazu einen Betrag, der in die Nachbarkarte lief. Derselbe Bruch
+ * mitten im Kompositum steht als „HAUSHALTSHILF-E" im Backlog von 2026-08-17.
+ *
+ * Zwei Spalten sind die Mitte: die Reihe bleibt zwei Zeilen hoch statt drei
+ * volle, und jede Karte traegt ihr Label ungebrochen. `auto-fit` regelt die
+ * Zahl selbst und laesst eine Einzelkarte („Nur Ausgaben") ihre volle Breite.
+ *
+ * ALS VIEWPORT-GRENZE, NICHT ALS CONTAINER-QUERY: eine Container-Query kann
+ * ihren eigenen Container nicht umstellen, und `.metric-grid` IST er (die
+ * Wertstufen darueber sind Kinder und duerfen fragen). 640px ist die kanonische
+ * Mobile-Grenze aus tokens.css, kein neuer Breakpoint. */
+@media (max-width: 640px) {
+  .metric-grid {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  }
 }
 
 /* Fußnote unter dem Betrag: „7 aktiv", „121% des Budgets genutzt", „EUR".
@@ -309,13 +391,17 @@
 /* Füllstand über --fill (0..1) als transform, nicht als width: eine Breiten-
  * Animation wirft bei jedem Renderdurchlauf das Layout neu. Der Parent clippt
  * die Ecken, der Balken braucht deshalb keinen eigenen Radius. */
+/* Der Balken traegt die STIMME, nicht den Modulton (Eine-Stimme-Regel): ein
+ * Fuellstand tut in jedem Modul dasselbe, und ein Abo-Budget zu 62 % ist keine
+ * Aussage darueber, in welchem Raum man steht. Ueber 100 % kippt er auf Danger
+ * - dort sagt die Farbe etwas ueber den WERT, und nur dann. */
 .metric-card__progress > span {
   display: block;
   height: 100%;
   width: 100%;
   transform: scaleX(var(--fill, 0));
   transform-origin: left center;
-  background: var(--module-accent, var(--color-accent));
+  background: var(--color-accent);
   transition: transform var(--transition-base);
 }
 
@@ -389,11 +475,26 @@
   hyphens: manual;
 }
 
+/* DER GLYPH GEHOERT ZU SEINEM LABEL, NICHT ZU SEINEM MODUL.
+ *
+ * Hier stand `var(--module-accent)`. Auf der Gesundheits-Uebersicht hiess das:
+ * neun Vitalkarten, neun Glyphen in exakt `rgb(219,96,203)` - neunmal die
+ * Aussage „du bist in Gesundheit" auf einer Seite, deren Titel und Siegel das
+ * schon beantwortet haben. Es ist dieselbe Messung, die 2026-08-17 die
+ * Wetter-Glyphe umgestellt hat: die Farbe eines Zeichens sagt, WAS es meldet,
+ * nicht WO es haengt.
+ *
+ * Und dieses Bauteil fuehrt seine Farbe an genau EINER Stelle - dem Wert.
+ * `trendValence()` (utils/metric-card.js) entscheidet dort, ob eine
+ * Veraenderung gut oder schlecht ist; der Glyph daneben ist das Piktogramm
+ * seines Labels und traegt deshalb dessen Farbe. `inherit` holt sie aus
+ * `.metric-card__head` und bleibt damit automatisch richtig, wenn die
+ * Kopfzeile ihre Textrolle wechselt. */
 .metric-card__icon {
   flex-shrink: 0;
   width: var(--icon-md);
   height: var(--icon-md);
-  color: var(--module-accent, var(--color-accent));
+  color: inherit;
 }
 
 /* Wert und Einheit stehen auf einer gemeinsamen Grundlinie. Sie dürfen
@@ -415,15 +516,57 @@
   color: var(--color-text-tertiary, var(--color-text-secondary));
 }
 
-/* Mini-Trendlinie: gibt einer Metrik-Karte Sub-Domänen-Charakter.
+/* --------------------------------------------------------
+ * Die Auswertungsflaeche: Gitter und Achse
+ *
+ * Gehoeren hierher, weil die Geometrie dahinter geteilt ist (utils/chart.js).
+ * Sie standen als `.health-chart__grid` und `.health-chart__axis` in health.css
+ * und waren damit nur dort verfuegbar, wo dieses Page-CSS geladen ist - genau
+ * der Grund, aus dem der Budget-Trend und das Abo-Flaechenchart ihre Achse
+ * ausserhalb des SVG gebaut haben. Dieselbe Lehre wie beim Prioritaetspunkt.
+ * -------------------------------------------------------- */
+.chart__grid {
+  stroke: var(--color-border);
+  stroke-width: 1;
+}
+
+.chart__axis {
+  font-size: var(--text-xs);
+  fill: var(--color-text-secondary);
+}
+
+/* Die Y-Werte stehen dezenter als die X-Achse: die Kurve behaelt die Hauptrolle,
+ * und die Werteachse ist Nachschlagewerk, nicht Aussage. */
+.chart__axis--y {
+  fill: var(--color-text-tertiary);
+}
+
+/* Mini-Trendlinie zum Wert der Karte.
  * preserveAspectRatio="none" streckt auf Kartenbreite; vector-effect hält die
- * Strichstärke konstant. */
+ * Strichstärke konstant.
+ *
+ * SIE FÄRBT SICH HIER, NICHT IM MARKUP. Sechs Linien standen als
+ * `stroke="var(--module-accent)"` in health.js und sagten sechsmal
+ * „Gesundheit" - dieselbe Aussage, die v2.23.0 dem Glyph derselben Karte
+ * abgewöhnt hat, nur als Linie. Die Farbe einer Kennzahlkarte gehört ihrem
+ * WERT; wo eine Metrik keine Valenz hat (bei Vitalwerten ist „hoch" je nach
+ * Größe gut oder schlecht - siehe `deltaMarkup` in health.js), sagt sie nichts
+ * und bleibt neutral. Der Endpunkt trägt die Label-Farbe, weil er den aktuellen
+ * Wert markiert und nicht den Verlauf dorthin. */
 .metric-card__spark {
   width: 100%;
   height: 22px;
   display: block;
-  opacity: 0.9;
   overflow: visible;
+  color: var(--color-text-secondary);
+}
+
+.metric-card__spark polyline {
+  stroke: currentColor;
+}
+
+.metric-card__spark circle {
+  fill: var(--color-text-primary);
 }
 
 .metric-card__meta {

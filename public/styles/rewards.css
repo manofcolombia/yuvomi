@@ -84,7 +84,13 @@
      ist eine Zusage, die beim ersten neuen Markup bricht. */
 }
 .rw-avatar img { width: 100%; height: 100%; object-fit: cover; }
-.rw-avatar--initials { background: var(--rw-avatar-bg, var(--module-accent)); }
+/* Der Fallback ist NEUTRAL, nicht der Modulton. Er greift heute nie - rewards.js
+ * setzt --rw-avatar-bg immer, notfalls auf AVATAR_FALLBACK_COLOR - und genau das
+ * ist der Grund, ihn zu korrigieren: eine tote Zusage bricht beim ersten neuen
+ * Markup, und sie bräche hier in die Identitätsfarben-Regel hinein (wer keine
+ * eigene Farbe hat, bleibt neutral, statt die Modulfarbe zu erben). Dieselbe
+ * Lehre steht acht Zeilen weiter oben über der Textfarbe, die nie ankam. */
+.rw-avatar--initials { background: var(--rw-avatar-bg, var(--color-fill-well)); }
 
 /* --------------------------------------------------------
    Übersicht: Punktestände (gleichwertige Zeilenliste, bewusst flach)
@@ -146,13 +152,20 @@
   transition: color 140ms ease;
 }
 .rw-standing__points { font-size: var(--text-sm); color: var(--color-text-secondary); }
+/* Der Punktestand ist die Hauptaussage seiner Zeile und trägt Label-Farbe: der
+ * Modulton sagte hier „Belohnungen" auf einer Seite, deren Titel und Siegel das
+ * schon beantwortet haben (Herkunfts-Regel). Was die Zahl auszeichnet, ist ihr
+ * Grad und ihr Gewicht, nicht ihre Farbe - dieselbe Entscheidung wie bei den
+ * Large Titles, die immer Label-Farbe tragen. */
 .rw-standing__points strong {
   font-size: var(--text-xl);
   font-weight: 700;
-  color: var(--module-accent);
+  color: var(--color-text-primary);
   font-variant-numeric: tabular-nums;
 }
-.rw-standing__points strong.rw-countup--active { color: color-mix(in srgb, var(--module-accent) var(--tint-ink), var(--color-text-primary)); }
+/* Der Zählvorgang ist ein ZUSTAND, kein Herkunftszeichen: er darf die Stimme
+ * nehmen, solange er läuft. */
+.rw-standing__points strong.rw-countup--active { color: var(--color-accent); }
 .rw-standing__progress { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
 .rw-standing__actions { display: flex; justify-content: flex-end; }
 
@@ -181,22 +194,27 @@
   padding: var(--space-2) 0;
 }
 .rw-setup-step__mark { width: 20px; height: 20px; color: var(--color-text-tertiary); flex: 0 0 auto; }
-.rw-setup-step--done .rw-setup-step__mark { color: var(--module-tasks); }
+/* „Erledigt" ist ein Zustand, kein Modul: der Haken trug den Ton des
+ * AUFGABEN-Moduls, weil der Schritt dorthin führt - eine geliehene Herkunft
+ * für eine Aussage, die die App überall gleich macht. */
+.rw-setup-step--done .rw-setup-step__mark { color: var(--color-success); }
 .rw-setup-step__label { flex: 1 1 auto; color: var(--color-text-primary); }
 .rw-setup-step--done .rw-setup-step__label { color: var(--color-text-secondary); text-decoration: line-through; }
 .rw-setup-step__go {
   flex: 0 0 auto;
   min-height: var(--target-sm);
   padding: var(--space-1) var(--space-3);
-  border: 1px solid var(--module-accent);
+  /* Ein Knopf tut in jedem Modul dasselbe und trägt deshalb die Stimme
+   * (Eine-Stimme-Regel), nicht den Ton des Raums, in dem er zufällig steht. */
+  border: 1px solid var(--color-accent);
   border-radius: var(--radius-full);
   background: transparent;
-  color: var(--module-accent);
+  color: var(--color-accent);
   font-size: var(--text-sm);
   font-weight: 600;
   cursor: pointer;
 }
-.rw-setup-step__go:hover { background: color-mix(in srgb, var(--module-accent) var(--tint-state), transparent); }
+.rw-setup-step__go:hover { background: color-mix(in srgb, var(--color-accent) var(--tint-state), transparent); }
 
 /* Fortschritt zur nächsten Prämie */
 .rw-progress { display: flex; flex-direction: column; gap: var(--space-2); }
@@ -206,13 +224,22 @@
   background: var(--color-surface-3);
   overflow: hidden;
 }
+/* EIN FÜLLSTAND TUT IN JEDEM MODUL DASSELBE - also trägt er die Stimme.
+ *
+ * Hier stand ein Verlauf aus dem Modulton, und er war der letzte chromatische
+ * Verlauf auf Inhalt in der ganzen App (nachgezählt: alle übrigen
+ * `linear-gradient` sind Schraffur, Modal-Griff oder Skeleton-Shimmer). Zwei
+ * Regeln treffen ihn: chromatische Verläufe gehören nicht auf Inhalt, und ein
+ * Balken beantwortet „wie weit", nicht „wo bin ich".
+ *
+ * v2.23.0 hat genau das für `.metric-card__progress` entschieden. Diese Zeile
+ * ist ihr Geschwister und blieb stehen, weil damals nur dort gesucht wurde, wo
+ * es aufgefallen war. */
 .rw-progress__fill {
   width: 100%;
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg,
-    color-mix(in srgb, var(--module-accent) 78%, white),
-    var(--module-accent));
+  background: var(--color-accent);
   /* scaleX statt width animieren — projektweite Konvention (budget/dashboard/tasks-Bars),
    * vom frontend-audit erzwungen; --rw-progress (0–1) wird inline gesetzt. */
   transform-origin: left center;
@@ -285,6 +312,10 @@
   box-shadow: var(--shadow-xs);
 }
 .rw-reward-card--inactive { opacity: 0.62; }
+/* NENNT NICHTS: das Zeichen der Prämie steht in ihrer eigenen Karte, in ihrem
+ * eigenen Modul. Es trug den Modulton als 16-%-Waschung MIT demselben Ton als
+ * Glyph darauf - dieselbe Farbe zweimal blass, sechsmal nebeneinander auf der
+ * Kachelwand. Neutral wie die Icon-Kachel der Ablegefläche (document-attach.css). */
 .rw-reward-card__icon {
   display: inline-flex;
   align-items: center;
@@ -292,10 +323,10 @@
   width: 48px;
   height: 48px;
   border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--module-accent) var(--tint-surface), var(--color-surface-2));
+  background: var(--color-fill-well);
   font-size: var(--text-2xl);
 }
-.rw-reward-card__icon i { width: 22px; height: 22px; color: var(--module-accent); }
+.rw-reward-card__icon i { width: 22px; height: 22px; color: var(--color-text-secondary); }
 .rw-reward-card__body { flex: 1 1 auto; }
 .rw-reward-card__name { margin: 0; font-weight: 600; color: var(--color-text-primary); }
 .rw-reward-card__desc { margin: var(--space-1) 0 0; font-size: var(--text-sm); color: var(--color-text-secondary); }
@@ -310,13 +341,15 @@
 .rw-reward-card__actions { display: flex; align-items: center; gap: var(--space-2); }
 .rw-reward-card__short { font-size: var(--text-xs); color: var(--color-text-tertiary); }
 
+/* Der Preis ist die Zahl, auf die es in dieser Karte ankommt - er trägt
+ * Label-Farbe und sein Gewicht, nicht den Modulton (Herkunfts-Regel). */
 .rw-cost {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
   font-weight: 600;
   font-size: var(--text-sm);
-  color: var(--module-accent);
+  color: var(--color-text-primary);
 }
 .rw-cost i { width: 15px; height: 15px; }
 
@@ -397,14 +430,36 @@
   color: var(--color-text-secondary);
 }
 .rw-ledger-row__icon i { width: 17px; height: 17px; }
-.rw-ledger-row__icon--earn  { background: color-mix(in srgb, var(--module-tasks) var(--tint-surface), transparent); color: var(--module-tasks); }
-.rw-ledger-row__icon--bonus { background: color-mix(in srgb, var(--module-accent) var(--tint-surface), transparent); color: var(--module-accent); }
-.rw-ledger-row__icon--redeem { background: color-mix(in srgb, var(--module-budget) var(--tint-surface), transparent); color: var(--module-budget); }
+
+/* DAS ZEICHEN UNTERSCHEIDET, NICHT DER TON.
+ *
+ * Hier standen drei Farbvarianten - `--earn` in --module-tasks, `--bonus` in
+ * --module-accent, `--redeem` in --module-budget - und sie hatten gleich drei
+ * Fehler übereinander:
+ *
+ * 1. Sie liehen sich FREMDE Modultöne. Eine Zeile im Belohnungsmodul sagte
+ *    „Aufgaben" und „Budget", obwohl sie eine Punktebuchung beschreibt.
+ * 2. --module-tasks und --module-accent (rewards) sind BEIDE --_family-work
+ *    und damit bitweise derselbe Wert: gemessen trugen `--earn` und `--bonus`
+ *    identisch color(srgb 0.0824 0.498 0.239 / 0.16) mit identischem Glyph
+ *    darauf. Zwei Stufen einer Reihe, die zufällig gleich aussehen - derselbe
+ *    Fehler wie `--default`/`--soon` der Geburtstags-Chips in v2.23.0.
+ * 3. Sie nannten ihren Ton zweimal blass, Waschung plus gleichfarbiger Glyph.
+ *
+ * Der Kanal, der schon immer trug, ist das Zeichen: check-circle, sparkles,
+ * gift, sliders-horizontal, undo-2 (LEDGER_ICON in rewards.js). Es unterscheidet
+ * ALLE FÜNF Buchungsarten - die Farbe kannte nur drei und ließ die restlichen
+ * zwei stumm neutral. Die Scheibe bleibt deshalb bei der neutralen Basis oben;
+ * ein Vollton-Siegel je Zeile wäre die Gegenrichtung desselben Fehlers und
+ * streute die Modulmarke durch die Liste ihres eigenen Moduls. */
 .rw-ledger-row__text { flex: 1 1 auto; min-width: 0; }
 .rw-ledger-row__reason { margin: 0; font-weight: 500; color: var(--color-text-primary); }
 .rw-ledger-row__meta { margin: var(--space-1) 0 0; font-size: var(--text-xs); color: var(--color-text-secondary); }
 .rw-delta { flex: 0 0 auto; font-weight: 700; font-variant-numeric: tabular-nums; }
-.rw-delta--pos { color: var(--module-tasks); }
+/* Die Richtung der Buchung ist eine WERT-Aussage, keine Modul-Aussage: sie
+ * nimmt den Zuwachs-Ton der App (Geld-Vokabular des Budgets), nicht den Ton des
+ * Aufgabenmoduls, aus dem der Punkt zufällig stammte. */
+.rw-delta--pos { color: var(--color-success); }
 .rw-delta--neg { color: var(--color-text-secondary); }
 
 /* --------------------------------------------------------
@@ -459,12 +514,14 @@
 
 .rw-detail-head { display: flex; align-items: center; gap: var(--space-4); margin-bottom: var(--space-4); }
 .rw-detail-points { margin: 0; color: var(--color-text-secondary); }
-.rw-detail-points strong { font-size: var(--text-2xl); color: var(--module-accent); }
+/* Geschwister von `.rw-standing__points strong` - dieselbe Zahl, dieselbe
+ * Entscheidung: Label-Farbe, nicht Modulton. */
+.rw-detail-points strong { font-size: var(--text-2xl); color: var(--color-text-primary); }
 .rw-detail-hint { margin: var(--space-1) 0 0; font-size: var(--text-sm); color: var(--color-text-secondary); }
 
 /* Toggle-Switch */
 .rw-switch { display: inline-flex; align-items: center; gap: var(--space-2); cursor: pointer; }
-.rw-switch input { accent-color: var(--module-accent); width: 18px; height: 18px; }
+.rw-switch input { accent-color: var(--color-accent); width: 18px; height: 18px; }
 .rw-switch--compact { margin-left: auto; }
 
 /* Kleine Button-Variante (global additiv, für dichte Aktionsreihen) */

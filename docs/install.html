@@ -45,12 +45,14 @@
       --success: #1E7B35; --success-soft: #DFF6E4;
       --warning: #A85D00; --warning-soft: #FFF0D9;
       --danger:  #D70015; --danger-soft:  #FFE3E3;
+      --danger-label: #B91C1C;
       --info:    #0663C7; --info-soft:    #E0EFFF;
     }
     [data-theme="dark"] {
       --success: #30D158; --success-soft: #0E2E17;
       --warning: #FF9F0A; --warning-soft: #33230A;
       --danger:  #FF6961; --danger-soft:  #3A1210;
+      --danger-label: #FCA5A5;
       --info:    #409CFF; --info-soft:    #10263E;
     }
     @media (prefers-color-scheme: dark) {
@@ -58,6 +60,7 @@
         --success: #30D158; --success-soft: #0E2E17;
         --warning: #FF9F0A; --warning-soft: #33230A;
         --danger:  #FF6961; --danger-soft:  #3A1210;
+        --danger-label: #FCA5A5;
         --info:    #409CFF; --info-soft:    #10263E;
       }
     }
@@ -234,7 +237,7 @@
     /* Steps */
     .step { display: flex; gap: 18px; margin-bottom: 24px; }
     .step-num { flex-shrink: 0; width: 38px; height: 38px; border-radius: var(--r-md); display: grid; place-items: center;
-      font-weight: 700; font-size: 1.02rem; color: var(--accent); background: var(--accent-soft); font-variant-numeric: tabular-nums; }
+      font-weight: 700; font-size: 1.02rem; color: var(--accent-on-soft); background: var(--accent-soft); font-variant-numeric: tabular-nums; }
     .step-content { flex: 1; min-width: 0; padding-top: 4px; }
     .step-title { font-size: 1.08rem; font-weight: 700; letter-spacing: -0.01em; margin-bottom: 6px; }
     .step-desc { font-size: 0.94rem; color: var(--text-2); line-height: 1.6; margin-bottom: 12px; }
@@ -247,11 +250,22 @@
 
     /* Code */
     .code-wrap { position: relative; margin-bottom: 14px; }
-    .code-block { background: var(--code-bg); color: var(--code-text); border-radius: var(--r-md); padding: 18px 56px 18px 20px;
+    .code-block { background: var(--code-bg); color: var(--code-text); border-radius: var(--r-md); padding: 18px 20px;
       font-family: var(--ff-mono); font-size: 0.84rem; line-height: 1.8; overflow-x: auto; white-space: pre; tab-size: 2;
       box-shadow: var(--shadow-md); border: 1px solid rgba(255,255,255,0.06); }
+    /* The copy button gets a reserved row at the top of the plate instead of a
+       right-hand gutter. `padding-right: 56px` only protected the first
+       screenful: the button is absolutely positioned, so any line longer than
+       the plate scrolled straight underneath it. On the German page the label
+       reads "Kopieren" at 94px against that 56px gutter, which covered 17% of
+       the readable width at 390px and 23% at 320px, on every block.
+
+       Keyed on :has() rather than on .code-wrap, because five of the nineteen
+       blocks have no button at all and a blanket padding would open 52px of
+       empty plate above them. */
+    .code-wrap:has(> .copy-btn) .code-block { padding-top: 52px; }
     .code-block .cmd { color: var(--code-accent); font-weight: 600; }
-    .code-block .val { color: #7ee787; }
+    .code-block .val { color: var(--code-val); }
     .code-block .comment { color: var(--code-comment); }
     .copy-btn { position: absolute; top: 10px; right: 10px; display: inline-flex; align-items: center; justify-content: center; gap: 5px;
       background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); color: var(--code-text); cursor: pointer;
@@ -311,17 +325,28 @@
     .env-name { font-family: var(--ff-mono); font-size: 0.92rem; font-weight: 600; color: var(--accent); margin-bottom: 10px; word-break: break-all; }
     .env-label { font-size: 0.95rem; font-weight: 700; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     .env-req { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; padding: 3px 8px; border-radius: var(--r-full);
-      background: color-mix(in srgb, var(--danger, #B91C1C) 14%, transparent); color: #B91C1C; }
-    [data-theme="dark"] .env-req { color: #FCA5A5; background: rgba(252,165,165,0.14); }
+      /* Beide Kanaele aus DEMSELBEN Token, und zwar aus --danger-label statt
+         --danger: die Signalfarbe der Seite (#D70015) misst auf dieser hellen
+         Flaeche nur 3.89:1 und faellt fuer 0.7rem-Versalien unter AA - gemessen,
+         nachdem genau diese Umstellung hier zuerst falsch gemacht wurde. Der
+         Etikettenton ist die dunklere Stufe. Weil das Token selbst
+         themengeschaltet ist, ersetzt diese eine Zeile die zwei gespiegelten
+         Dark-Regeln, die es dafuer brauchte. */
+      background: color-mix(in srgb, var(--danger-label) 14%, transparent); color: var(--danger-label); }
     @media (prefers-color-scheme: dark) {
-      :root:not([data-theme="light"]) .env-req { color: #FCA5A5; background: rgba(252,165,165,0.14); }
     }
-    /* DB_ENCRYPTION_KEY is optional in fact (.env.example leaves it empty for an
-       unencrypted development database) but irreversible once set. Wearing the
+    /* DB_ENCRYPTION_KEY is optional in fact - server/db.js runs an unencrypted
+       SQLite file when the value is empty - but irreversible once set. Wearing the
        same red "Required" badge as SESSION_SECRET said the wrong thing twice:
-       it overstated the obligation and understated the consequence, while
-       index.html called the same setting "optional" and the app-store panels
-       called it "recommended". One claim now, in its own colour. */
+       it overstated the obligation and understated the consequence.
+
+       Two corrections from the 2026-08-16 critique. First, this comment used to
+       claim ".env.example leaves it empty"; it does not, it ships
+       DB_ENCRYPTION_KEY=REPLACE_WITH_A_STRONG_ENCRYPTION_KEY (line 46), so a
+       literal copy-paste encrypts the database with a published constant rather
+       than leaving it off. Second, "one claim now" was only true here: the
+       app-store panels still said "recommended". Every surface says optional and
+       irreversible, and the quick start on index.html now names the placeholder. */
     .env-irrev { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; padding: 3px 8px; border-radius: var(--r-full);
       background: color-mix(in srgb, var(--warning) 16%, transparent); color: var(--warn-ink); }
     .env-desc { font-size: 0.86rem; color: var(--text-2); line-height: 1.6; }
@@ -349,6 +374,15 @@
     /* Troubleshooting */
     .trouble-list { margin-top: 32px; display: flex; flex-direction: column; gap: 10px; }
     details { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); overflow: hidden; }
+    /* `overflow: hidden` haelt den Inhalt in den 12px-Radien - und schnitt dabei
+       den Fokusring des <summary> weg. Die Summary sitzt 1px innerhalb des
+       details (der Rahmen), der Ring liegt bei `outline-offset: 3px` also 2px
+       AUSSERHALB der Klammer und wurde vollstaendig geklippt: tastaturbedient
+       war nicht zu sehen, welches der fuenf Akkordeons den Fokus hat.
+       Gemessen 0 geaenderte Pixel gegen 3.561 ohne die Klammer.
+       Die Ausnahme gilt nur, solange der Fokus sichtbar ist; im Ruhezustand
+       klippt es weiter wie zuvor. WCAG 2.4.7 und 2.4.11. */
+    details:has(> summary:focus-visible) { overflow: visible; }
     details[open] { box-shadow: var(--shadow-sm); }
     summary { cursor: pointer; padding: 16px 20px; font-weight: 600; font-size: 0.95rem; list-style: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
     summary::-webkit-details-marker { display: none; }
@@ -597,8 +631,9 @@ curl -O https://raw.githubusercontent.com/ulsklyc/yuvomi/main/.env.example</div>
             <h3 class="step-title" data-t="step_a2_title">Create your configuration</h3>
             <p class="step-desc" data-t="step_a2_desc">Copy the template, then open <code>.env</code> in a text editor. <code>SESSION_SECRET</code> is required; <code>DB_ENCRYPTION_KEY</code> is optional but permanent.</p>
             <div class="code-wrap"><div class="code-block">cp .env.example .env</div><button class="copy-btn" data-copy="cp .env.example .env" type="button"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><span data-t="copy">Copy</span></button></div>
-            <p class="step-desc" data-t="step_a2_gen">Generate a secure value for each secret by running this twice - paste one result as <code>SESSION_SECRET</code> and one as <code>DB_ENCRYPTION_KEY</code>:</p>
-            <div class="code-wrap"><div class="code-block">openssl rand -hex 32</div><button class="copy-btn" data-copy="openssl rand -hex 32" type="button"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><span data-t="copy">Copy</span></button></div>
+            <p class="step-desc" data-t="step_a2_gen">This prints two secure values - paste one as <code>SESSION_SECRET</code> and the other as <code>DB_ENCRYPTION_KEY</code>:</p>
+            <div class="code-wrap"><div class="code-block">openssl rand -hex 32
+openssl rand -hex 32</div><button class="copy-btn" data-copy="openssl rand -hex 32&#10;openssl rand -hex 32" type="button"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><span data-t="copy">Copy</span></button></div>
             <div class="callout callout-warning">
               <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
               <span data-t="step_a2_warning">Keep a backup of your <code>.env</code> file somewhere safe. If you lose the <code>DB_ENCRYPTION_KEY</code>, your data cannot be recovered.</span>
@@ -662,7 +697,7 @@ curl -O https://raw.githubusercontent.com/ulsklyc/yuvomi/main/.env.example</div>
           <div class="step-num">3</div>
           <div class="step-content">
             <h3 class="step-title" data-t="step_px3_title">Follow the Docker steps</h3>
-            <p class="step-desc" data-t="step_px3_desc">From here nothing is Proxmox-specific: the <a href="#docker" data-tab="docker">Docker image</a> path applies unchanged. Afterwards Yuvomi answers on the container's IP at port 3000 - <code>pct exec 110 -- hostname -I</code> on the host prints it.</p>
+            <p class="step-desc" data-t="step_px3_desc">From here nothing is Proxmox-specific: the <a href="#tab-docker">Docker image</a> path applies unchanged. Afterwards Yuvomi answers on the container's IP at port 3000 - <code>pct exec 110 -- hostname -I</code> on the host prints it.</p>
           </div>
         </div>
       </div>
@@ -741,7 +776,9 @@ cd yuvomi</div><button class="copy-btn" data-copy="git clone https://github.com/
             <h3 class="step-title" data-t="step_a2_title">Create your configuration</h3>
             <p class="step-desc" data-t="step_a2_desc">Copy the template, then open <code>.env</code> in a text editor. <code>SESSION_SECRET</code> is required; <code>DB_ENCRYPTION_KEY</code> is optional but permanent.</p>
             <div class="code-wrap"><div class="code-block">cp .env.example .env
-openssl rand -hex 32  <span class="comment"># run twice → SESSION_SECRET + DB_ENCRYPTION_KEY</span></div><button class="copy-btn" data-copy="cp .env.example .env&#10;openssl rand -hex 32" type="button"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><span data-t="copy">Copy</span></button></div>
+<span class="comment" data-t="px_gen_c"># two values: one for SESSION_SECRET, one for DB_ENCRYPTION_KEY</span>
+openssl rand -hex 32
+openssl rand -hex 32</div><button class="copy-btn" data-copy="cp .env.example .env&#10;openssl rand -hex 32&#10;openssl rand -hex 32" type="button"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><span data-t="copy">Copy</span></button></div>
           </div>
         </div>
         <div class="step">
@@ -797,7 +834,7 @@ openssl rand -hex 32  <span class="comment"># run twice → SESSION_SECRET + DB_
           <span data-t="opt_unraid_info">No terminal required. Yuvomi ships as a Community Applications template - add it straight from the Unraid Apps tab.</span>
         </div>
         <div class="step"><div class="step-num">1</div><div class="step-content"><h3 class="step-title" data-t="step_ur1_title">Open Community Applications</h3><p class="step-desc" data-t="step_ur1_desc">In Unraid, open the Apps tab (the Community Applications plugin) and search for Yuvomi.</p></div></div>
-        <div class="step"><div class="step-num">2</div><div class="step-content"><h3 class="step-title" data-t="step_ur2_title">Configure the template</h3><p class="step-desc" data-t="step_ur2_desc">Click Install. Set SESSION_SECRET (required) and DB_ENCRYPTION_KEY (recommended - back it up). Adjust the WebUI port and the appdata path if needed.</p></div></div>
+        <div class="step"><div class="step-num">2</div><div class="step-content"><h3 class="step-title" data-t="step_ur2_title">Configure the template</h3><p class="step-desc" data-t="step_ur2_desc">Click Install. Set SESSION_SECRET (required) and DB_ENCRYPTION_KEY (optional, but irreversible once set - back it up). Adjust the WebUI port and the appdata path if needed.</p></div></div>
         <div class="step"><div class="step-num">3</div><div class="step-content"><h3 class="step-title" data-t="step_ur3_title">Apply and open</h3><p class="step-desc" data-t="step_ur3_desc">Click Apply. Once the container is running, click the Yuvomi icon → WebUI. The first visit walks you through creating your admin account.</p></div></div>
       </div>
     </div>
@@ -862,7 +899,7 @@ openssl rand -hex 32  <span class="comment"># run twice → SESSION_SECRET + DB_
       <div class="opt-grid">
         <div class="opt-card reveal"><h3 data-t="opt_https_title">HTTPS &amp; network access</h3><p data-t="opt_https_desc">Reach Yuvomi from other devices or the internet: set up Nginx as a reverse proxy with a free Let's Encrypt certificate.</p><a class="opt-guide" href="https://github.com/ulsklyc/yuvomi/blob/main/docs/installation.md#https--reverse-proxy-nginx" target="_blank" rel="noopener" data-t="opt_guide">Guide →</a></div>
         <div class="opt-card reveal"><h3 data-t="opt_weather_title">Weather widget</h3><p data-t="opt_weather_desc">Show local weather on the dashboard via Open-Meteo, no API key. Set <code>WEATHER_LAT</code> and <code>WEATHER_LON</code> to your coordinates.</p></div>
-        <div class="opt-card reveal"><h3 data-t="opt_cal_title">Calendar &amp; contact sync</h3><p data-t="opt_cal_desc">Two-way sync with Google Calendar (OAuth) and multi-account CalDAV/CardDAV (iCloud, Nextcloud, Radicale). Reminder lists (Apple Reminders, Nextcloud, Radicale) mirror two-way into Tasks or Shopping - a task created in Yuvomi can be sent to a list of your choice, and completing, editing or deleting reaches the server too.</p><a class="opt-guide" href="https://github.com/ulsklyc/yuvomi/blob/main/docs/installation.md#environment-variables" target="_blank" rel="noopener" data-t="opt_guide">Guide →</a></div>
+        <div class="opt-card reveal"><h3 data-t="opt_cal_title">Calendar &amp; contact sync</h3><p data-t="opt_cal_desc">Two-way sync with Google Calendar (OAuth) and multi-account CalDAV/CardDAV (iCloud, Nextcloud, Radicale), plus a one-way push to Outlook.com via Microsoft Graph. Reminder lists (Apple Reminders, Nextcloud, Radicale) mirror two-way into Tasks or Shopping - a task created in Yuvomi can be sent to a list of your choice, and completing, editing or deleting reaches the server too.</p><a class="opt-guide" href="https://github.com/ulsklyc/yuvomi/blob/main/docs/installation.md#environment-variables" target="_blank" rel="noopener" data-t="opt_guide">Guide →</a></div>
         <div class="opt-card reveal"><h3 data-t="opt_sso_title">SSO / OpenID Connect</h3><p data-t="opt_sso_desc">Single sign-on via any OIDC provider (Authentik, Keycloak, Google, Microsoft Entra). Set the four <code>OIDC_*</code> vars and a "Sign in with SSO" button appears automatically.</p><a class="opt-guide" href="https://github.com/ulsklyc/yuvomi/blob/main/docs/installation.md#sso--openid-connect-optional" target="_blank" rel="noopener" data-t="opt_guide">Guide →</a></div>
         <div class="opt-card reveal"><h3 data-t="opt_backup_title">Automated backups</h3><p data-t="opt_backup_desc">Scheduled backups run by default - daily at 2 AM, 7 copies kept; disable via <code>BACKUP_ENABLED=false</code>. Optionally upload each backup to a WebDAV server (Nextcloud, ownCloud, Hetzner, etc.). Manage and restore in Settings → Administration → Backup and restore.</p><a class="opt-guide" href="https://github.com/ulsklyc/yuvomi/blob/main/docs/installation.md#backup--restore" target="_blank" rel="noopener" data-t="opt_guide">Guide →</a></div>
         <div class="opt-card reveal"><h3 data-t="opt_doc_storage_title">Document storage</h3><p data-t="opt_doc_storage_desc">Store new document files and calendar attachments outside SQLite in a mounted host folder, on WebDAV, or in Google Drive. Drive OAuth is connected and explicitly selected later in Settings. Database backups contain metadata only, so back up every external binary target separately.</p><a class="opt-guide" href="https://github.com/ulsklyc/yuvomi/blob/main/docs/installation.md#local-folder-document-storage-optional" target="_blank" rel="noopener" data-t="opt_guide">Guide →</a></div>
@@ -916,10 +953,10 @@ docker compose logs | grep "Server running"</div></div><p data-t="trouble_nginx_
         <a href="https://github.com/ulsklyc/yuvomi" target="_blank" rel="noopener">GitHub</a>
         <a href="https://github.com/ulsklyc/yuvomi/blob/main/LICENSE" target="_blank" rel="noopener">MIT License</a>
         <a href="https://github.com/ulsklyc/yuvomi/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener" data-t="footer_contrib">Contributing</a>
-        <a href="impressum.html" data-t="footer_impressum">Impressum (DE)</a>
-        <a href="datenschutz.html" data-t="footer_privacy">Datenschutz (DE)</a>
+        <a href="impressum.html" data-t="footer_impressum">Imprint (DE)</a>
+        <a href="privacy.html" data-href-en="privacy.html" data-href-de="datenschutz.html" data-t="footer_privacy">Privacy</a>
       </nav>
-      <p class="footer-meta"><span id="gh-stars-install" data-gh-stars>★ 1.2k · </span><b>v2.14.2</b> · <span id="install-released" data-released="2026-08-15">15 August 2026</span></p>
+      <p class="footer-meta"><span id="gh-stars-install" data-gh-stars>★ 1.3k · </span><b>v2.28.0</b> · <span id="install-released" data-released="2026-08-22">22 August 2026</span></p>
     </div>
   </footer>
 
@@ -954,11 +991,11 @@ docker compose logs | grep "Server running"</div></div><p data-t="trouble_nginx_
         step_px1_title:'Create an unprivileged LXC', step_px1_desc:'Run this on the Proxmox host shell. <code>nesting=1</code> is what lets Docker run inside an unprivileged container; without it the daemon will not start. Adjust the ID, storage and bridge to match your setup.',
         step_px1_alt:'Prefer a full VM? That works too and needs no nesting flag: install Debian as usual and continue from step 2.',
         step_px2_title:'Install Docker inside the container', step_px2_desc:"From Debian's own repositories, so there is no install script piped into a shell.",
-        step_px3_title:'Follow the Docker steps', step_px3_desc:'From here nothing is Proxmox-specific: the <a href="#docker" data-tab="docker">Docker image</a> path applies unchanged. Afterwards Yuvomi answers on the container\'s IP at port 3000 - <code>pct exec 110 -- hostname -I</code> on the host prints it.',
+        step_px3_title:'Follow the Docker steps', step_px3_desc:'From here nothing is Proxmox-specific: the <a href="#tab-docker">Docker image</a> path applies unchanged. Afterwards Yuvomi answers on the container\'s IP at port 3000 - <code>pct exec 110 -- hostname -I</code> on the host prints it.',
         opt_docker_info:'No Git, no build step - just two files and a single command. Requires only Docker or Podman (Podman: use podman-compose.yml).',
         step_a1_title:'Download the configuration files', step_a1_desc:'Run these two commands. They download the Docker configuration and the template for your settings.',
         step_a2_title:'Create your configuration', step_a2_desc:'Copy the template, then open <code>.env</code> in a text editor. <code>SESSION_SECRET</code> is required; <code>DB_ENCRYPTION_KEY</code> is optional but permanent.',
-        step_a2_gen:'Generate a secure value for each secret by running this twice - paste one result as <code>SESSION_SECRET</code> and one as <code>DB_ENCRYPTION_KEY</code>:',
+        step_a2_gen:'This prints two secure values - paste one as <code>SESSION_SECRET</code> and the other as <code>DB_ENCRYPTION_KEY</code>:', px_gen_c:'# two values: one for SESSION_SECRET, one for DB_ENCRYPTION_KEY',
         step_a2_warning:'Keep a backup of your <code>.env</code> file somewhere safe. If you lose the <code>DB_ENCRYPTION_KEY</code>, your data cannot be recovered.',
         step_a3_title:'Start the container', step_a3_desc:'Docker downloads the Yuvomi image and starts it in the background. The first download takes a minute.',
         step_a3_success:'Check the logs with <code>docker compose logs -f</code>. You should see <code>Server running on port 3000</code>. The container keeps running in the background.',
@@ -975,7 +1012,7 @@ docker compose logs | grep "Server running"</div></div><p data-t="trouble_nginx_
         step_um3_title:'Open Yuvomi', step_um3_desc:'Launch Yuvomi from your Umbrel home screen. The first visit walks you through creating your admin account directly in the browser.',
         opt_unraid_info:'No terminal required. Yuvomi ships as a Community Applications template - add it straight from the Unraid Apps tab.',
         step_ur1_title:'Open Community Applications', step_ur1_desc:'In Unraid, open the Apps tab (the Community Applications plugin) and search for Yuvomi.',
-        step_ur2_title:'Configure the template', step_ur2_desc:'Click Install. Set SESSION_SECRET (required) and DB_ENCRYPTION_KEY (recommended - back it up). Adjust the WebUI port and the appdata path if needed.',
+        step_ur2_title:'Configure the template', step_ur2_desc:'Click Install. Set SESSION_SECRET (required) and DB_ENCRYPTION_KEY (optional, but irreversible once set - back it up). Adjust the WebUI port and the appdata path if needed.',
         step_ur3_title:'Apply and open', step_ur3_desc:'Click Apply. Once the container is running, click the Yuvomi icon → WebUI. The first visit walks you through creating your admin account.',
         path_now:'You are installing on', path_change:'Change',
         success_title:"You're all set", success_desc:'Open your browser and navigate to:',
@@ -994,7 +1031,7 @@ docker compose logs | grep "Server running"</div></div><p data-t="trouble_nginx_
         opt_https_title:'HTTPS & network access', opt_https_desc:"Reach Yuvomi from other devices or the internet: set up Nginx as a reverse proxy with a free Let's Encrypt certificate.",
         opt_guide:'Guide →',
         opt_weather_title:'Weather widget', opt_weather_desc:'Show local weather on the dashboard via Open-Meteo, no API key. Set <code>WEATHER_LAT</code> and <code>WEATHER_LON</code> to your coordinates.',
-        opt_cal_title:'Calendar & contact sync', opt_cal_desc:'Two-way sync with Google Calendar (OAuth) and multi-account CalDAV/CardDAV (iCloud, Nextcloud, Radicale). Reminder lists (Apple Reminders, Nextcloud, Radicale) mirror two-way into Tasks or Shopping - a task created in Yuvomi can be sent to a list of your choice, and completing, editing or deleting reaches the server too.',
+        opt_cal_title:'Calendar & contact sync', opt_cal_desc:'Two-way sync with Google Calendar (OAuth) and multi-account CalDAV/CardDAV (iCloud, Nextcloud, Radicale), plus a one-way push to Outlook.com via Microsoft Graph. Reminder lists (Apple Reminders, Nextcloud, Radicale) mirror two-way into Tasks or Shopping - a task created in Yuvomi can be sent to a list of your choice, and completing, editing or deleting reaches the server too.',
         opt_sso_title:'SSO / OpenID Connect', opt_sso_desc:'Single sign-on via any OIDC provider (Authentik, Keycloak, Google, Microsoft Entra). Set the four <code>OIDC_*</code> vars and a "Sign in with SSO" button appears automatically.',
         opt_backup_title:'Automated backups', opt_backup_desc:'Scheduled backups run by default - daily at 2 AM, 7 copies kept; disable via <code>BACKUP_ENABLED=false</code>. Optionally upload each backup to a WebDAV server (Nextcloud, ownCloud, Hetzner, etc.). Manage and restore in Settings → Administration → Backup and restore.',
         opt_doc_storage_title:'Document storage', opt_doc_storage_desc:'Store new document files and calendar attachments outside SQLite in a mounted host folder, on WebDAV, or in Google Drive. Drive OAuth is connected and explicitly selected later in Settings. Database backups contain metadata only, so back up every external binary target separately.',
@@ -1011,7 +1048,7 @@ docker compose logs | grep "Server running"</div></div><p data-t="trouble_nginx_
         trouble_db_warning:'<code>docker compose down -v</code> deletes all data. Only use this on a fresh install with no data.',
         trouble_nginx_title:'Nginx shows 502 Bad Gateway', trouble_nginx_desc:"Nginx can't reach the container. Check it's running and the port matches:",
         trouble_nginx_port:'Ensure the <code>proxy_pass</code> port in your Nginx config matches the host port in <code>docker-compose.yml</code> (default: 3000).',
-        footer_home:'Home', footer_heart:'Built with care for families who value privacy and simplicity.', footer_contrib:'Contributing', footer_impressum:'Impressum (DE)', footer_privacy:'Datenschutz (DE)',
+        footer_home:'Home', footer_heart:'Built with care for families who value privacy and simplicity.', footer_contrib:'Contributing', footer_impressum:'Imprint (DE)', footer_privacy:'Privacy',
         to_top:'Back to top',
         skip_link:'Skip to content', backLabel:'Overview', copy:'Copy', copied:'Copied!', copyfail:'Copy failed'
       },
@@ -1040,11 +1077,11 @@ docker compose logs | grep "Server running"</div></div><p data-t="trouble_nginx_
         step_px1_title:'Unprivilegierten LXC anlegen', step_px1_desc:'Das läuft auf der Proxmox-Host-Shell. <code>nesting=1</code> ist das, was Docker in einem unprivilegierten Container überhaupt starten lässt; ohne das Flag kommt der Daemon nicht hoch. ID, Storage und Bridge an euer Setup anpassen.',
         step_px1_alt:'Lieber eine ganze VM? Geht auch und braucht kein Nesting-Flag: Debian wie gewohnt installieren und ab Schritt 2 weitermachen.',
         step_px2_title:'Docker im Container installieren', step_px2_desc:'Aus Debians eigenen Paketquellen, damit kein Installationsskript in eine Shell gepipet wird.',
-        step_px3_title:'Den Docker-Schritten folgen', step_px3_desc:'Ab hier ist nichts mehr Proxmox-spezifisch: Der Weg über das <a href="#docker" data-tab="docker">Docker-Image</a> gilt unverändert. Danach antwortet Yuvomi auf der IP des Containers an Port 3000 - <code>pct exec 110 -- hostname -I</code> auf dem Host gibt sie aus.',
+        step_px3_title:'Den Docker-Schritten folgen', step_px3_desc:'Ab hier ist nichts mehr Proxmox-spezifisch: Der Weg über das <a href="#tab-docker">Docker-Image</a> gilt unverändert. Danach antwortet Yuvomi auf der IP des Containers an Port 3000 - <code>pct exec 110 -- hostname -I</code> auf dem Host gibt sie aus.',
         opt_docker_info:'Kein Git, kein Build-Schritt - nur zwei Dateien und ein einziger Befehl. Nur Docker oder Podman erforderlich (Podman: podman-compose.yml verwenden).',
         step_a1_title:'Konfigurationsdateien herunterladen', step_a1_desc:'Führt diese zwei Befehle aus. Sie laden die Docker-Konfiguration und die Vorlage für eure Einstellungen herunter.',
         step_a2_title:'Konfiguration erstellen', step_a2_desc:'Kopiert die Vorlage, öffnet dann <code>.env</code> in einem Texteditor. <code>SESSION_SECRET</code> ist Pflicht; <code>DB_ENCRYPTION_KEY</code> ist optional, aber endgültig.',
-        step_a2_gen:'Generiert einen sicheren Wert für jedes Secret, indem ihr dies zweimal ausführt - ein Ergebnis als <code>SESSION_SECRET</code>, eines als <code>DB_ENCRYPTION_KEY</code>:',
+        step_a2_gen:'Das gibt zwei sichere Werte aus - einen als <code>SESSION_SECRET</code>, den anderen als <code>DB_ENCRYPTION_KEY</code> einsetzen:', px_gen_c:'# zwei Werte: einer für SESSION_SECRET, einer für DB_ENCRYPTION_KEY',
         step_a2_warning:'Behaltet eine Sicherungskopie eurer <code>.env</code>-Datei an einem sicheren Ort. Wenn ihr den <code>DB_ENCRYPTION_KEY</code> verliert, können eure Daten nicht wiederhergestellt werden.',
         step_a3_title:'Container starten', step_a3_desc:'Docker lädt das Yuvomi-Image herunter und startet es im Hintergrund. Der erste Download dauert eine Minute.',
         step_a3_success:'Prüft die Logs mit <code>docker compose logs -f</code>. Ihr solltet sehen: <code>Server running on port 3000</code>. Der Container läuft im Hintergrund weiter.',
@@ -1061,7 +1098,7 @@ docker compose logs | grep "Server running"</div></div><p data-t="trouble_nginx_
         step_um3_title:'Yuvomi öffnen', step_um3_desc:'Startet Yuvomi über den Umbrel-Startbildschirm. Beim ersten Aufruf führt Yuvomi direkt im Browser durch die Erstellung des Admin-Kontos.',
         opt_unraid_info:'Kein Terminal erforderlich. Yuvomi kommt als Community-Applications-Template - direkt über den Unraid-Apps-Tab hinzufügbar.',
         step_ur1_title:'Community Applications öffnen', step_ur1_desc:'In Unraid den Apps-Tab (das Community-Applications-Plugin) öffnen und nach Yuvomi suchen.',
-        step_ur2_title:'Template konfigurieren', step_ur2_desc:'Auf Installieren klicken. SESSION_SECRET (erforderlich) und DB_ENCRYPTION_KEY (empfohlen - sichern) setzen. WebUI-Port und appdata-Pfad bei Bedarf anpassen.',
+        step_ur2_title:'Template konfigurieren', step_ur2_desc:'Auf Installieren klicken. SESSION_SECRET (erforderlich) und DB_ENCRYPTION_KEY (optional, aber einmal gesetzt unwiderruflich - sichern) setzen. WebUI-Port und appdata-Pfad bei Bedarf anpassen.',
         step_ur3_title:'Anwenden und öffnen', step_ur3_desc:'Auf Anwenden klicken. Sobald der Container läuft, auf das Yuvomi-Icon → WebUI klicken. Beim ersten Aufruf führt Yuvomi durch die Erstellung des Admin-Kontos.',
         path_now:'Ihr installiert auf', path_change:'Ändern',
         success_title:'Alles bereit', success_desc:'Öffnet euren Browser und geht zu:',
@@ -1080,7 +1117,7 @@ docker compose logs | grep "Server running"</div></div><p data-t="trouble_nginx_
         opt_https_title:'HTTPS & Netzwerkzugang', opt_https_desc:"Yuvomi von anderen Geräten oder aus dem Internet erreichbar machen: Nginx als Reverse Proxy mit kostenlosem Let's-Encrypt-Zertifikat einrichten.",
         opt_guide:'Anleitung →',
         opt_weather_title:'Wetter-Widget', opt_weather_desc:'Lokales Wetter auf dem Dashboard via Open-Meteo, ohne API-Schlüssel. <code>WEATHER_LAT</code> und <code>WEATHER_LON</code> mit euren Koordinaten setzen.',
-        opt_cal_title:'Kalender- & Kontakt-Sync', opt_cal_desc:'Zwei-Wege-Sync mit Google Calendar (OAuth) und Multi-Account-CalDAV/CardDAV (iCloud, Nextcloud, Radicale). Erinnerungslisten (Apple Reminders, Nextcloud, Radicale) spiegeln sich in beide Richtungen in Aufgaben oder Einkauf - eine in Yuvomi angelegte Aufgabe lässt sich in eine Liste deiner Wahl schicken, und Abhaken, Bearbeiten und Löschen erreicht auch den Server.',
+        opt_cal_title:'Kalender- & Kontakt-Sync', opt_cal_desc:'Zwei-Wege-Sync mit Google Calendar (OAuth) und Multi-Account-CalDAV/CardDAV (iCloud, Nextcloud, Radicale), dazu ein einseitiger Push nach Outlook.com via Microsoft Graph. Erinnerungslisten (Apple Reminders, Nextcloud, Radicale) spiegeln sich in beide Richtungen in Aufgaben oder Einkauf - eine in Yuvomi angelegte Aufgabe lässt sich in eine Liste deiner Wahl schicken, und Abhaken, Bearbeiten und Löschen erreicht auch den Server.',
         opt_sso_title:'SSO / OpenID Connect', opt_sso_desc:'Single Sign-On über jeden OIDC-Provider (Authentik, Keycloak, Google, Microsoft Entra). Die vier <code>OIDC_*</code>-Variablen setzen, und ein „Anmelden mit SSO"-Button erscheint automatisch.',
         opt_backup_title:'Automatische Backups', opt_backup_desc:'Geplante Backups laufen standardm\xe4\xdfig - t\xe4glich um 2:00\xa0Uhr, 7\xa0Kopien; abschaltbar \xfcber <code>BACKUP_ENABLED=false</code>. Optional jedes Backup auf einen WebDAV-Server hochladen (Nextcloud, ownCloud, Hetzner usw.). Verwalten und Wiederherstellen in Einstellungen → Administration → Backup und Wiederherstellung.',
         opt_doc_storage_title:'Dokumentspeicher', opt_doc_storage_desc:'Neue Dokumentdateien und Kalenderanh\xe4nge au\xdferhalb von SQLite in einem gemounteten Host-Ordner, auf WebDAV oder in Google Drive speichern. Drive wird sp\xe4ter in den Einstellungen per OAuth verbunden und ausdr\xfccklich ausgew\xe4hlt. Datenbank-Backups enthalten nur Metadaten; jedes externe Bin\xe4rziel separat sichern.',
@@ -1194,6 +1231,9 @@ docker compose logs | grep "Server running"</div></div><p data-t="trouble_nginx_
     addEventListener('resize', syncCodeScroll);
     function applyLang(){
       document.documentElement.lang = lang;
+      document.querySelectorAll('[data-href-' + lang + ']').forEach(function(a){
+        a.setAttribute('href', a.getAttribute('data-href-' + lang));
+      });
       var s = i18n[lang];
       document.querySelectorAll('[data-t]').forEach(function(el){ var k = el.getAttribute('data-t'); if (s[k] !== undefined) setRich(el, s[k]); });
       /* Accessible names on the landmarks and the tablist, which used to carry

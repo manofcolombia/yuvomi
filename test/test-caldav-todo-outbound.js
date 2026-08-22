@@ -1057,3 +1057,144 @@ test('Eine Liste, die auf den Einkauf zeigt, nimmt keine Aufgaben an', async () 
   assert.strictEqual(client.calls.created.length, 0);
   assert.strictEqual(reloadTask(task.id).external_source, 'local');
 });
+
+// ════════════════════════════════════════════════════════════════════════════════
+// Neu angelegte Einkaufsartikel hochladen (#831)
+//
+// Umbenennen, Abhaken und Loeschen liefen laengst zum Server, ein hier
+// angelegter Artikel blieb aber fuer immer lokal - die Liste lief nach jedem
+// neuen Eintrag auseinander, obwohl die Oberflaeche einen Zwei-Wege-Sync
+// verspricht. Anders als eine Aufgabe traegt ein Artikel kein eigenes Ziel:
+// die Zuordnung Server-Liste <-> Yuvomi-Liste IST die Zielangabe.
+// ════════════════════════════════════════════════════════════════════════════════
+
+function insertShoppingList(name = 'Einkauf') {
+  const r = db.prepare('INSERT INTO shopping_lists (name, created_by) VALUES (?, 1)').run(name);
+  return Number(r.lastInsertRowid);
+}
+
+function insertLocalItem(listId, name = 'Brot') {
+  const r = db.prepare(
+    "INSERT INTO shopping_items (list_id, name, external_source) VALUES (?, ?, 'local')"
+  ).run(listId, name);
+  return db.prepare('SELECT * FROM shopping_items WHERE id = ?').get(r.lastInsertRowid);
+}
+
+const reloadItem = (id) => db.prepare('SELECT * FROM shopping_items WHERE id = ?').get(id);
+const shoppingTargets = (listId) => [{ listUrl: LIST_URL, targetListId: listId }];
+
+test('pendingShoppingCreations findet nur lokale Artikel der zugeordneten Liste', async () => {
+  const { pendingShoppingCreations } = await import('../server/services/caldav-todo-outbound.js');
+  const accountId = reset();
+  const listId    = insertShoppingList();
+  const other     = insertShoppingList('Baumarkt');
+  enableList(accountId, 'shopping', listId);
+
+  const local = insertLocalItem(listId);
+  insertLocalItem(other, 'Schrauben');
+  db.prepare(
+    "INSERT INTO shopping_items (list_id, name, external_source, external_uid, external_account_id) VALUES (?, 'Milch', 'caldav', 'todo-1@test', ?)"
+  ).run(listId, accountId);
+
+  const rows = pendingShoppingCreations(listId);
+  assert.deepEqual(rows.map((r) => r.id), [local.id],
+    'Ein Spiegel ist kein Kandidat, und eine fremde Liste geht diesen Account nichts an');
+});
+
+test('Ein Upload macht den Einkaufsartikel zum Spiegel', async () => {
+  const { processPendingShoppingCreations } = await import('../server/services/caldav-todo-outbound.js');
+  const accountId = reset();
+  const listId    = insertShoppingList();
+  enableList(accountId, 'shopping', listId);
+  const item   = insertLocalItem(listId);
+  const client = fakeClient();
+
+  const created = await processPendingShoppingCreations(client, accountId, shoppingTargets(listId), listsByUrl());
+
+  assert.strictEqual(created, 1);
+  assert.strictEqual(client.calls.created.length, 1);
+  assert.match(client.calls.created[0].iCalString, /SUMMARY:Brot/);
+
+  const row = reloadItem(item.id);
+  assert.strictEqual(row.external_source, 'caldav');
+  assert.strictEqual(row.external_uid, todoUidFor('shopping', item.id));
+  assert.strictEqual(row.external_account_id, accountId);
+  assert.strictEqual(row.external_object_url, `${LIST_URL}${todoUidFor('shopping', item.id)}.ics`);
+});
+
+test('Eine verschwundene Zielliste laesst den Artikel lokal', async () => {
+  const { processPendingShoppingCreations } = await import('../server/services/caldav-todo-outbound.js');
+  const accountId = reset();
+  const listId    = insertShoppingList();
+  enableList(accountId, 'shopping', listId);
+  const item   = insertLocalItem(listId);
+  const client = fakeClient();
+
+  const created = await processPendingShoppingCreations(
+    client, accountId, [{ listUrl: 'https://dav.example/dav/u/weg/', targetListId: listId }], listsByUrl()
+  );
+
+  assert.strictEqual(created, 0);
+  assert.strictEqual(client.calls.created.length, 0);
+  assert.strictEqual(reloadItem(item.id).external_source, 'local');
+});
+
+test('Ein gescheiterter Upload laesst den Artikel als Kandidaten stehen', async () => {
+  const { processPendingShoppingCreations, pendingShoppingCreations } =
+    await import('../server/services/caldav-todo-outbound.js');
+  const accountId = reset();
+  const listId    = insertShoppingList();
+  enableList(accountId, 'shopping', listId);
+  const item   = insertLocalItem(listId);
+  const client = fakeClient({ onCreate: () => { throw new Error('507 Insufficient Storage'); } });
+
+  const created = await processPendingShoppingCreations(client, accountId, shoppingTargets(listId), listsByUrl());
+
+  assert.strictEqual(created, 0);
+  assert.strictEqual(reloadItem(item.id).external_source, 'local');
+  assert.strictEqual(pendingShoppingCreations(listId).length, 1,
+    'Ein Upload hat keinen Stand, der veralten koennte - er laeuft im naechsten Lauf wieder mit');
+});
+
+test('Der Sync-Lauf laedt neue Einkaufsartikel hoch (#831)', async () => {
+  const accountId = reset();
+  const listId    = insertShoppingList();
+  enableList(accountId, 'shopping', listId);
+  const item   = insertLocalItem(listId);
+  const client = fakeClient({ objects: [] });
+
+  await sync({ createClient: async () => client });
+
+  const row = reloadItem(item.id);
+  assert.ok(row, 'Der Artikel hat den Lauf ueberlebt - der Prune darf den frischen Spiegel nicht gleich wieder raeumen');
+  assert.strictEqual(row.external_source, 'caldav');
+  assert.strictEqual(client.calls.created.length, 1);
+});
+
+test('Der Sofortversuch laedt neue Einkaufsartikel hoch', async () => {
+  const accountId = reset();
+  const listId    = insertShoppingList();
+  enableList(accountId, 'shopping', listId);
+  const item   = insertLocalItem(listId);
+  const client = fakeClient();
+
+  const result = await flushOutbound({ createClient: async () => client });
+
+  assert.strictEqual(result.created, 1);
+  assert.strictEqual(reloadItem(item.id).external_source, 'caldav');
+});
+
+test('Eine Liste, die auf Aufgaben zeigt, nimmt keine Einkaufsartikel an', async () => {
+  // Spiegelbild des Riegels fuer Aufgaben: sonst kaeme der Artikel als Aufgabe
+  // zurueck.
+  const accountId = reset();
+  const listId    = insertShoppingList();
+  enableList(accountId, 'tasks', listId);
+  const item   = insertLocalItem(listId);
+  const client = fakeClient({ objects: [] });
+
+  await sync({ createClient: async () => client });
+
+  assert.strictEqual(client.calls.created.length, 0);
+  assert.strictEqual(reloadItem(item.id).external_source, 'local');
+});

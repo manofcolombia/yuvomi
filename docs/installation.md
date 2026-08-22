@@ -177,19 +177,23 @@ node tools/installer/install-server.js
 
 #### 3. Open the Wizard
 
-Open your browser and navigate to **http://localhost:8090**. The wizard detects your browser language (24 languages supported), verifies that a container engine is available (Docker with Compose v2, or Podman with `podman compose` / `podman-compose`), and reports any existing `.env` file or running container before you start. It then guides you through:
+Open your browser and navigate to **http://localhost:8090**. The wizard detects your browser language (24 languages supported), verifies that a container engine is available (Docker with Compose v2, or Podman with `podman compose` / `podman-compose`), and reports an existing `.env` file as well as a running container before you start. When it finds one, the **simple setup is disabled** and you continue with the advanced setup: the simple path writes fixed values for host, port, `SESSION_SECURE` and `TRUST_PROXY`, which would silently downgrade an installation that already runs behind a reverse proxy. The wizard then guides you through:
 
-- Basics — timezone (`TZ`) and HTTP host port (`OIKOS_HTTP_PORT`)
+- Basics — domain/IP, HTTP host port (`OIKOS_HTTP_PORT`), timezone (`TZ`), how Yuvomi is exposed (`SESSION_SECURE`, `TRUST_PROXY`) and the public address (`BASE_URL`). The exposure choice follows the host you enter, and the wizard rejects an `http://` address combined with enforced secure cookies — nobody could sign in to that combination
 - Security key generation (`SESSION_SECRET`, `DB_ENCRYPTION_KEY`) — on a re-run, keys already present in your `.env` are kept rather than regenerated, so running the wizard again on a live installation cannot lock you out of your encrypted database
-- Optional integrations (weather, Google Calendar, Apple CalDAV, local folder, WebDAV, or Google Drive document storage)
-- Advanced settings — reverse-proxy/HTTPS (`SESSION_SECURE`, `TRUST_PROXY`), Single Sign-On (OIDC), and automatic backups
+- Optional integrations (weather, Google Calendar, Apple CalDAV)
+- Email/SMTP for the "forgot password" flow (`EMAIL_SMTP_*`, `EMAIL_FROM_*`)
+- Storage & backups — the host data folder (`DATA_DIR`), automatic backups, off-site WebDAV backups and the three document storage options. Everything that decides where data lives
+- Advanced settings — Single Sign-On (OIDC), the three home-network permissions (they lift the SSRF protection and are asked as one group), the calendar sync interval, live currency rates and the Web-Push contact. Everything that decides what Yuvomi connects to
 - Writing your `.env` file (an existing `.env` is backed up to `.env.bak-<timestamp>` first)
 - Starting the container (via Docker or Podman, whichever was detected)
 - Creating your admin account
 
-The final screen lets you **download a copy of your `.env`** — keep it safe, as it holds the encryption keys that cannot be recovered if lost. Keys carried over from an earlier run appear there as a comment instead of a value, because the browser never receives them; those keys are still in the `.env` on disk and in its backup copy.
+The final screen lets you **download a copy of your `.env`** — keep it safe, as it holds the encryption keys that cannot be recovered if lost. The file is fetched from the server rather than rebuilt in the browser, so it contains the real values, including keys carried over from an earlier run that the browser itself never receives. If the download fails (most likely because the installer has already shut down), the screen says so instead of reporting success, and points you at the `.env` on disk.
 
-The installer server shuts down automatically after setup completes (or after 30 minutes of inactivity).
+Download the file before you close the tab: the installer server shuts down **5 minutes after your admin account is created**, and after 30 minutes of inactivity otherwise.
+
+The final screen also links to the next three steps on your new instance: inviting your family, choosing which modules to enable, and installing Yuvomi on your phones. Running the wizard again on an installation that already has an admin account is a supported case — it writes your `.env`, restarts the container and takes you to that same screen instead of failing.
 
 ---
 
@@ -221,9 +225,10 @@ Generate a secure value for each:
 
 ```bash
 openssl rand -hex 32
+openssl rand -hex 32
 ```
 
-Run this command **twice** and paste each result. See [Environment Variables](#environment-variables) for all options.
+That prints **two** values: paste one as `SESSION_SECRET` and the other as `DB_ENCRYPTION_KEY`. See [Environment Variables](#environment-variables) for all options.
 
 #### 3. Start the Container
 
@@ -234,9 +239,9 @@ docker compose up -d
 Docker pulls `ghcr.io/ulsklyc/yuvomi:latest` automatically. No build step, no Node.js installation needed.
 
 > **Pinning a version.** Every release is also published under immutable tags:
-> `2.14.2` (exact version), `2.14` (latest patch of that minor), plus a moving `main`
+> `2.28.0` (exact version), `2.28` (latest patch of that minor), plus a moving `main`
 > tag for the current development state. To pin production to a known-good release,
-> set `image: ghcr.io/ulsklyc/yuvomi:2.14.2` in your compose file and bump it
+> set `image: ghcr.io/ulsklyc/yuvomi:2.28.0` in your compose file and bump it
 > deliberately; `latest` always points at the newest release.
 
 Continue with [Step 4 — Verify](#4-verify-the-container-is-running).
@@ -282,7 +287,7 @@ docker compose logs -f
 You should see output like:
 
 ```
-yuvomi  | [Yuvomi] Server running on port 3000 | Version 2.14.2
+yuvomi  | [Yuvomi] Server running on port 3000 | Version 2.28.0
 yuvomi  | [Yuvomi] Environment: production
 yuvomi  | [Sync] Auto-sync active every 15 minutes.
 ```
@@ -416,7 +421,7 @@ Add the same environment variables as above. Auto-update then follows `main` on 
 
 All configuration happens in the `.env` file. The container reads these values on startup.
 
-> **Self-hosting under the GDPR?** Several optional integrations below (weather, Google/OIDC SSO, WebDAV backup, WebDAV document storage) can send data to third parties, some outside the EU/EEA. See [Privacy for self-hosters](PRIVACY-FOR-SELFHOSTERS.md) for per-service third-country assessments, data-processing-agreement notes and log-retention guidance before enabling them.
+> **Self-hosting under the GDPR?** Several optional integrations below (weather, Google/OIDC SSO, the Outlook push via Microsoft Graph, WebDAV backup, WebDAV document storage) can send data to third parties, some outside the EU/EEA. See [Privacy for self-hosters](PRIVACY-FOR-SELFHOSTERS.md) for per-service third-country assessments, data-processing-agreement notes and log-retention guidance before enabling them. The Outlook push deserves a look before you switch it on: event titles, notes and locations leave the server as free text, assigned members' names travel in the title, and a personal Microsoft account cannot be covered by a data-processing agreement (see section 2.16 there).
 
 ### Server
 
@@ -425,7 +430,7 @@ All configuration happens in the `.env` file. The container reads these values o
 | `PORT` | Port the Express server listens on **inside the container** (rarely changed) | `3000` | No |
 | `OIKOS_HTTP_PORT` | Host port that the compose file maps to the container's port 3000. Change this to expose Yuvomi on a different host port; the app inside the container always listens on 3000. | `3000` | No |
 | `OIKOS_HTTP_BIND` | Host bind address for the published port (`podman-compose.yml` only). Set to `127.0.0.1` for rootless Podman behind a reverse proxy on the same host. | `0.0.0.0` | No |
-| `TZ` | Container timezone (e.g. `Europe/Berlin`). Affects timestamps, the automated-backup schedule, and serves as the household zone wherever a time carries none of its own: events pushed to Google Calendar when the target calendar reports no zone, and the due times of CalDAV reminders synced into Tasks. | `UTC` | No |
+| `TZ` | Container timezone (e.g. `Europe/Berlin`). Affects timestamps, the automated-backup schedule, and serves as the household zone wherever a time carries none of its own: events pushed to Google Calendar when the target calendar reports no zone, the due times of CalDAV reminders synced into Tasks, and the times in the exported calendar feed (`/feed/calendar/<token>.ics`), which subscribers read in this zone - a wrong `TZ` shifts every appointment for everyone subscribed. | `UTC` | No |
 | `NODE_ENV` | Runtime environment | `production` | No |
 | `LOG_LEVEL` | Lowest severity written to the container log (`debug`, `info`, `warn`, `error`). Set to `debug` to see the per-run detail of the calendar, contact and holiday sync, which stays quiet at `info` when a run has nothing to do. | `info` | No |
 | `TRUST_PROXY` | Number of reverse-proxy hops to trust, or a subnet string (e.g. `1`, `172.16.0.0/12`, `loopback`). The default already trusts a single hop, so `req.ip` returns the real client IP behind one Caddy/Nginx/Traefik proxy without any configuration. Set to `loopback` for direct, proxy-less deployments, or to a subnet/higher hop count behind multiple proxy layers. Numeric values are treated as a hop count; named values (`loopback`, `linklocal`, `uniquelocal`) work as expected. | `1` | No |
@@ -434,7 +439,7 @@ All configuration happens in the `.env` file. The container reads these values o
 
 | Variable | Description | Default | Required |
 |----------|-------------|---------|----------|
-| `SESSION_SECRET` | Secret key for signing session cookies. **Change this!** | - | **Yes** |
+| `SESSION_SECRET` | Secret key for signing session cookies. The placeholder that `.env.example` ships (`REPLACE_WITH_...`) is refused at startup: it is printed in this repository, so anyone who can reach your instance could forge a session cookie and sign in as any user. Generate one with `openssl rand -base64 48`. Changing it later only signs everyone out once. | - | **Yes** |
 | `SESSION_SECURE` | Set to `true` when running behind an HTTPS reverse proxy (Caddy, Nginx, Traefik). Leave unset for direct HTTP access (e.g. TrueNAS, bare Docker). | `false` | No |
 | `RATE_LIMIT_WINDOW_MS` | Time window for rate limiting (ms) | `60000` | No |
 | `RATE_LIMIT_MAX_ATTEMPTS` | Max login attempts per window | `5` | No |
@@ -562,9 +567,25 @@ security, and troubleshooting.
 | Variable | Description | Default | Required |
 |----------|-------------|---------|----------|
 | `DB_PATH` | Path to the SQLite database file inside the container | `/data/yuvomi.db` | No |
-| `DB_ENCRYPTION_KEY` | SQLCipher AES-256 key for encryption at rest. Leave it empty and the database stays unencrypted. Once set there is no way back: it cannot be recovered and cannot be changed on an existing database. | - | No, but strongly recommended |
+| `DB_ENCRYPTION_KEY` | SQLCipher AES-256 key for encryption at rest. Leave it empty and the database stays unencrypted. Once set there is no way back: it cannot be recovered and cannot be changed on an existing database. The placeholder that `.env.example` ships (`REPLACE_WITH_...`) is refused on a fresh install, because it is printed in this repository and would protect nothing. | - | No, but strongly recommended |
 | `DATA_DIR` | Host directory mounted at `/data` inside the container (set in `.env` or `docker-compose.yml`). | `./data` | No |
-| `MODULES_DIR` | Host directory mounted at `/app/modules` inside the container - the drop-in folder for [third-party modules](../MODULES.md). Compose-only, like `DATA_DIR`. | `./modules` | No |
+| `MODULES_DIR` | Host directory mounted at `/app/modules` inside the container - the drop-in folder for [third-party modules](../MODULES.md). | `./modules` | No |
+
+> **Where the backups go.** There is no `BACKUP_DIR` in the setup wizard, and that is deliberate.
+> Unlike `DATA_DIR`, which exists only as a Compose substitution for the mount source, `BACKUP_DIR`
+> and `MODULES_DIR` are also read by the application itself - and there they mean the directory
+> *inside* the container. A host path such as `./backups` in your `.env` therefore resolves to
+> `/app/backups` in the container, outside the mounted volume and not writable, which is why every
+> deployment descriptor pins it to `/backups`. To keep the backups on a NAS array, change the
+> **mount source**, not the variable:
+>
+> ```yaml
+> volumes:
+>   - /mnt/user/appdata/yuvomi/data:/data
+>   - /mnt/array/yuvomi-backups:/backups   # host side is yours to choose
+> ```
+>
+> The same applies to the module drop-in folder at `/app/modules`.
 | `BACKUP_DIR` | In `.env`/`docker-compose.yml`: the **host** directory mounted at `/backups`. Inside the container the app reads the same name as the **container** path it writes to — the compose files pin it to `/backups`, and the image defaults to `/backups` as well. Only override it inside the container if you mount your backup volume somewhere else. | `./backups` (host) / `/backups` (container) | No |
 
 Generate a secure `DB_ENCRYPTION_KEY`:
@@ -574,6 +595,14 @@ openssl rand -hex 32
 ```
 
 > **Warning**: If you lose this key, you cannot access your database. Keep a backup of your `.env` file in a safe place.
+
+> **The placeholder is not a key.** `.env.example` ships
+> `DB_ENCRYPTION_KEY=REPLACE_WITH_A_STRONG_ENCRYPTION_KEY`, not an empty line. Copying the file and
+> starting without editing it would encrypt the database against a constant that is printed in this
+> repository. A fresh installation therefore refuses to start with that value and tells you both ways
+> out: put a real key in, or clear the line to run unencrypted. An installation that already runs on
+> the placeholder keeps starting - taking a working instance away would not undo anything - and gets
+> a warning with the rotation steps on every start instead.
 
 ### Local Folder Document Storage (Optional)
 
@@ -603,6 +632,18 @@ environment:
 | `DOCUMENT_STORAGE_LOCAL_DIR` | Compose-only: host folder mounted to `DOCUMENT_STORAGE_LOCAL_PATH` | `./documents` | No |
 
 > Ensure the mounted folder is writable by the container (adjust ownership/permissions as needed).
+
+### Upload Size
+
+| Variable | Description | Default | Required |
+|----------|-------------|---------|----------|
+| `MAX_UPLOAD_MB` | Largest single upload in megabytes, shared by documents, calendar attachments and housekeeping receipts. Supported range 1-100; values outside it are clamped, anything unparseable falls back to the default. The interface reads this value too, so hints and error messages name whatever you configure. | `5` | No |
+
+> **Why there is a ceiling at all.** The request body is buffered in memory before any route sees
+> it, and a file travels as base64, which adds a third to its size. The limit therefore protects the
+> process, not the disk: on a small single-board machine a very large value can end the container
+> mid-upload. Raise it to what your documents actually need rather than to the largest number that
+> seems safe.
 > Files live on the host volume, so include that folder in your host-level backups — database
 > backups hold only document metadata, not these binaries.
 
@@ -735,6 +776,31 @@ incremental runs. That run also merges appointments that earlier versions had st
 occurrences back into their series; an occurrence you had assigned to someone or given its own
 colour is kept as a separate entry instead.
 
+### Outlook Calendar Push — Microsoft Graph (Optional)
+
+One-way push **Yuvomi → Outlook.com** for personal Microsoft accounts (outlook.com, hotmail.com, M365 Family). Outlook.com does not support CalDAV, so this provider uses the Microsoft Graph API. Yuvomi stays the source of truth: pushed events are created/updated/deleted in Outlook, and every sync run also checks the pushed events for remote drift (one cheap `changeKey` listing per calendar) — events edited in Outlook are reset to the Yuvomi state, events deleted in Outlook are re-created. Multiple family accounts can be connected.
+
+| Variable | Description | Default | Required |
+|----------|-------------|---------|----------|
+| `MS_CLIENT_ID` | Application (client) ID of your Entra ID app registration | - | No |
+| `MS_CLIENT_SECRET` | Client secret of the app registration | - | No |
+| `MS_REDIRECT_URI` | OAuth callback URL | `https://<YOUR-DOMAIN>/api/v1/calendar/outlook/callback` | No |
+
+**Entra ID app registration (free of charge, but a directory is required):**
+
+> Microsoft has deprecated creating app registrations *outside a directory* — signing in to Entra with a bare personal account shows a blocking notice. You need an Entra tenant to hold the app: sign up for a **free Azure account** (creates a "Default Directory"; identity verification asks for a credit card, but the app registration and Graph calls stay free). The M365 Developer Program alternative is restricted to Visual Studio Professional/Enterprise subscribers and Microsoft partners. Your family's personal accounts do **not** need to join the tenant — it only hosts the app registration.
+
+1. Sign in at [entra.microsoft.com](https://entra.microsoft.com) with the account that owns the tenant → **Identity → Applications → App registrations → New registration**.
+2. Name: e.g. `Yuvomi Calendar Push`. Supported account types: **"Personal Microsoft accounts only"**.
+3. Platform: **Web**, redirect URI: `https://<YOUR-DOMAIN>/api/v1/calendar/outlook/callback` (must be HTTPS, or `http://localhost:3000/...` for local testing). This must match `MS_REDIRECT_URI` exactly.
+4. After creation, copy the **Application (client) ID** → `MS_CLIENT_ID`.
+5. **Certificates & secrets → New client secret** → copy the secret **Value** (shown only once) → `MS_CLIENT_SECRET`. Note the expiry (max. 24 months) — you must create a new secret before it expires.
+6. API permissions are requested dynamically via OAuth scopes (`Calendars.ReadWrite`, `User.Read`, `offline_access` — delegated); no admin consent is needed for personal accounts.
+7. Set the three `MS_*` variables in `.env`, restart Yuvomi, then connect each family member's account under **Settings → Synchronization → More providers → Outlook** (admin only).
+8. After connecting, no calendars are enabled yet. Recommended setup: create a **dedicated calendar in Outlook** (e.g. "Yuvomi"), refresh the calendar list, pick it as the **auto-sync target calendar**, and choose which family member the account belongs to — from then on all Yuvomi events visible to that person are pushed there automatically, with assigned members appended to the title (`Dinner (Anna, Ben)`). Alternatively (or additionally), individual events can pick an explicit Outlook target in the event dialog; an explicit target overrides the auto-sync calendar for that event.
+
+**Limitations (one-way push):** recurring events support Yuvomi's RRULE subset only; excluded single occurrences (EXDATE) are not propagated; times are pushed with the `Europe/Berlin` timezone (parity with the Google outbound sync) — this is a fixed value and does **not** follow your `TZ` setting; no attendees, reminders, attachments, or colors. Refresh tokens for personal accounts expire after ~90 days of inactivity — the account then shows a "reconnect" button.
+
 ### Apple Calendar Sync — Legacy Single-Account (Optional)
 
 > **Note:** Since v0.44.0, multi-account CalDAV (iCloud, Nextcloud, Radicale, Baikal) is managed through **Settings → Synchronization** in the UI. These env vars configure a single Apple CalDAV account at startup and remain supported for backwards compatibility.
@@ -773,6 +839,8 @@ Enable single sign-on via any OpenID Connect provider (Authentik, Keycloak, Goog
 When all four OIDC variables are set, a **"Sign in with SSO"** button appears on the login page. The flow uses Authorization Code + PKCE (S256) with a nonce. On first login, the user is matched by their OIDC `sub`. If no match exists, an existing local account is linked automatically **only when the provider reports a verified email (`email_verified: true`) and exactly one local account holds that email address**; otherwise a new account is provisioned. Unverified or ambiguous emails never take over an existing account. If your provider omits the `email_verified` claim, set `OIDC_TRUST_EMAIL_WITHOUT_VERIFIED_CLAIM=true` to enable linking.
 
 **Username of a newly provisioned account.** The name is taken from the first claim that yields something usable: `preferred_username`, then the non-standard `username` claim (Synology DSM SSO sends the plain account name there, where `sub` still carries the directory part), then `sub`. The email address is deliberately not a candidate: a household often shares one address across several members, so it identifies nobody, and its domain part only makes the name unwieldy. Whichever claim wins is reduced to the format every username in Yuvomi follows (`a-z A-Z 0-9 . _ -`, 3 to 64 characters), with accents transliterated and anything else turned into a hyphen. Admins can rename the account afterwards under **Settings → Administration → Family**; sign-in keeps working either way, because the identity hangs on `sub`, not on the name.
+
+**Linking an existing account yourself.** A matching *username* deliberately never links: anyone who names themselves `admin` at the identity provider would otherwise take over the local admin account. If neither the `sub` nor a verified email matches, the first SSO sign-in therefore creates a separate account - same name with a numeric suffix (`test1-1`), and the original account's data stays where it is. The way to merge the two is to sign in locally and open **Settings → Account → Single sign-on**, where "Link SSO account" runs the same provider flow and binds the resulting `sub` to the account you are signed in as. Being signed in is the point: the session names the local account and the provider names the remote one, which together prove ownership of both. Linking is refused when that `sub` already belongs to another account. The same card removes a link again - except on an account that was created through SSO, because it holds no password and the link is its only way in; set a password first.
 
 ### Subscription Currency Conversion (Optional)
 
@@ -1066,6 +1134,38 @@ This creates a backup at 3:00 AM every day.
 ## Troubleshooting
 
 <details>
+<summary>Container stops at startup: "SESSION_SECRET is still the placeholder"</summary>
+
+Your `.env` still carries `SESSION_SECRET=REPLACE_WITH_A_LONG_RANDOM_STRING` from `.env.example`.
+That value is printed in this repository, so anyone who can reach your instance could forge a
+session cookie and sign in as any user - which is why the server refuses to start with it rather
+than running on in that state.
+
+Generate a real one and put it in `.env`:
+
+```bash
+openssl rand -base64 48
+```
+
+Then restart the container. Everyone will have to sign in again once; nothing else is lost, and no
+data is affected.
+
+</details>
+
+<details>
+<summary>Uploads fail with "Request body too large"</summary>
+
+A single upload may be as large as `MAX_UPLOAD_MB` (default 5). Raise it in `.env`, for example
+`MAX_UPLOAD_MB=25`, and restart the container - the hints in the interface follow the new value.
+
+Keep in mind what the limit protects: the request body is buffered in memory before any route sees
+it, and a file travels as base64, which adds a third to its size. On a small machine a very large
+value can end the container mid-upload, so raise it to what your documents need rather than to the
+highest number the app accepts (100).
+
+</details>
+
+<details>
 <summary>Port already in use</summary>
 
 If port 3000 is already occupied by another application:
@@ -1271,6 +1371,46 @@ iCloud account whose calendars sync perfectly can still offer no usable reminder
 setting on either side changes that. The reminders page states this on every iCloud
 account. If you want your Apple tasks in Yuvomi, keep them in a CalDAV-backed list (Nextcloud,
 Radicale, Baikal) and subscribe to it from the Reminders app's "Other" account rather than iCloud.
+
+</details>
+
+<details>
+<summary>Outlook events are not appearing</summary>
+
+Work through this in order — each step rules out one of the four things that stop a push.
+
+**1. Is the provider configured at all?** All three of `MS_CLIENT_ID`, `MS_CLIENT_SECRET` and
+`MS_REDIRECT_URI` must be set; with one missing, the Outlook panel stays inactive and nothing is
+ever sent. `MS_REDIRECT_URI` has to match the redirect URI in the Entra app registration
+character for character, including the scheme and any trailing path.
+
+**2. Is a target calendar picked?** Connecting an account enables nothing on its own — newly
+discovered calendars start switched **off** by design, so that the first push cannot land in a
+personal main calendar unannounced. Pick an auto-sync target calendar **and** the family member
+the account belongs to; without both, the automatic push does not run at all. A calendar that
+Microsoft reports as read-only is skipped even when enabled.
+
+**3. Which events are eligible?** Only local events are pushed. Appointments that came in from
+Google, CalDAV, iCloud or an ICS subscription are excluded on purpose — they usually already
+exist in Outlook natively, and pushing them would duplicate them. The auto-sync also honours
+per-event visibility: an event the chosen family member is not allowed to see is not pushed to
+their calendar.
+
+**4. Has the sign-in expired?** Refresh tokens for personal Microsoft accounts expire after about
+90 days of inactivity, and the client secret of the app registration expires after at most 24
+months. In the first case the account shows a "reconnect" button; in the second, every account
+stops working at once and a new secret has to be created in Entra and written to
+`MS_CLIENT_SECRET`.
+
+A push is not immediate: it happens on the shared sync run (`SYNC_INTERVAL_MINUTES`, 15 minutes by
+default), right after connecting, and whenever an admin triggers it manually. The same applies in
+reverse — deleting an event in Yuvomi removes it from Outlook on the *next* run, not instantly.
+
+Editing a pushed event in Outlook is pointless: Yuvomi is the source of truth and resets it to its
+own state on the next run, and re-creates it if you delete it there. To get rid of an event for
+good, delete it in Yuvomi. Note also that disconnecting an account leaves everything already
+pushed behind in Outlook — clear those events in Yuvomi *before* disconnecting, or delete them by
+hand in Outlook afterwards.
 
 </details>
 

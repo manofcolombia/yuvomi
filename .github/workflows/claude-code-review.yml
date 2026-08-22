@@ -50,6 +50,23 @@ jobs:
           claude_code_oauth_token: ${{ env.CLAUDE_CODE_OAUTH_TOKEN }}
           plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
           plugins: 'code-review@claude-code-plugins'
+          # DAUERHAFT AN, WEIL DER NACHWEIS-SCHRITT SONST NUR MELDET, DASS ETWAS
+          # FEHLT, UND NIE WAS. Der Fehlertext unten schickt einen selbst hierher
+          # ("mit show_full_output: true erneut laufen lassen") - das kostete
+          # jedesmal einen zweiten Anlauf mit geaendertem Workflow, und genau der
+          # ist der teuerste: ein PR, der DIESE Datei anfasst, laesst die Action
+          # sich selbst ueberspringen (Workflow-Validierung, siehe der Schritt
+          # "Prueft die Review-Datei sich selbst?"). Die Diagnose muss also immer
+          # erst nach main, bevor sie ueberhaupt etwas messen kann.
+          #
+          # Der Anlass (PR #794, 2026-08-17): 14 Turns, `is_error: false`,
+          # NULL Verweigerungen, kein Kommentar - ein Muster, das in keiner der
+          # vier hier dokumentierten Runden vorkam, denn alle vorherigen
+          # Fehlschlaege hatten Verweigerungen > 0. Ohne die volle Ausgabe ist
+          # nicht zu sehen, was die Review in diesen 14 Turns getan hat.
+          #
+          # Kosten: laengere Job-Logs. Die faellt nur an, wenn jemand sie liest.
+          show_full_output: true
           # `--comment` IST DER GRUND, WARUM SIE NIE ETWAS GESAGT HAT. Die
           # Anleitung des Plugins steuert das Posten ueber genau dieses Argument:
           #

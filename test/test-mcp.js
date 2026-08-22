@@ -5,6 +5,9 @@
  *        OpenAPI-Brücke (list/get/call_api_operation) inklusive Loopback-Verhalten
  *        (Operation-Auflösung, Path-Params, Query, Auth-Weiterleitung, Payload,
  *        Fehlerpropagation) über einen gemockten `fetch`.
+ *        Dazu die Rechte-Durchsetzung der Tool-Schicht (#823): Modulrechte des
+ *        Nutzers, Token-Scopes und Split-Guests — die Kern-Tools laufen an der
+ *        /api/v1-Middleware vorbei und müssen dieselbe Grenze selbst ziehen.
  * Ausführen: node --experimental-sqlite --test test/test-mcp.js
  */
 
@@ -14,6 +17,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { MIGRATIONS_SQL } from '../server/db-schema-test.js';
 import { handleMcpRequest, LATEST_PROTOCOL_VERSION } from '../server/mcp/protocol.js';
 import { callTool, TOOL_DEFINITIONS } from '../server/mcp/tools.js';
+import { buildSessionModuleAccess, resolvePermissions } from '../server/permissions.js';
 
 // Deterministische Loopback-Basis für die OpenAPI-Brücke (fetch wird gemockt).
 process.env.MCP_INTERNAL_BASE_URL = 'http://mcp.test';
@@ -26,6 +30,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
   applied_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );`);
 db.exec(MIGRATIONS_SQL[1]);
+db.exec(MIGRATIONS_SQL[74]);  // access_permissions (Modulrechte, #467)
 
 const uid = db.prepare(
   `INSERT INTO users (username, display_name, password_hash, avatar_color, role)
@@ -502,6 +507,119 @@ test('ungültiger Body → -32600', async () => {
 test('callTool direkt: list_upcoming_events liefert ein Array', async () => {
   const events = await callTool({ db, actor }, 'list_upcoming_events', {});
   assert.ok(Array.isArray(events));
+});
+
+// ── Rechte-Durchsetzung der Tool-Schicht (#823) ──────────────────────────────
+//
+// Der Kern des Bugs: die Kern-Tools laufen in-process gegen SQLite und sehen die
+// /api/v1-Middleware nie. Ein Mitglied mit `tasks: none` bekam über `list_tasks`
+// trotzdem die Aufgaben, obwohl REST für dieselbe Person 403 lieferte.
+// Die Modulrechte werden hier bewusst über resolvePermissions +
+// buildSessionModuleAccess erzeugt und nicht als Handkarte geschrieben: geprüft
+// werden soll die ganze Kette, nicht nur die letzte Funktion darin.
+
+let restrictedSeq = 0;
+function restrictedActor(modules) {
+  const uid = db.prepare(
+    `INSERT INTO users (username, display_name, password_hash, avatar_color, role, family_role)
+     VALUES (?, 'Eingeschränkt', 'x', '#00FF00', 'member', 'child')`
+  ).run(`restricted_${++restrictedSeq}`).lastInsertRowid;
+  for (const [key, access] of Object.entries(modules)) {
+    db.prepare(
+      `INSERT INTO access_permissions (subject_type, subject_id, resource_type, resource_key, access)
+       VALUES ('user', ?, 'module', ?, ?)`
+    ).run(String(uid), key, access);
+  }
+  const user = db.prepare('SELECT id, role, family_role FROM users WHERE id = ?').get(uid);
+  return {
+    id: uid,
+    role: 'member',
+    scopes: null,
+    moduleAccess: buildSessionModuleAccess(resolvePermissions(db, user)),
+    splitGuest: false,
+  };
+}
+
+async function toolNamesFor(restrictedTo) {
+  const res = await handleMcpRequest(
+    db, restrictedTo,
+    { jsonrpc: '2.0', id: 1, method: 'tools/list' },
+    (err) => internalErrors.push(err),
+  );
+  return res.result.tools.map((t) => t.name).sort();
+}
+
+test('Modul none: list_tasks verweigert statt zu liefern (#823)', async () => {
+  const denied = restrictedActor({ tasks: 'none' });
+  await assert.rejects(
+    () => callTool({ db, actor: denied }, 'list_tasks', {}),
+    /not permitted/i,
+  );
+  await assert.rejects(
+    () => callTool({ db, actor: denied }, 'create_task', { title: 'Darf nicht entstehen' }),
+    /not permitted/i,
+  );
+  // Gegenprobe: die Aufgabe ist wirklich nicht angelegt worden — ein Tool, das
+  // erst schreibt und dann meckert, wäre die schlimmere Variante.
+  const leaked = db.prepare('SELECT 1 FROM tasks WHERE title = ?').get('Darf nicht entstehen');
+  assert.equal(leaked, undefined);
+});
+
+test('Modul read: Lesen erlaubt, Schreiben verweigert (#823)', async () => {
+  const readOnly = restrictedActor({ tasks: 'read' });
+  const tasks = await callTool({ db, actor: readOnly }, 'list_tasks', {});
+  assert.ok(Array.isArray(tasks), 'Lesen bleibt erlaubt');
+  await assert.rejects(
+    () => callTool({ db, actor: readOnly }, 'create_task', { title: 'Nur-Lesen-Verstoß' }),
+    /not permitted/i,
+  );
+});
+
+test('Ein Token-Scope kann das Modulrecht nicht aufweiten (#823)', async () => {
+  // Scopes schränken ein, sie gewähren nicht. Ein Token mit tasks:write, dessen
+  // Nutzer tasks: none hat, bleibt draußen — sonst wäre das Ausstellen eines
+  // Tokens eine Rechteausweitung.
+  const denied = { ...restrictedActor({ tasks: 'none' }), scopes: ['tasks:write'] };
+  await assert.rejects(
+    () => callTool({ db, actor: denied }, 'list_tasks', {}),
+    /not permitted/i,
+  );
+});
+
+test('tools/list zeigt gesperrte Module gar nicht erst an (#823)', async () => {
+  const denied = restrictedActor({ tasks: 'none', shopping: 'read' });
+  const names = await toolNamesFor(denied);
+  assert.equal(names.includes('list_tasks'), false);
+  assert.equal(names.includes('create_task'), false);
+  // shopping: read — lesendes Tool bleibt, schreibendes verschwindet.
+  assert.equal(names.includes('list_shopping_items'), true);
+  assert.equal(names.includes('add_shopping_item'), false);
+  // Unbeschränkte Module und die Brücken-Tools bleiben unangetastet; letztere
+  // setzen die Rechte am Loopback über den echten Middleware-Stapel durch.
+  assert.equal(names.includes('list_upcoming_events'), true);
+  assert.deepEqual(
+    names.filter((n) => n.endsWith('_api_operation') || n === 'list_api_operations').sort(),
+    ['call_api_operation', 'get_api_operation', 'list_api_operations'],
+  );
+});
+
+test('Split-Guest erreicht kein Kern-Tool (#823)', async () => {
+  // Gast-Konten für geteilte Ausgaben kommen unter /api/v1 nur an
+  // /split-expenses; /mcp liegt außerhalb dieses Guards und hatte die Sperre
+  // deshalb gar nicht.
+  const guest = { id: uid, role: 'member', scopes: null, moduleAccess: null, splitGuest: true };
+  await assert.rejects(
+    () => callTool({ db, actor: guest }, 'list_tasks', {}),
+    /not permitted/i,
+  );
+  const names = await toolNamesFor(guest);
+  assert.deepEqual(names, ['call_api_operation', 'get_api_operation', 'list_api_operations']);
+});
+
+test('Unbeschränktes Mitglied sieht weiterhin alle Tools', async () => {
+  const plain = restrictedActor({});
+  const names = await toolNamesFor(plain);
+  assert.equal(names.length, TOOL_DEFINITIONS.length);
 });
 
 test('keine internen Fehler während der Testläufe', () => {

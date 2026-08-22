@@ -210,16 +210,28 @@
  * für das MHD im Vorrat, gilt jetzt genauso für den Artikelnamen im Einkauf, der
  * bei 320px auf vier lesbare Zeichen gekürzt war. */
 
-/* Badge nach der Hauskonvention "Akzent-Text auf akzent-getöntem Grund":
- * der rohe semantische Ton scheitert dort am Kontrast, weil der Grund selbst
- * eine Tönung derselben Farbe ist (siehe tokens.css, Abschnitt Modul-Akzente). */
+/* ── DIE MELDUNG TRAEGT IHREN TON IN DER SCHRIFT, NICHT UNTER IHR ──
+ *
+ * Hier stand die Hauskonvention „Akzent-Text auf akzent-getoentem Grund", und
+ * sie war fuer MODUL-Toene gedacht: der rohe Modulton scheitert als Schrift am
+ * Kontrast. Die semantischen Toene tun das nicht - gemessen auf der
+ * Kartenflaeche traegt Danger 5,38:1 (light) / 5,20:1 (dark) und Warning
+ * 4,96:1 / 7,13:1, beides AA fuer Kleintext. Die Toenung war hier also nie
+ * noetig, und sie kostete: „Noch 2 Tage" (Warning) und „Fast leer" (Warning)
+ * sahen aus wie derselbe Zustand, und „Vor 6 Tagen abgelaufen" (Danger) hob
+ * sich davon kaum ab - zwei Achsen und drei Stufen in zwei fast gleichen
+ * Feldern.
+ *
+ * Zweiter Zweig der Skalen-Regel: die Rangmarke der Aufgaben-Prioritaet traegt
+ * ihren Ton im Punkt und laesst die Schrift neutral, weil sie GESCANNT wird.
+ * Eine Meldung wird GELESEN - ihr Ton gehoert auf die Zeichen, die man liest.
+ * Ohne Fuellung faellt ausserdem die Polsterung weg, und die schmalste
+ * Namensspalte (128px bei 393px Fenster) bekommt sie zurueck. */
 .pantry-badge {
   display: inline-flex;
   align-items: center;
-  padding: 0 var(--space-2);
-  border-radius: var(--radius-full);
   font-size: var(--text-xs);
-  font-weight: var(--font-weight-medium);
+  font-weight: var(--font-weight-semibold);
   line-height: 1.6;
   /* KEIN white-space: nowrap.
    *
@@ -233,14 +245,19 @@
   max-width: 100%;
 }
 
-.pantry-badge--danger {
-  background-color: color-mix(in srgb, var(--color-danger) var(--tint-surface), transparent);
-  color: color-mix(in srgb, var(--color-danger) var(--tint-ink), var(--color-text-primary));
-}
+.pantry-badge--danger  { color: var(--color-danger); }
+.pantry-badge--warning { color: var(--color-warning); }
 
-.pantry-badge--warning {
-  background-color: color-mix(in srgb, var(--color-warning) var(--tint-surface), transparent);
-  color: color-mix(in srgb, var(--color-warning) var(--tint-ink), var(--color-text-primary));
+/* ZWEI MELDUNGEN SIND ZWEI, AUCH WENN SIE DENSELBEN TON HABEN. Ohne Fuellung
+ * fehlt den Kapseln die Kante, an der man sie trennt - und „Vor 2 Tagen
+ * abgelaufen" plus „Leer" tragen beide Danger, standen also als ein Satz da.
+ * Der Mittelpunkt ist dieselbe Trennung, die die Metazeile der Zeile darunter
+ * seit jeher fuehrt, und er kommt ueber den `+`-Kombinator: er gehoert zum
+ * ZWISCHENRAUM, nicht zum Badge (Zeilenlisten-Regel). */
+.pantry-badge + .pantry-badge::before {
+  content: '·';
+  margin-inline-end: var(--space-2);
+  color: var(--color-text-tertiary);
 }
 
 /* Die Bedien-Gruppe kommt aus .list-row__actions.

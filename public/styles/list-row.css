@@ -131,6 +131,43 @@
   color: var(--color-text-secondary);
 }
 
+/* Auf- und zuklappbarer Gruppenkopf (#812).
+ *
+ * Ein KNOPF im h2, nicht ein anklickbares h2: sonst kennt ihn die Tastatur
+ * nicht und aria-expanded haette nichts, woran es haengt. Er erbt die
+ * Schrift der Ueberschrift vollstaendig - Groesse, Versalien und Tracking
+ * stehen dort einmal und duerfen hier nicht zum zweiten Mal auftauchen,
+ * sonst laufen Kopf und Knopf beim naechsten Token-Wechsel auseinander. */
+.list-group__toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  cursor: pointer;
+}
+
+.list-group__chevron {
+  transition: transform var(--transition-fast);
+}
+
+/* Zugeklappt zeigt der Winkel zur Seite - die Richtung, in die sich die Gruppe
+ * oeffnen wuerde. Gedreht wird der Pfeil, nicht getauscht: ein zweites Icon
+ * waere ein zweiter Ladepfad fuer dieselbe Aussage. */
+.list-group__chevron--collapsed {
+  transform: rotate(-90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .list-group__chevron { transition: none; }
+}
+
 .list-group__title i {
   color: var(--module-accent);
   flex-shrink: 0;
@@ -622,3 +659,31 @@
   background-color: transparent;
   box-shadow: none;
 }
+
+/* --------------------------------------------------------
+ * Rangmarke: der Prioritätspunkt
+ * -------------------------------------------------------- */
+/* EINE Fassung für alle Listen, die einen Rang zeigen.
+ *
+ * Sie stand in tasks.css und war damit nur dort verfügbar, wo dieses Page-CSS
+ * geladen ist - die Aufgaben-Chips im Kalender bauten sich ihre eigene Fassung
+ * als getöntes Feld mit getönter Schrift, und dieselbe Aufgabe sprach je nach
+ * Modul zwei Sprachen. Genau das ist die Bauart, die v2.22.0 für die
+ * Terminfarbe abgeschafft hat.
+ *
+ * Der Punkt trägt die Farbe, also trägt er auch die Größe, die das Bestandsmaß
+ * für einen Farbpunkt ist: 8px, wie die Kalender-Ebenenpunkte und die
+ * Feiertagsmarke der Agenda. Bei 4px wäre der Ton nur Beiwerk neben der
+ * Schrift. Die Schrift daneben bleibt neutral - die Skalen-Regel gibt einer
+ * Rangmarke genau einen Kanal. */
+.priority-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+}
+
+.priority-dot--low    { background-color: var(--color-priority-low); }
+.priority-dot--medium { background-color: var(--color-priority-medium); }
+.priority-dot--high   { background-color: var(--color-priority-high); }
+.priority-dot--urgent { background-color: var(--color-priority-urgent); }

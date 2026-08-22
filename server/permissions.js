@@ -80,6 +80,11 @@ export const PERMISSION_WIDGETS = Object.freeze([
   // Budget hat also nie eine Budget-Kachel. Was hier fehlte, ist die Sperre auf
   // die REIHE als solche.
   { id: 'metrics',      module: null },
+  // `module: null` aus demselben Grund wie die Kennzahlreihe: der Countdown
+  // (#647) sammelt aus Kalender UND Aufgaben ein, gehört also keinem der
+  // beiden. Was aus einem gesperrten Modul stammt, filtert die Kachel schon
+  // selbst - hier steht die Sperre auf das Widget als solches.
+  { id: 'countdown',    module: null },
 ]);
 
 export const MODULE_ACCESS_LEVELS = Object.freeze(['none', 'read', 'write']);
@@ -165,6 +170,69 @@ export function buildSessionModuleAccess(resolved) {
     }
   }
   return restricted ? map : null;
+}
+
+/**
+ * Die Module, die einem Betrachter GANZ entzogen sind — als Set.
+ *
+ * Eingabe ist `req.sessionModuleAccess`, also genau das, was die Middleware in
+ * server/index.js schon aufgelöst hat: null (Admin oder unbeschränkt) oder eine
+ * Karte der abweichenden Module. Kein zweiter DB-Zugriff, keine zweite
+ * Auflösung — eine zweite Wahrheit über Rechte wäre die teuerste Sorte Fehler.
+ *
+ * NUR 'none' ZÄHLT, NICHT 'read'. Wer nur lesen darf, darf lesen; ein Filter,
+ * der ihm die Daten wegnimmt, hätte aus der Leseberechtigung eine Sperre
+ * gemacht.
+ *
+ * Gedacht für aggregierende Endpunkte, die die Pfad-Middleware nicht abdeckt:
+ * /dashboard trägt Inhalte aus einem Dutzend Modulen, sein eigener Pfad löst
+ * aber auf das Scope-Modul `dashboard` auf, das gar kein Permissions-Modul ist.
+ * Der Guard lässt die Anfrage deshalb immer durch, und das Aussortieren muss in
+ * der Route passieren.
+ *
+ * @param {Record<string,'none'|'read'>|null|undefined} sessionModuleAccess
+ * @returns {Set<string>}
+ */
+export function deniedModules(sessionModuleAccess) {
+  const out = new Set();
+  for (const [key, level] of Object.entries(sessionModuleAccess || {})) {
+    if (level === 'none') out.add(key);
+  }
+  return out;
+}
+
+// Urteil der Modulrechte-Prüfung. 'allow' = durchlassen, 'none' = Modul ganz
+// gesperrt, 'read-only' = nur Lesen erlaubt, Schreibversuch abgewiesen.
+export const MODULE_ACCESS_ALLOW = 'allow';
+export const MODULE_ACCESS_DENIED = 'none';
+export const MODULE_ACCESS_READ_ONLY = 'read-only';
+
+/**
+ * Erlaubt die aufgelöste Modulrechte-Karte diesen Zugriff?
+ *
+ * DIE Prüfung für jede Oberfläche, die Haushaltsdaten herausgibt — REST wie
+ * MCP. Sie stand vorher nur inline in der /api/v1-Middleware, und genau das war
+ * der Fehler aus #823: die MCP-Kern-Tools laufen in-process an express vorbei,
+ * hatten damit keine Modulprüfung und gaben einem Mitglied mit `tasks: none`
+ * die Aufgaben trotzdem heraus. Eine zweite Schreibweise derselben Regel wäre
+ * dieselbe Falle noch einmal — deshalb ein Aufruf, kein Nachbau.
+ *
+ * DENY-Liste, keine Allow-Liste: `null` (Admin/unbeschränkt) und jedes nicht
+ * gelistete Modul sind erlaubt. Nur was ausdrücklich eingeschränkt wurde, wird
+ * abgewiesen.
+ *
+ * @param {Record<string,'none'|'read'>|null|undefined} sessionModuleAccess
+ * @param {string|null} moduleKey - Scope-Modulschlüssel (scopes.js)
+ * @param {'read'|'write'} access
+ * @returns {'allow'|'none'|'read-only'}
+ */
+export function moduleAccessVerdict(sessionModuleAccess, moduleKey, access) {
+  if (!sessionModuleAccess) return MODULE_ACCESS_ALLOW;
+  if (!moduleKey || !(moduleKey in sessionModuleAccess)) return MODULE_ACCESS_ALLOW;
+  const level = sessionModuleAccess[moduleKey];
+  if (level === 'none') return MODULE_ACCESS_DENIED;
+  if (level === 'read' && access === 'write') return MODULE_ACCESS_READ_ONLY;
+  return MODULE_ACCESS_ALLOW;
 }
 
 /**

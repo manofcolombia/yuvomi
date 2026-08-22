@@ -441,6 +441,43 @@ export function pendingCreations(accountId, module = 'tasks') {
   `).all(accountId);
 }
 
+/**
+ * Einkaufsartikel einer gespiegelten Liste, die es auf dem Server noch nicht gibt.
+ *
+ * `external_source = 'local'` ist der Spalten-Default, trennt also genau die
+ * hier angelegten Artikel von den vom Server geholten Spiegeln.
+ */
+export function pendingShoppingCreations(listId) {
+  return db.get().prepare(`
+    SELECT * FROM shopping_items
+     WHERE external_source = 'local'
+       AND list_id         = ?
+     ORDER BY id
+  `).all(listId);
+}
+
+/**
+ * Konten, unter denen ein hier angelegter Einkaufsartikel auf seinen Upload
+ * wartet (#831). Anders als eine Aufgabe merkt sich ein Artikel kein Ziel - die
+ * offene Arbeit ist deshalb nur über die Listenzuordnung sichtbar.
+ */
+function accountsWithPendingShoppingCreations() {
+  try {
+    return db.get().prepare(`
+      SELECT DISTINCT sel.account_id AS account_id
+        FROM caldav_reminder_selection sel
+        JOIN shopping_items i ON i.list_id = sel.target_list_id
+       WHERE sel.enabled = 1
+         AND sel.target_module = 'shopping'
+         AND sel.target_list_id IS NOT NULL
+         AND i.external_source = 'local'
+    `).all().map((r) => r.account_id).filter(Boolean);
+  } catch (err) {
+    log.warn(`Pending shopping creations are not readable (${err.message}); treating them as none.`);
+    return [];
+  }
+}
+
 /** Konten mit wartenden Uploads. */
 function accountsWithPendingCreations() {
   try {
@@ -464,7 +501,47 @@ function clearCreationTarget(id) {
 }
 
 /**
- * Legt wartende Einträge auf dem Server an und macht sie damit zu Spiegeln.
+ * Einen lokalen Eintrag auf dem Server anlegen und die Zeile zum Spiegel machen.
+ *
+ * Gemeinsamer Kern beider Anlege-Wege: Aufgaben tragen ihr Ziel selbst, ein
+ * Einkaufsartikel erbt es von der Listenzuordnung (siehe unten). Was danach
+ * passiert, ist identisch - deshalb steht es hier nur einmal.
+ *
+ * Die Objekt-URL wird gleich festgehalten: ohne sie wäre der frisch
+ * hochgeladene Eintrag für Änderungen und Löschungen unerreichbar, bis der
+ * nächste Inbound-Lauf ihn wiederfindet (dieselbe Lehre wie bei den Terminen,
+ * #593).
+ *
+ * @returns {Promise<boolean>} false, wenn sich kein VTODO bauen ließ
+ */
+async function uploadNewTodo(client, collection, module, row, accountId) {
+  const def = moduleDef(module);
+  const uid = todoUidFor(module, row.id);
+  const ics = buildTodoICS(module, row, uid);
+  if (!ics) return false;
+
+  await client.createCalendarObject({
+    calendar:   collection,
+    filename:   `${uid}.ics`,
+    iCalString: ics,
+  });
+
+  const objectUrl = `${String(collection.url).replace(/\/?$/, '/')}${uid}.ics`;
+  db.get().prepare(`
+    UPDATE ${def.table}
+       SET external_source     = 'caldav',
+           external_uid        = ?,
+           external_account_id = ?,
+           external_object_url = ?,
+           outbound_dirty      = 0,
+           outbound_attempts   = 0
+     WHERE id = ?
+  `).run(uid, accountId, objectUrl, row.id);
+  return true;
+}
+
+/**
+ * Legt wartende Aufgaben auf dem Server an und macht sie damit zu Spiegeln.
  *
  * @param {object} client       tsdav-Client
  * @param {number} accountId
@@ -491,43 +568,63 @@ export async function processPendingCreations(client, accountId, module, listsBy
     const fresh = reloadRow(module, row.id);
     if (!fresh) continue; // zwischenzeitlich gelöscht
 
-    const uid = todoUidFor(module, fresh.id);
-    const ics = buildTodoICS(module, fresh, uid);
-    if (!ics) {
-      log.error(`Could not build a VTODO for task ${fresh.id}, keeping it local.`);
-      clearCreationTarget(fresh.id);
-      continue;
-    }
-
     try {
-      await client.createCalendarObject({
-        calendar:   collection,
-        filename:   `${uid}.ics`,
-        iCalString: ics,
-      });
-
-      // Objekt-URL gleich festhalten: ohne sie wäre die frisch hochgeladene
-      // Aufgabe für Änderungen und Löschungen unerreichbar, bis der nächste
-      // Inbound-Lauf sie wiederfindet - dieselbe Lehre wie bei den Terminen (#593).
-      const objectUrl = `${String(collection.url).replace(/\/?$/, '/')}${uid}.ics`;
-      db.get().prepare(`
-        UPDATE tasks
-           SET external_source     = 'caldav',
-               external_uid        = ?,
-               external_account_id = ?,
-               external_object_url = ?,
-               outbound_dirty      = 0,
-               outbound_attempts   = 0,
-               target_caldav_account_id = NULL,
-               target_caldav_list_url   = NULL
-         WHERE id = ?
-      `).run(uid, accountId, objectUrl, fresh.id);
-      done++;
+      if (await uploadNewTodo(client, collection, module, fresh, accountId)) {
+        clearCreationTarget(fresh.id);
+        done++;
+      } else {
+        log.error(`Could not build a VTODO for task ${fresh.id}, keeping it local.`);
+        clearCreationTarget(fresh.id);
+      }
     } catch (err) {
       // Kein Zähler und kein Aufgeben: anders als eine Änderung hat ein Upload
       // keinen Stand, der veralten könnte. Er bleibt vorgemerkt und läuft im
       // nächsten Lauf mit, so lange bis er durchgeht oder das Ziel verschwindet.
       log.warn(`Could not upload task ${fresh.id} to ${row.target_caldav_list_url}: ${err.message}`);
+    }
+  }
+  return done;
+}
+
+/**
+ * Hier angelegte Einkaufsartikel einer gespiegelten Liste hochladen (#831).
+ *
+ * Ein Einkaufsartikel trägt - anders als eine Aufgabe - kein eigenes Ziel: die
+ * Zuordnung Server-Liste ↔ Yuvomi-Liste steht schon in
+ * caldav_reminder_selection, und genau sie ist die Zielangabe. Deshalb braucht
+ * dieser Weg weder Zielspalten noch eine Migration; Kandidat ist jeder Artikel
+ * der zugeordneten Liste, der noch kein Spiegel ist.
+ *
+ * Ohne das war die Rückrichtung für den Einkauf halb da: Umbenennen, Abhaken und
+ * Löschen liefen über processPendingUpdates/-Deletions zum Server, ein neu
+ * angelegter Artikel blieb aber für immer lokal - die Liste lief nach jedem
+ * neuen Eintrag auseinander, obwohl die Oberfläche einen Zwei-Wege-Sync
+ * verspricht.
+ *
+ * @param {object} client      tsdav-Client
+ * @param {number} accountId
+ * @param {Array<{listUrl: string, targetListId: number}>} targets  aktive Zuordnungen
+ * @param {Map}    listsByUrl  Listen-URL → Collection des Servers
+ * @returns {Promise<number>} erfolgreich hochgeladene Artikel
+ */
+export async function processPendingShoppingCreations(client, accountId, targets, listsByUrl) {
+  let done = 0;
+  for (const { listUrl, targetListId } of targets) {
+    if (!targetListId) continue;
+    const collection = listsByUrl.get(listUrl);
+    if (!collection) continue;
+
+    for (const row of pendingShoppingCreations(targetListId)) {
+      const fresh = reloadRow('shopping', row.id);
+      if (!fresh) continue; // zwischenzeitlich gelöscht
+
+      try {
+        if (await uploadNewTodo(client, collection, 'shopping', fresh, accountId)) done++;
+        else log.error(`Could not build a VTODO for shopping item ${fresh.id}, keeping it local.`);
+      } catch (err) {
+        // Wie oben: bleibt lokal und läuft im nächsten Lauf wieder mit.
+        log.warn(`Could not upload shopping item ${fresh.id} to ${listUrl}: ${err.message}`);
+      }
     }
   }
   return done;
@@ -685,6 +782,7 @@ function accountsWithPendingWork() {
     }
   }
   for (const accountId of accountsWithPendingCreations()) add(accountId, 'tasks');
+  for (const accountId of accountsWithPendingShoppingCreations()) add(accountId, 'shopping');
   return buckets;
 }
 
@@ -708,6 +806,27 @@ async function taskListsOf(client, accountId) {
   return new Map(
     (calendars || []).filter((c) => allowed.has(c.url)).map((c) => [c.url, c])
   );
+}
+
+/**
+ * Die für den Einkauf freigeschalteten Zuordnungen eines Kontos (#831).
+ * Gegenstück zu taskListsOf: dort steht das Ziel am Eintrag, hier an der
+ * Zuordnung. Bewusst ohne Netzzugriff, damit der Aufrufer erst prüfen kann, ob
+ * überhaupt etwas wartet - der Listenabruf ist der teure Teil.
+ */
+function shoppingSelectionsOf(accountId) {
+  return db.get().prepare(`
+    SELECT list_url, target_list_id FROM caldav_reminder_selection
+     WHERE account_id = ? AND enabled = 1 AND target_module = 'shopping'
+       AND target_list_id IS NOT NULL
+  `).all(accountId).map((r) => ({ listUrl: r.list_url, targetListId: r.target_list_id }));
+}
+
+/** Collection-Objekte zu den Zuordnungen - ein Listenabruf. */
+async function collectionsForTargets(client, targets) {
+  const allowed   = new Set(targets.map((tgt) => tgt.listUrl));
+  const calendars = await client.fetchCalendars();
+  return new Map((calendars || []).filter((c) => allowed.has(c.url)).map((c) => [c.url, c]));
 }
 
 /**
@@ -795,6 +914,15 @@ export async function flushOutbound({ createClient } = {}) {
           total.created += await processPendingCreations(
             client, accountId, module, await taskListsOf(client, accountId)
           );
+        }
+        if (module === 'shopping') {
+          const targets = shoppingSelectionsOf(accountId)
+            .filter((tgt) => pendingShoppingCreations(tgt.targetListId).length);
+          if (targets.length) {
+            total.created += await processPendingShoppingCreations(
+              client, accountId, targets, await collectionsForTargets(client, targets)
+            );
+          }
         }
       }
     } catch (err) {

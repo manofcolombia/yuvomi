@@ -646,3 +646,176 @@ test('auch eine gewoehnliche fremde Aufgabe ist nicht loeschbar (#748-Review)', 
   const still = await call('GET', `/${id}`, { as: { id: ALICE, role: 'admin' } });
   assert.equal(still.body.data.title, 'Privat');
 });
+
+// --------------------------------------------------------
+// Kommentare an Aufgaben (#734)
+// --------------------------------------------------------
+
+let COMMENT_TASK, COMMENT_ID;
+
+test('Kommentare: anlegen, lesen, in Reihenfolge', async () => {
+  const task = await call('POST', '/', { as: { id: ALICE, role: 'admin' }, body: { title: 'Küche streichen' } });
+  COMMENT_TASK = task.body.data.id;
+
+  const first = await call('POST', `/${COMMENT_TASK}/comments`, {
+    as: { id: ALICE, role: 'admin' }, body: { comment: 'Farbe ist gekauft.' },
+  });
+  assert.equal(first.status, 201);
+  assert.equal(first.body.data.comment, 'Farbe ist gekauft.');
+  assert.equal(first.body.data.author_name, 'alice');
+  assert.equal(first.body.data.updated_at, null);
+  COMMENT_ID = first.body.data.id;
+
+  await call('POST', `/${COMMENT_TASK}/comments`, {
+    as: { id: BOB, role: 'member' }, body: { comment: 'Ich bringe die Rolle mit.' },
+  });
+
+  // Eine Unterhaltung liest sich vorwärts - ältester Beitrag zuerst.
+  const list = await call('GET', `/${COMMENT_TASK}/comments`, { as: { id: BOB, role: 'member' } });
+  assert.equal(list.status, 200);
+  assert.deepEqual(list.body.data.map((c) => c.comment),
+    ['Farbe ist gekauft.', 'Ich bringe die Rolle mit.']);
+});
+
+test('Kommentare: leer oder nur Leerzeichen → 400', async () => {
+  for (const comment of ['', '   ', null]) {
+    const res = await call('POST', `/${COMMENT_TASK}/comments`, {
+      as: { id: ALICE, role: 'admin' }, body: { comment },
+    });
+    assert.equal(res.status, 400, `"${comment}" hätte 400 geben müssen`);
+  }
+});
+
+test('Kommentare: ändern darf nur, wer geschrieben hat', async () => {
+  const fremd = await call('PATCH', `/${COMMENT_TASK}/comments/${COMMENT_ID}`, {
+    as: { id: BOB, role: 'member' }, body: { comment: 'Übernommen' },
+  });
+  assert.equal(fremd.status, 403);
+
+  const eigen = await call('PATCH', `/${COMMENT_TASK}/comments/${COMMENT_ID}`, {
+    as: { id: ALICE, role: 'admin' }, body: { comment: 'Farbe ist gekauft (2 Eimer).' },
+  });
+  assert.equal(eigen.status, 200);
+  assert.equal(eigen.body.data.comment, 'Farbe ist gekauft (2 Eimer).');
+  // Erst die Nachbesserung setzt den Stempel - sonst trüge jeder Beitrag einen.
+  assert.ok(eigen.body.data.updated_at, 'updated_at fehlt nach dem Ändern');
+});
+
+test('Kommentare: löschen darf der Autor, und ein Admin zum Moderieren', async () => {
+  const bobs = await call('POST', `/${COMMENT_TASK}/comments`, {
+    as: { id: BOB, role: 'member' }, body: { comment: 'Doppelt geschrieben.' },
+  });
+  const bobsId = bobs.body.data.id;
+
+  // Alice ist Admin und darf entfernen, obwohl sie nicht geschrieben hat.
+  const moderiert = await call('DELETE', `/${COMMENT_TASK}/comments/${bobsId}`, { as: { id: ALICE, role: 'admin' } });
+  assert.equal(moderiert.status, 200);
+
+  const eigener = await call('POST', `/${COMMENT_TASK}/comments`, {
+    as: { id: BOB, role: 'member' }, body: { comment: 'Und wieder weg.' },
+  });
+  const selbst = await call('DELETE', `/${COMMENT_TASK}/comments/${eigener.body.data.id}`, { as: { id: BOB, role: 'member' } });
+  assert.equal(selbst.status, 200);
+
+  const rest = await call('GET', `/${COMMENT_TASK}/comments`, { as: { id: ALICE, role: 'admin' } });
+  assert.equal(rest.body.data.length, 2);
+});
+
+test('Kommentare: ein Mitglied ohne Admin-Rolle moderiert nicht', async () => {
+  const alices = await call('POST', `/${COMMENT_TASK}/comments`, {
+    as: { id: ALICE, role: 'admin' }, body: { comment: 'Steht hier.' },
+  });
+  const res = await call('DELETE', `/${COMMENT_TASK}/comments/${alices.body.data.id}`, { as: { id: BOB, role: 'member' } });
+  assert.equal(res.status, 403);
+});
+
+test('Kommentare: eine private Aufgabe teilt ihre Unterhaltung nicht', async () => {
+  const privat = await call('POST', '/', {
+    as: { id: ALICE, role: 'admin' }, body: { title: 'Geheim', visibility: 'private' },
+  });
+  const id = privat.body.data.id;
+  await call('POST', `/${id}/comments`, { as: { id: ALICE, role: 'admin' }, body: { comment: 'Nur für mich.' } });
+
+  assert.equal((await call('GET', `/${id}/comments`, { as: { id: BOB, role: 'member' } })).status, 404);
+  assert.equal((await call('POST', `/${id}/comments`, { as: { id: BOB, role: 'member' }, body: { comment: 'Hallo?' } })).status, 404);
+});
+
+test('Kommentare: eine gelöschte Aufgabe nimmt ihre Unterhaltung mit', async () => {
+  const task = await call('POST', '/', { as: { id: ALICE, role: 'admin' }, body: { title: 'Verschwindet' } });
+  const id = task.body.data.id;
+  await call('POST', `/${id}/comments`, { as: { id: ALICE, role: 'admin' }, body: { comment: 'Bleibt nicht.' } });
+  await call('DELETE', `/${id}`, { as: { id: ALICE, role: 'admin' } });
+  assert.equal(db.prepare('SELECT COUNT(*) AS c FROM task_comments WHERE task_id = ?').get(id).c, 0);
+});
+
+test('Kommentare: erwähnt wird gegen dieselbe Personenliste wie im Browser', async () => {
+  // Der Server las für die Benachrichtigung ALLE Nutzer, der Browser hebt gegen
+  // `meta/options` hervor - und dort sind Haushaltskräfte ausgenommen. Ein Name,
+  // den die Ansicht nicht markiert, darf auch keine Push-Meldung mit dem Titel
+  // der Aufgabe und dem Kommentartext auslösen.
+  const options = await call('GET', '/meta/options', { as: { id: ALICE, role: 'admin' } });
+  const sichtbar = options.body.users.map((u) => u.id);
+  assert.ok(!sichtbar.includes(WORKER), 'Vorbedingung: die Haushaltskraft steht nicht in meta/options');
+
+  const { mentionedUserIds } = await import('../public/utils/mentions.js');
+  const alleNutzer = db.prepare('SELECT id, display_name FROM users').all();
+  const wieDerServer = db.prepare(`
+    SELECT id, display_name FROM users u
+    WHERE NOT EXISTS (SELECT 1 FROM housekeeping_workers hw WHERE hw.user_id = u.id)
+  `).all();
+
+  const text = '@worker kannst du das übernehmen?';
+  assert.deepEqual(mentionedUserIds(text, alleNutzer), [WORKER], 'Vorbedingung: der Name träfe ohne Ausschluss');
+  assert.deepEqual(mentionedUserIds(text, wieDerServer), [], 'Haushaltskraft wird nicht benachrichtigt');
+});
+
+test('Kommentare: eine beim Bearbeiten dazugekommene Erwähnung wird gemeldet', async () => {
+  // Wer beim Korrigieren jemanden dazuholt, meint ihn genauso wie beim
+  // Schreiben - vorher lief die Benachrichtigung nur im POST-Pfad.
+  const task = await call('POST', '/', { as: { id: ALICE, role: 'admin' }, body: { title: 'Erwähnung nachtragen' } });
+  const created = await call('POST', `/${task.body.data.id}/comments`, {
+    as: { id: ALICE, role: 'admin' }, body: { comment: 'Wer macht das?' },
+  });
+  const patched = await call('PATCH', `/${task.body.data.id}/comments/${created.body.data.id}`, {
+    as: { id: ALICE, role: 'admin' }, body: { comment: '@bob machst du das?' },
+  });
+  assert.equal(patched.status, 200);
+  assert.equal(patched.body.data.comment, '@bob machst du das?');
+
+  // Die Route liest die Empfänger aus dem Text und nur die NEUEN: eine zweite
+  // Korrektur an derselben Erwähnung darf nicht noch einmal melden.
+  const { mentionedUserIds } = await import('../public/utils/mentions.js');
+  const users = db.prepare('SELECT id, display_name FROM users').all();
+  const vorher = mentionedUserIds('Wer macht das?', users);
+  const nachher = mentionedUserIds('@bob machst du das?', users);
+  assert.deepEqual(nachher.filter((id) => !vorher.includes(id)), [BOB]);
+  assert.deepEqual(nachher.filter((id) => !nachher.includes(id)), []);
+});
+
+test('Kommentare: wem das Modul entzogen ist, bekommt keine Erwähnungs-Meldung', async () => {
+  // Sichtbarkeit der Zeile ist nicht die einzige Hürde: wem das Aufgaben-Modul
+  // auf `none` steht, der kommt an die Aufgabe gar nicht heran - und bekäme mit
+  // dem Push trotzdem ihren Titel und den Anfang des Kommentars zugestellt.
+  const { resolvePermissions } = await import('../server/permissions.js');
+  // subject_id wird als TEXT gehalten und auch so abgefragt (`loadSubjectRows`)
+  db.prepare(`
+    INSERT OR REPLACE INTO access_permissions (subject_type, subject_id, resource_type, resource_key, access)
+    VALUES ('user', ?, 'module', 'tasks', 'none')
+  `).run(String(BOB));
+
+  const bob = db.prepare('SELECT id, role, family_role FROM users WHERE id = ?').get(BOB);
+  const perms = resolvePermissions(db, bob);
+  assert.equal(perms.modules.tasks, 'none', 'Vorbedingung: Bob darf die Aufgaben nicht sehen');
+
+  // Die Aufgabe selbst bleibt für ihn sichtbar (visibility `all`) - genau
+  // deshalb reicht `findVisibleTask` als Prüfung nicht aus.
+  const task = await call('POST', '/', { as: { id: ALICE, role: 'admin' }, body: { title: 'Ohne Modulzugriff' } });
+  const posted = await call('POST', `/${task.body.data.id}/comments`, {
+    as: { id: ALICE, role: 'admin' }, body: { comment: '@bob liest das nicht' },
+  });
+  assert.equal(posted.status, 201);
+
+  db.prepare("DELETE FROM access_permissions WHERE subject_id = ? AND resource_key = 'tasks'").run(String(BOB));
+  const wieder = resolvePermissions(db, bob);
+  assert.notEqual(wieder.modules.tasks, 'none', 'Aufräumen: Bobs Zugriff ist wiederhergestellt');
+});

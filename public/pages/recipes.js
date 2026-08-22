@@ -222,7 +222,7 @@ export async function render(container) {
   toolbar.appendChild(actions);
 
   const list = document.createElement('div');
-  list.className = 'list-scroller recipes-list';
+  list.className = 'list-scroller page-scrollport recipes-list';
   list.id = 'recipes-list';
   // Lade-Skeleton bis loadRecipes() aufgelöst ist (Router blendet den Wrapper
   // bereits vor dem Daten-await ein).

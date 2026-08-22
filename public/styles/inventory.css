@@ -270,31 +270,28 @@
   gap: var(--space-3);
 }
 
+/* Vier Zustaende eines Gegenstands, und sie tragen ihren Ton in der SCHRIFT
+ * (Skalen-Regel, zweiter Zweig - wie die Vorratsmeldung). Vorher lag unter
+ * jeder Schrift dieselbe Farbe noch einmal als Waschung; das ist die Bauart,
+ * die die Vollton-Regel an den Marken abgeloest hat, und auf einer Reihe von
+ * Zustaenden kostet sie doppelt: „Verkauft" auf 15 % Grau und „Entsorgt" auf
+ * einer Danger-Toenung unterscheiden sich fast nur noch durch ihr Wort.
+ *
+ * `--disposed` und `--lost` teilen ihre Regel AUSDRUECKLICH: beide heissen
+ * „nicht mehr da", und welcher der beiden Faelle vorliegt, steht im Wort. Das
+ * ist der Unterschied zu zwei Regeln, die zufaellig gleich aussehen. */
 .inventory-status-badge {
   display: inline-flex;
   align-items: center;
-  padding: 2px var(--space-2);
-  border-radius: var(--radius-full);
   font-size: var(--text-sm);
   font-weight: 600;
   white-space: nowrap;
 }
 
-.inventory-status-badge--active {
-  background: color-mix(in srgb, var(--color-success) var(--tint-surface), transparent);
-  color: var(--color-success);
-}
-
-.inventory-status-badge--sold {
-  background: color-mix(in srgb, var(--color-text-secondary) 15%, transparent);
-  color: var(--color-text-secondary);
-}
-
+.inventory-status-badge--active   { color: var(--color-success); }
+.inventory-status-badge--sold     { color: var(--color-text-secondary); }
 .inventory-status-badge--disposed,
-.inventory-status-badge--lost {
-  background: color-mix(in srgb, var(--color-danger) var(--tint-surface), transparent);
-  color: var(--color-danger);
-}
+.inventory-status-badge--lost     { color: var(--color-danger); }
 
 /* --------------------------------------------------------
  * Verknuepfte Buchungen (Formular, Bearbeiten-Modus)

@@ -16,6 +16,37 @@ import {
 
 const router = express.Router();
 
+// Ein Mindestabstand von mehr als vier Wochen beschreibt keine Bedarfsdosis
+// mehr, sondern einen Zeitplan - und ein negativer oder 0 ergaebe einen
+// Countdown, der immer abgelaufen ist. Die Grenze liegt deshalb hier und nicht
+// erst im Formular (#700).
+const MAX_INTERVAL_HOURS = 24 * 28;
+
+/**
+ * Bedarfsdosis: leer erlaubt, sonst nicht negativ.
+ *
+ * `v.num` nimmt negative Zahlen ausdruecklich an (Budget rechnet damit), und der
+ * Bestandsabzug rechnet `stock_qty - dose`: eine Dosis von -2 wuerde den Bestand
+ * bei jeder Einnahme ERHOEHEN. Das Formularfeld sperrt das ohnehin, ein
+ * API-Token oder MCP-Client nicht.
+ */
+function prnDose(raw) {
+  const r = v.num(raw, 'prn_dose_qty');
+  if (r.error || r.value === null) return r;
+  if (r.value < 0) return { value: null, error: 'prn_dose_qty must not be negative.' };
+  return r;
+}
+
+/** Mindestabstand in Stunden: leer erlaubt, sonst > 0 und hoechstens 28 Tage. */
+function prnInterval(raw) {
+  const r = v.num(raw, 'min_interval_hours');
+  if (r.error || r.value === null) return r;
+  if (r.value <= 0 || r.value > MAX_INTERVAL_HOURS) {
+    return { value: null, error: `min_interval_hours must be greater than 0 and at most ${MAX_INTERVAL_HOURS}.` };
+  }
+  return r;
+}
+
 // Diese beiden Helfer sind der einzige Zugang zu einem Medikament: Plaene und
 // Einnahmeprotokolle haengen daran und erben ihr Scoping von hier. Die Betreuung
 // (#584) greift deshalb an genau zwei Stellen statt in jeder der neun
@@ -69,8 +100,10 @@ router.post('/medications', (req, res) => {
     const refill     = v.num(b.refill_threshold, 'refill_threshold');
     const note       = v.str(b.note, 'note', { max: v.MAX_TEXT, required: false });
     const visibility = v.oneOf(b.visibility, VISIBILITIES, 'visibility');
+    const interval   = prnInterval(b.min_interval_hours);
+    const prnDoseQty = prnDose(b.prn_dose_qty);
 
-    const errors = v.collectErrors([name, dosageText, form, stockQty, stockUnit, refill, note, visibility]);
+    const errors = v.collectErrors([name, dosageText, form, stockQty, stockUnit, refill, note, visibility, interval, prnDoseQty]);
     if (errors.length) return badRequest(res, errors);
 
     const active = toBit(b.active); // undefined → default 1
@@ -82,11 +115,13 @@ router.post('/medications', (req, res) => {
     if (owner.error) return res.status(owner.status).json({ error: owner.error, code: owner.status });
 
     const result = db.get().prepare(`
-      INSERT INTO medications (user_id, name, dosage_text, form, active, prn, stock_qty, stock_unit, refill_threshold, note, visibility)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO medications (user_id, name, dosage_text, form, active, prn, stock_qty, stock_unit, refill_threshold, note, visibility,
+                               min_interval_hours, prn_dose_qty)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(owner.ownerId, name.value, dosageText.value, form.value,
            active === undefined ? 1 : active, prn === undefined ? 0 : prn,
-           stockQty.value, stockUnit.value, refill.value, note.value, visibility.value || 'private');
+           stockQty.value, stockUnit.value, refill.value, note.value, visibility.value || 'private',
+           interval.value, prnDoseQty.value);
 
     const row = db.get().prepare('SELECT * FROM medications WHERE id = ?').get(result.lastInsertRowid);
     res.status(201).json({ data: row });
@@ -120,6 +155,8 @@ router.patch('/medications/:id', (req, res) => {
     if (b.visibility !== undefined)       { const r = v.oneOf(b.visibility, VISIBILITIES, 'visibility');                checks.push(r); if (!r.error && r.value) fields.visibility = r.value; }
     if (b.active !== undefined) { const bit = toBit(b.active); if (bit === undefined) checks.push({ error: 'active must be a boolean.' }); else fields.active = bit; }
     if (b.prn !== undefined)    { const bit = toBit(b.prn);    if (bit === undefined) checks.push({ error: 'prn must be a boolean.' });    else fields.prn = bit; }
+    if (b.min_interval_hours !== undefined) { const r = prnInterval(b.min_interval_hours); checks.push(r); if (!r.error) fields.min_interval_hours = r.value; }
+    if (b.prn_dose_qty !== undefined)       { const r = prnDose(b.prn_dose_qty); checks.push(r); if (!r.error) fields.prn_dose_qty = r.value; }
 
     const errors = v.collectErrors(checks);
     if (errors.length) return badRequest(res, errors);
@@ -287,11 +324,25 @@ router.get('/medications/:id/logs', (req, res) => {
     if (!medId) return res.status(400).json({ error: 'Ungültige ID.', code: 400 });
     if (!medicationForRead(medId, viewer)) return res.status(404).json({ error: 'Medikament nicht gefunden.', code: 404 });
 
+    // Gefiltert wird ueber denselben Ausdruck, nach dem auch sortiert wird.
+    // Vorher stand hier `scheduled_at`, und weil eine Bedarfsdosis keinen
+    // Zeitplan hat, ist die Spalte bei ihr NULL - jeder Vergleich damit ist
+    // unbekannt, also fiel sie aus JEDEM Zeitraum heraus. Sichtbar war das
+    // bisher kaum, weil sich eine Bedarfsdosis gar nicht buchen liess (#700);
+    // seit sie es tut, waere ihr Eintrag im Protokoll unauffindbar und der
+    // Countdown haette nichts, woraus er rechnet.
+    //
+    // Verglichen wird auf 'YYYY-MM-DDTHH:MM' zugeschnitten, weil in derselben
+    // Spalte zwei Schreibweisen liegen: `scheduled_at` fuehrt Wanduhrzeit ohne
+    // Zone, `created_at` endet auf 'Z' und traegt Sekunden. Ohne den Schnitt
+    // waere '…T23:59:30Z' groesser als die Obergrenze '…T23:59' und die Dosis
+    // der letzten Minute des Tages fiele aus ihrem eigenen Tag heraus.
+    const WHEN = 'COALESCE(scheduled_at, taken_at, created_at)';
     const params = [medId];
-    let sql = 'SELECT * FROM medication_logs WHERE medication_id = ?';
-    if (req.query.from) { sql += ' AND scheduled_at >= ?'; params.push(String(req.query.from)); }
-    if (req.query.to)   { sql += ' AND scheduled_at <= ?'; params.push(String(req.query.to)); }
-    sql += ' ORDER BY COALESCE(scheduled_at, created_at) DESC, id DESC';
+    let sql = `SELECT * FROM medication_logs WHERE medication_id = ?`;
+    if (req.query.from) { sql += ` AND substr(${WHEN}, 1, 16) >= ?`; params.push(String(req.query.from).slice(0, 16)); }
+    if (req.query.to)   { sql += ` AND substr(${WHEN}, 1, 16) <= ?`; params.push(String(req.query.to).slice(0, 16)); }
+    sql += ` ORDER BY ${WHEN} DESC, id DESC`;
 
     res.json({ data: db.get().prepare(sql).all(...params) });
   } catch (err) {

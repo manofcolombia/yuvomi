@@ -10,7 +10,8 @@
     "toggleVisibility": "إظهار القيمة أو إخفاؤها",
     "copy": "نسخ",
     "copied": "تم النسخ ✓",
-    "language": "اللغة"
+    "language": "اللغة",
+    "copyRedirect": "نسخ عنوان إعادة التوجيه"
   },
   "config": {
     "title": "الإعداد الأساسي",
@@ -22,7 +23,11 @@
     "tzLabel": "المنطقة الزمنية",
     "errHost": "اسم مضيف غير صالح. استخدم الأحرف والأرقام والشرطات والنقاط فقط.",
     "errPort": "منفذ غير صالح. يجب أن يكون رقمًا بين 1 و65535.",
-    "prereqMissing": "المتطلبات المسبقة مفقودة: {{list}}. يرجى تثبيتها وإعادة تحميل هذه الصفحة."
+    "prereqMissing": "المتطلبات الناقصة: {{list}}. {{link}} توضّح كيفية تثبيتها.",
+    "prereqLinkDocker": "دليل Docker",
+    "prereqLinkCompose": "دليل podman-compose",
+    "prereqRecheck": "تحقق مرة أخرى",
+    "errSecureOverHttp": "العنوان العام يبدأ بـ http:// بينما يفرض هذا الخيار ملفات تعريف ارتباط آمنة - عندئذ يتعذّر تسجيل الدخول. اختر «وصول مباشر» أو استخدم عنوان https://."
   },
   "secrets": {
     "title": "مفاتيح الأمان",
@@ -53,7 +58,7 @@
   },
   "calendar": {
     "title": "مزامنة التقويم",
-    "subtitle": "اربط Yuvomi بتقويم Google أو Apple iCloud. كلاهما اختياري — وسّع للتهيئة.",
+    "subtitle": "اربط Yuvomi بتقويم Google أو Apple iCloud أو Outlook. كلها اختيارية - وسّع للتهيئة.",
     "google": "تقويم Google",
     "googleHint": "أنشئ بيانات اعتماد OAuth على {{link}}. عنوان URI لإعادة التوجيه: {{redirect}}",
     "googleLink": "console.cloud.google.com",
@@ -67,7 +72,13 @@
     "applePassLabel": "كلمة مرور خاصة بالتطبيق",
     "appleUrlLabel": "عنوان CalDAV",
     "appleUrlOpt": "(اختياري)",
-    "appleUrlHint": "اتركه فارغًا ما لم يستخدم مزوّدك نقطة نهاية CalDAV مختلفة."
+    "appleUrlHint": "اتركه فارغًا ما لم يستخدم مزوّدك نقطة نهاية CalDAV مختلفة.",
+    "outlook": "تقويم Outlook (Microsoft Graph)",
+    "outlookHint": "أنشئ تسجيل تطبيق Entra ID مجانيًا (\"الحسابات الشخصية لـ Microsoft فقط\") على {{link}} - راجع دليل التثبيت. عنوان URI لإعادة التوجيه: {{redirect}}",
+    "outlookLink": "entra.microsoft.com",
+    "outlookIdLabel": "معرّف العميل",
+    "outlookSecretLabel": "سرّ العميل",
+    "outlookNote": "دفع باتجاه واحد: يبقى Yuvomi هو المرجع - وتُستبدل التغييرات التي تُجرى في Outlook. تُربط حسابات العائلة لاحقًا من إعدادات التطبيق."
   },
   "review": {
     "title": "المراجعة",
@@ -96,7 +107,18 @@
     "webdavBackup": "نسخ خارجية",
     "on": "مفعّل",
     "off": "معطّل",
-    "documentGoogleDrive": "مستندات Google Drive"
+    "documentGoogleDrive": "مستندات Google Drive",
+    "sessionSecret": "مفتاح الجلسة",
+    "dbKey": "مفتاح قاعدة البيانات",
+    "keyGenerated": "تم إنشاؤه حديثًا",
+    "keyPreserved": "سيتم الاحتفاظ بالمفتاح الحالي",
+    "dataDir": "مجلد البيانات",
+    "privateNetwork": "الوصول إلى الشبكة المحلية",
+    "privateNetworkIcs": "اشتراكات التقويم",
+    "privateNetworkRecipes": "الوصفات",
+    "privateNetworkWebdav": "مستندات WebDAV",
+    "baseUrl": "العنوان العام",
+    "outlook": "تقويم Outlook"
   },
   "docker": {
     "title": "جارٍ بدء Yuvomi",
@@ -139,16 +161,26 @@
     "open": "افتح Yuvomi ←",
     "backupReminder": "تذكّر أخذ نسخة من ملف ‎.env الآن — فهو يحتوي على مفاتيحك.",
     "download": "تنزيل ملف .env",
-    "savedTo": "تم الحفظ في {{path}}"
+    "savedTo": "تم الحفظ في {{path}}",
+    "downloadFailed": "تعذّر تحميل الملف - على الأرجح أن المثبِّت قد توقف بالفعل. مفاتيحك موجودة في ملف .env على خادمك.",
+    "serverStops": "سيتوقف المثبِّت خلال دقائق قليلة. نزّل الملف قبل إغلاق علامة التبويب هذه.",
+    "nextTitle": "الخطوات التالية",
+    "nextInvite": "ادعُ عائلتك",
+    "nextInviteDesc": "أنشئ روابط دعوة ليختار كل فرد كلمة مروره.",
+    "nextModules": "اختر الوحدات",
+    "nextModulesDesc": "فعّل ما تستخدمه أسرتك فعلًا وأخفِ الباقي.",
+    "nextInstall": "ثبّتها على هواتفكم",
+    "nextInstallDesc": "افتح يوفومي على الهاتف وأضفه إلى الشاشة الرئيسية - يعمل دون اتصال.",
+    "subtitleExisting": "يوفومي قيد التشغيل. هذا التثبيت لديه بالفعل حساب مسؤول - سجّل الدخول ببيانات الاعتماد الحالية."
   },
   "advanced": {
     "tag": "متقدّم · اختياري",
     "title": "الإعدادات المتقدّمة",
-    "subtitle": "وكيل عكسي، وتسجيل دخول موحّد، ونُسخ احتياطية تلقائية. كلها اختيارية — التخطّي آمن.",
+    "subtitle": "تسجيل الدخول الموحّد والوصول إلى شبكتك وبعض الضبط الدقيق. كل شيء اختياري.",
     "proxyLabel": "كيف يتم عرض Yuvomi؟",
     "proxyBehindHttps": "خلف وكيل عكسي بـ HTTPS (Caddy، nginx، Traefik)",
     "proxyDirect": "وصول مباشر عبر localhost / HTTP",
-    "proxyHint": "يعطّل الوصول المباشر ملفات تعريف الارتباط الآمنة فقط حتى يعمل تسجيل الدخول دون HTTPS.",
+    "proxyHint": "اختر «وصول مباشر» إذا كنت تفتح يوفومي عبر http:// - وإلا يتعذّر تسجيل الدخول. خلف وكيل عكسي مع HTTPS اختر الخيار الأول.",
     "oidc": "تسجيل الدخول الموحّد (OIDC)",
     "oidcHint": "املأ الحقول الأربعة جميعها لتفعيل الدخول الموحّد، أو اتركها فارغة.",
     "oidcIssuerLabel": "عنوان المُصدِر",
@@ -173,8 +205,7 @@
     "documentLocalEnable": "تخزين المستندات الجديدة في مجلد محلي",
     "documentLocalPathLabel": "مسار المجلد",
     "documentLocalPathHint": "المسار داخل الحاوية. اتركه فارغًا لاستخدام /documents.",
-    "sectionNetwork": "الشبكة",
-    "sectionIntegrations": "التكاملات والنسخ الاحتياطية",
+    "sectionIntegrations": "تسجيل الدخول الموحّد",
     "errSchedule": "جدولة cron غير صالحة (يُتوقع خمسة حقول مفصولة بمسافات، مثل 0 2 * * *).",
     "errKeep": "يجب أن يكون عدد النسخ الاحتياطية المحفوظة رقمًا موجبًا.",
     "webdavBackup": "نسخ احتياطية خارجية (WebDAV)",
@@ -209,7 +240,14 @@
     "recipeProviderPrivateNetwork": "السماح بمرايا مزودي الوصفات في شبكتك المنزلية",
     "recipeProviderPrivateNetworkHint": "ضروري لنسخة Mealie أو Tandoor في شبكتك الخاصة. يرفع حماية SSRF لمرايا مزودي الوصفات.",
     "oidcTrustEmail": "الثقة بالبريد الإلكتروني بدون مطالبة verified",
-    "oidcTrustEmailHint": "فعّله فقط إذا كان مزوّدك لا يرسل email_verified وكنت تثق به."
+    "oidcTrustEmailHint": "فعّله فقط إذا كان مزوّدك لا يرسل email_verified وكنت تثق به.",
+    "baseUrlLabel": "العنوان العام",
+    "baseUrlHint": "العنوان الذي تفتح به عائلتك يوفومي - وليس مضيف الحاوية ومنفذها. يُستخدم لروابط إعادة تعيين كلمة المرور والدعوات.",
+    "syncIntervalLabel": "فاصل مزامنة التقويم (بالدقائق)",
+    "syncIntervalHint": "عدد مرات مزامنة يوفومي للتقاويم وجهات الاتصال. ارفعه إذا كان مزوّدك يحدّ من المعدل.",
+    "errSyncInterval": "أدخل عددًا صحيحًا موجبًا من الدقائق.",
+    "sectionPrivateNetwork": "الوصول إلى شبكتك المنزلية",
+    "privateNetworkHint": "يرفض يوفومي افتراضيًا الاتصال بعناوين على شبكتك، ما يحمي من خداع الخادم للوصول إلى خدمات داخلية. فعّل ما تشغّله فعلًا في المنزل."
   },
   "welcome": {
     "title": "مرحبًا بك في Yuvomi",
@@ -220,7 +258,9 @@
     "simpleTime": "حوالي دقيقتين",
     "advancedTitle": "إعداد متقدم",
     "advancedDesc": "تحكم كامل: بروكسي عكسي، مزامنة التقويم، البريد الإلكتروني، تسجيل الدخول الموحّد والنسخ الاحتياطية.",
-    "advancedTime": "كل خيار، خطوة بخطوة"
+    "advancedTime": "كل خيار، خطوة بخطوة",
+    "existingLocked": "تم اكتشاف تثبيت موجود. استخدم الإعداد المتقدم للحفاظ على إعداداتك الحالية.",
+    "containerRunning": "يوفومي قيد التشغيل حاليًا. الحفظ سيعيد تشغيل الحاوية، لذا ستكون غير متاحة لفترة وجيزة."
   },
   "simple": {
     "title": "جاهز",
@@ -252,5 +292,11 @@
     "fromHint": "عنوان «من» الذي سيراه المستلمون. يشترط كثير من المزودين تطابقه مع اسم المستخدم.",
     "fromNameLabel": "اسم المُرسِل",
     "errIncomplete": "خادم SMTP وعنوان المُرسِل مطلوبان."
+  },
+  "storage": {
+    "title": "التخزين والنسخ الاحتياطي",
+    "subtitle": "أين تُحفظ بياناتك على الخادم، وأين تذهب نسخها. كل شيء اختياري - الإعدادات الافتراضية تعمل.",
+    "sectionBackups": "النسخ الاحتياطي",
+    "sectionDocuments": "تخزين المستندات"
   }
 }

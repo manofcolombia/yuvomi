@@ -86,7 +86,7 @@ npm run test:docker-publish
 This is a representative selection - run `npm run` to see the full list of suites.
 Which suite guards which invariant is catalogued in [docs/test-suites.md](docs/test-suites.md).
 
-Tests run with plain Node and in-memory SQLite (`--experimental-sqlite`) — newer suites
+Tests run with plain Node and in-memory SQLite (`--experimental-sqlite`) - newer suites
 use the built-in `node --test` runner, older ones are plain assertion scripts. No running
 server or database required; tests import route handlers directly.
 
@@ -251,7 +251,8 @@ reviewed", not "every run reviewed it".
 - ES modules everywhere (`import`/`export`, never `require`)
 - Semicolons: **yes**
 - `try/catch` in every route handler - no unhandled promise rejections
-- No dynamic code execution. Never write user data directly into an HTML string — use `esc()` from `public/utils/html.js` in template literals, or DOM API (`createElement`, `textContent`). Use `insertAdjacentHTML` to append HTML fragments, `replaceChildren()` to replace content. Direct `innerHTML` assignments are rejected by the frontend audit (`npm run test:frontend-audit`), which runs as part of `npm test`.
+- No dynamic code execution. Never write user data directly into an HTML string - use `esc()` from `public/utils/html.js` in template literals, or DOM API (`createElement`, `textContent`). Use `insertAdjacentHTML` to append HTML fragments, `replaceChildren()` to replace content. Direct `innerHTML` assignments are rejected by the frontend audit (`npm run test:frontend-audit`), which runs as part of `npm test`.
+- Hyphens, not dashes: write `-`, never `—` or `–`. This holds for text people read rather than execute: the READMEs, the CHANGELOG, commit messages, UI strings and locale values. `npm run test:readme-consistency` enforces it for `README.md` and `README.de.md`; everywhere else it is on you. Existing code comments on `main` are inconsistent about this and are deliberately left alone, so `git grep` is not a reliable guide here.
 
 ### Frontend
 
@@ -287,7 +288,7 @@ reviewed", not "every run reviewed it".
 
 User-facing changes should be reflected in [`CHANGELOG.md`](CHANGELOG.md). If your PR adds a feature, fixes a bug, or changes behavior, add an entry under `[Unreleased]` in the appropriate category (`Added`, `Changed`, `Fixed`, `Removed`, `Security`).
 
-Format: imperative mood, one line per change, user-oriented language.
+Format: imperative mood, one line per change, user-oriented language. Use `-` rather than `—` or `–`: an entry does not stay in this file, it ships as the GitHub release notes and feeds the app store listings.
 
 ```markdown
 ### Added

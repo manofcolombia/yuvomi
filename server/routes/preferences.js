@@ -196,6 +196,20 @@ function healthCycleViews(userId) {
   };
 }
 
+// Die persönliche Übersicht (#585): eigene Anordnung, sonst die des Haushalts.
+//
+// EINE Funktion, weil es drei Leser gibt - GET, die PUT-Antwort und künftige.
+// Der Fallback stand beim Umbau erst nur im GET; die PUT-Antwort las weiter den
+// Haushaltswert und meldete damit nach dem Speichern den Stand zurück, den man
+// gerade ersetzt hatte. Zwei Ausdrücke für dieselbe Regel sind einer zu viel.
+function dashboardPersonalViews(userId) {
+  const glance = cfgUserGet('dashboard_today_glance', userId) ?? cfgGet('dashboard_today_glance');
+  return {
+    dashboard_widgets: parseWidgetConfig(cfgUserGet('dashboard_widgets', userId) ?? cfgGet('dashboard_widgets')),
+    dashboard_today_glance: glance !== '0',
+  };
+}
+
 // Per-User-Wetter-Override lesen (null je Feld = erbt Haushalt).
 function weatherUserOverride(userId) {
   const autoRaw = cfgUserGet('weather_auto_locate', userId);
@@ -230,6 +244,24 @@ function parseDisabledModules(raw) {
   } catch {
     return [];
   }
+}
+
+// ZWEI VERSCHIEDENE FRAGEN AN DIESELBE MODULLISTE (#673).
+//
+// `disabled_modules` (haushaltweit, Admin) heisst: dieses Modul gibt es hier
+// nicht - es verschwindet aus der Navigation UND der Routen-Guard schickt jeden
+// zurueck aufs Dashboard. `hidden_modules` (pro Nutzer, kein Admin-Check) heisst:
+// ich brauche es nicht auf meinem Bildschirm. Es raeumt die Navigation auf und
+// nimmt NICHTS weg: ein Deep-Link aus einer Benachrichtigung oder ein Sprung aus
+// einem Dashboard-Widget oeffnet die Seite weiter. Wer wirklich etwas entziehen
+// will, hat dafuer die Rechte in `member_permissions` - Verstecken ist Aufraeumen,
+// kein Entzug, und die beiden duerfen nicht zu einer Mechanik verschmelzen.
+//
+// Dieselbe Allowlist wie beim Haushalts-Schalter: Uebersicht und Einstellungen
+// sind auch persoenlich nicht wegblendbar, sonst versteckt sich jemand den Weg
+// zurueck zu genau diesem Schalter.
+function parseHiddenModules(raw) {
+  return parseDisabledModules(raw);
 }
 
 function parseModuleOrder(raw) {
@@ -306,8 +338,8 @@ router.get('/', (req, res) => {
     const timeFormat = VALID_TIME_FORMATS.includes(cfgGet('time_format')) ? cfgGet('time_format') : DEFAULT_TIME_FORMAT;
     const weekStart = VALID_WEEK_STARTS.includes(cfgGet('week_start')) ? cfgGet('week_start') : DEFAULT_WEEK_START;
     const appName = cfgGet('app_name') ?? DEFAULT_APP_NAME;
-    const dashboardWidgets = parseWidgetConfig(cfgGet('dashboard_widgets'));
     const disabledModules = parseDisabledModules(cfgGet('disabled_modules'));
+    const hiddenModules = parseHiddenModules(cfgUserGet('hidden_modules', req.authUserId));
     const moduleOrder = parseModuleOrder(cfgUserGet('module_order', req.authUserId) ?? cfgGet('module_order'));
     const mobileNavOrder = parseMobileNavOrder(cfgUserGet('mobile_nav_order', req.authUserId));
 
@@ -326,9 +358,10 @@ router.get('/', (req, res) => {
         language_effective: resolveHouseholdLocale(db.get()),
         language_auto: resolveHouseholdLocale(db.get(), { ignoreExplicit: true }),
         app_name: appName,
-        dashboard_widgets: dashboardWidgets,
-        dashboard_today_glance: cfgGet('dashboard_today_glance') !== '0',
+        // Anordnung und Kopfband der Übersicht - persönlich, mit Haushalts-Fallback (#585).
+        ...dashboardPersonalViews(req.authUserId),
         disabled_modules: disabledModules,
+        hidden_modules: hiddenModules,
         module_order: moduleOrder,
         mobile_nav_order: mobileNavOrder,
         housekeeping_payment_tasks: cfgGet('housekeeping_payment_tasks') === '1',
@@ -385,7 +418,7 @@ router.get('/', (req, res) => {
 
 router.put('/', (req, res) => {
   try {
-    const { visible_meal_types, currency, date_format, time_format, week_start, fraction_quantities, region, language, app_name, dashboard_widgets, dashboard_today_glance, disabled_modules, module_order, mobile_nav_order, housekeeping_payment_tasks, budget_mode, calendar_default_duration, calendar_default_reminders, calendar_default_assign_me, calendar_default_target, health_cycle_enabled, health_cycle_enabled_user, rewards_require_approval, tasks_subtasks_expanded, tasks_default_points, tasks_default_target, weather_provider, weather_lat, weather_lon, weather_city, weather_units, weather_auto_locate, weather_user, holiday_country, holiday_subdivision, holiday_group, holiday_show_public, holiday_show_school, holiday_public_color, holiday_school_color } = req.body;
+    const { visible_meal_types, currency, date_format, time_format, week_start, fraction_quantities, region, language, app_name, dashboard_widgets, dashboard_today_glance, disabled_modules, hidden_modules, module_order, mobile_nav_order, housekeeping_payment_tasks, budget_mode, calendar_default_duration, calendar_default_reminders, calendar_default_assign_me, calendar_default_target, health_cycle_enabled, health_cycle_enabled_user, rewards_require_approval, tasks_subtasks_expanded, tasks_default_points, tasks_default_target, weather_provider, weather_lat, weather_lon, weather_city, weather_units, weather_auto_locate, weather_user, holiday_country, holiday_subdivision, holiday_group, holiday_show_public, holiday_show_school, holiday_public_color, holiday_school_color } = req.body;
 
     if (visible_meal_types !== undefined) {
       if (!Array.isArray(visible_meal_types)) {
@@ -487,6 +520,27 @@ router.put('/', (req, res) => {
       else cfgDelete('app_name');
     }
 
+    // DIE ÜBERSICHT GEHÖRT DER PERSON, NICHT DEM HAUSHALT (#585).
+    //
+    // Auswahl, Reihenfolge und Größe der Kacheln lagen haushaltweit: wer das
+    // Zyklus-Widget für sich abwählte, nahm es allen weg, und wer sich die
+    // Aufgaben nach oben zog, verschob sie auch für die Kinder. Genau daran
+    // hing der Wunsch - eine Familie hat auf derselben Seite verschiedene
+    // Bedürfnisse. Das Muster dafür steht schon nebenan: `module_order` liest
+    // per-user MIT Haushalts-Fallback und schreibt ausschliesslich per-user.
+    //
+    // KEIN DUAL-WRITE, und das ist eine bewusste Entscheidung, keine Bequemlichkeit.
+    // Ein Schlüssel, der beide Wege kennt, ist für test-settings-admin-gate.js
+    // nicht mehr entscheidbar (`ambiguous`) - dort kostet jeder solche Schlüssel
+    // Reichweite, und die Grenze ist mit Wetter und Zyklus bereits ausgeschöpft.
+    // Der alte Haushaltswert bleibt deshalb liegen und wirkt nur noch als
+    // Fallback: bestehende Haushalte sehen ihre gewohnte Anordnung weiter, jeder
+    // bekommt seine eigene erst in dem Moment, in dem er selbst etwas ändert.
+    // Deshalb braucht dieser Schritt auch keine Migration.
+    //
+    // Das Kopfband „Heute auf einen Blick" (#740) fährt mit, weil es im selben
+    // PUT gespeichert wird: bliebe es haushaltweit, schaltete ein persönliches
+    // Ausblenden es weiterhin für alle ab - genau der Bruch, den #585 meldet.
     if (dashboard_widgets !== undefined) {
       if (!Array.isArray(dashboard_widgets)) {
         return res.status(400).json({ error: 'dashboard_widgets muss ein Array sein', code: 400 });
@@ -495,14 +549,14 @@ router.put('/', (req, res) => {
       if (normalized === null) {
         return res.status(400).json({ error: 'dashboard_widgets enthält ungültige Einträge', code: 400 });
       }
-      cfgSet('dashboard_widgets', JSON.stringify(normalized));
+      cfgUserSet('dashboard_widgets', req.authUserId, JSON.stringify(normalized));
     }
 
     if (dashboard_today_glance !== undefined) {
       if (typeof dashboard_today_glance !== 'boolean') {
         return res.status(400).json({ error: 'dashboard_today_glance muss ein Boolean sein', code: 400 });
       }
-      cfgSet('dashboard_today_glance', dashboard_today_glance ? '1' : '0');
+      cfgUserSet('dashboard_today_glance', req.authUserId, dashboard_today_glance ? '1' : '0');
     }
 
     if (disabled_modules !== undefined) {
@@ -516,6 +570,20 @@ router.put('/', (req, res) => {
         .filter((m) => typeof m === 'string' && TOGGLEABLE_MODULES.includes(m));
       const unique = [...new Set(filtered)];
       cfgSet('disabled_modules', JSON.stringify(unique));
+    }
+
+    // Persoenlich ausgeblendete Module (#673) - bewusst OHNE Admin-Check, das ist
+    // der ganze Punkt: bisher konnte nur eine Adminin Module abschalten, und zwar
+    // gleich fuer alle. Siehe parseHiddenModules fuer die Abgrenzung zum
+    // Haushalts-Schalter darueber.
+    if (hidden_modules !== undefined) {
+      if (!Array.isArray(hidden_modules)) {
+        return res.status(400).json({ error: 'hidden_modules muss ein Array sein', code: 400 });
+      }
+      const unique = [...new Set(
+        hidden_modules.filter((m) => typeof m === 'string' && TOGGLEABLE_MODULES.includes(m)),
+      )];
+      cfgUserSet('hidden_modules', req.authUserId, JSON.stringify(unique));
     }
 
     if (module_order !== undefined) {
@@ -586,7 +654,7 @@ router.put('/', (req, res) => {
       // zuvor gesetzten Ziels. parseSyncTargetValue liefert dafür {kind:'local'},
       // also einen gültigen Wert, und null nur bei echtem Formfehler.
       if (parseSyncTargetValue(target) === null) {
-        return res.status(400).json({ error: 'calendar_default_target: erwartet "google:<id>" oder "caldav:<kontoId>|<url>"', code: 400 });
+        return res.status(400).json({ error: 'calendar_default_target: erwartet "google:<id>", "caldav:<kontoId>|<url>" oder "outlook:<kontoId>|<kalenderId>"', code: 400 });
       }
       cfgUserSet('calendar_default_target', req.authUserId, target);
     }
@@ -852,8 +920,8 @@ router.put('/', (req, res) => {
     const savedTimeFormat = VALID_TIME_FORMATS.includes(cfgGet('time_format')) ? cfgGet('time_format') : DEFAULT_TIME_FORMAT;
     const savedWeekStart = VALID_WEEK_STARTS.includes(cfgGet('week_start')) ? cfgGet('week_start') : DEFAULT_WEEK_START;
     const savedAppName = cfgGet('app_name') ?? DEFAULT_APP_NAME;
-    const savedWidgets = parseWidgetConfig(cfgGet('dashboard_widgets'));
     const savedDisabledModules = parseDisabledModules(cfgGet('disabled_modules'));
+    const savedHiddenModules = parseHiddenModules(cfgUserGet('hidden_modules', req.authUserId));
     const savedModuleOrder = parseModuleOrder(cfgUserGet('module_order', req.authUserId) ?? cfgGet('module_order'));
     const savedMobileNavOrder = parseMobileNavOrder(cfgUserGet('mobile_nav_order', req.authUserId));
     const savedHousekeepingPaymentTasks = cfgGet('housekeeping_payment_tasks') === '1';
@@ -870,8 +938,9 @@ router.put('/', (req, res) => {
         language_effective: resolveHouseholdLocale(db.get()),
         language_auto: resolveHouseholdLocale(db.get(), { ignoreExplicit: true }),
         app_name: savedAppName,
-        dashboard_widgets: savedWidgets,
+        ...dashboardPersonalViews(req.authUserId),
         disabled_modules: savedDisabledModules,
+        hidden_modules: savedHiddenModules,
         module_order: savedModuleOrder,
         mobile_nav_order: savedMobileNavOrder,
         housekeeping_payment_tasks: savedHousekeepingPaymentTasks,

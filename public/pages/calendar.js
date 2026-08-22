@@ -12,7 +12,8 @@ import { stagger, wireScrollFade, scheduleUndoableDelete } from '/utils/ux.js';
 import { t, formatDate as formatPreferredDate, formatDayMonth, formatTime, timeSuffix, formatDateInput, parseDateInput, isDateInputValid, formatTimeInput, parseTimeInput } from '/i18n.js';
 import { esc, fmtLocation } from '/utils/html.js';
 import { shiftEndDateKey, isEndBeforeStart, weekStartIndex, weekdayOrder,
-         monthPeriodKeys, startOfLocalWeekKey, addLocalDays, defaultDateInPeriod } from '/utils/date.js';
+         monthPeriodKeys, startOfLocalWeekKey, addLocalDays, defaultDateInPeriod,
+         isWeekendKey } from '/utils/date.js';
 import { truncateRuleBefore, shiftSeriesStart, shiftEndForStart } from '/utils/recurrence-scope.js';
 import { getReadableTextColor } from '/utils/color.js';
 import { refresh as refreshReminders } from '/reminders.js';
@@ -20,9 +21,10 @@ import { parseRemindAtAsUtc } from '/utils/reminder-offset.js';
 import { renderUserMultiSelect, getSelectedUserIds, bindUserMultiSelect, renderAvatarStack } from '/components/user-multi-select.js';
 import { wireTablist } from '/utils/tablist.js';
 import { localizeBirthdayEvent } from '/utils/birthday-event.js';
-import { googleTargetValue, caldavTargetValue } from '/utils/sync-target.js';
+import { googleTargetValue, caldavTargetValue, outlookTargetValue } from '/utils/sync-target.js';
 import { renderSkeletonList } from '/utils/skeleton.js';
 import { findPageFab } from '/utils/fab.js';
+import { maxUploadBytes, maxUploadMb } from '/utils/upload-limit.js';
 
 // --------------------------------------------------------
 // Konstanten
@@ -222,12 +224,13 @@ const EVENT_ICON_CATEGORIES = () => [
 const EVENT_ICONS = EVENT_ICON_CATEGORIES().flatMap((cat) => cat.icons);
 
 const CUSTOM_EVENT_ICONS = new Set(['tooth']);
-const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
+
 const ATTACHMENT_IMAGE_MIME = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
 const CALENDAR_VIEW_STORAGE_KEY = 'yuvomi:calendar:view';
 const LEGACY_CALENDAR_VIEW_STORAGE_KEY = 'yuvomi-calendar-view';
 const LAYER_HOLIDAYS_KEY = 'yuvomi:calendar:layer:holidays';
 const LAYER_SCHOOL_KEY    = 'yuvomi:calendar:layer:school';
+const LAYER_BIRTHDAYS_KEY = 'yuvomi:calendar:layer:birthdays';
 const ASSIGNED_TO_ME_KEY  = 'yuvomi:calendar:assignedToMe';
 const DATE_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -437,6 +440,7 @@ let state = {
   documentUploadBackend: 'local',
   layerHolidays: true,     // toggle for public holiday layer
   layerSchool:   true,     // toggle for school holiday layer
+  layerBirthdays: true,    // toggle for the birthday layer (#778)
   offlineSince:  null,     // Date des letzten Cache-Stands, wenn offline bedient
   defaultDuration: 60,     // Standard-Termindauer (Minuten) aus den Präferenzen
   currentUserId: null,     // eigene User-ID für „Mir zugewiesen"-Filter
@@ -771,7 +775,7 @@ function buildDayIndex() {
   const hi = state.rangeTo   || '';
   for (const e of state.events) {
     const start = localDate(e.start_datetime);
-    const end   = e.end_datetime ? localDate(e.end_datetime) : start;
+    const end   = eventEndDate(e);
     // Auf das geladene Fenster klammern, damit mehrtägige/fehlerhafte Events
     // keinen unbegrenzten Bereich erzeugen.
     let from = lo && start < lo ? lo : start;
@@ -806,21 +810,65 @@ function belongsToMe(item) {
   return (item.assigned_users ?? []).some((u) => u.id === state.currentUserId);
 }
 
+/**
+ * True, solange die Ebene sichtbar ist, zu der ein Termin gehoert (#778).
+ *
+ * Geburtstage kommen aus den Kontakten und fuellen bei einem grossen Adressbuch
+ * den Kalender mit Terminen, die niemand als Termin plant. Sie einzeln zu
+ * loeschen half nicht: der naechste Abgleich legt sie wieder an - was der
+ * Melder als "keeps coming back" beschrieb. Sie sind deshalb eine Ebene wie die
+ * Feiertage, keine Sammlung loeschbarer Eintraege.
+ *
+ * `birthday_name` ist der Marker: die Leseroute haengt ihn nur an Termine, die
+ * an einem Geburtstag haengen (siehe localizeBirthdayEvent).
+ */
+function isVisibleLayer(ev, showBirthdays = state.layerBirthdays) {
+  return showBirthdays || !ev.birthday_name;
+}
+
+/** True, wenn im geladenen Bereich ueberhaupt Geburtstage liegen. */
+function hasBirthdayEvents() {
+  return state.events.some((e) => e.birthday_name);
+}
+
 function eventsOnDay(dateStr) {
   const list = _dayIndex.active
     ? (_dayIndex.events.get(dateStr) ?? [])
     : state.events.filter((e) => {
         const start = localDate(e.start_datetime);
-        const end   = e.end_datetime ? localDate(e.end_datetime) : start;
+        const end   = eventEndDate(e);
         return start <= dateStr && end >= dateStr;
       });
-  return state.assignedToMe ? list.filter(belongsToMe) : list;
+  const layered = state.layerBirthdays ? list : list.filter(isVisibleLayer);
+  return state.assignedToMe ? layered.filter(belongsToMe) : layered;
+}
+
+/**
+ * Letzter Kalendertag, auf dem ein Event erscheint.
+ *
+ * Ein Zeit-Event, das exakt um Mitternacht endet, belegt den Folgetag nicht:
+ * 21:00-24:00 ist ein Freitagstermin, kein Freitag-und-Samstag-Termin (#804).
+ * Ohne diese Korrektur galt das Ende als inklusiv, das Event landete im
+ * Tages-Bucket des Folgetags und wurde zusaetzlich als mehrtaegig eingestuft -
+ * dadurch rutschte es ueber isAllDayLike() faelschlich in die Ganztags-Zeile.
+ *
+ * Ganztags-Events sind bewusst ausgenommen: sie speichern ihr Ende als
+ * T00:00 und meinen es INKLUSIV (eine Reise 07.-09.09. endet auf
+ * '2026-09-09T00:00'). Die Regel gilt daher nur fuer Zeit-Events.
+ */
+function eventEndDate(ev) {
+  const start = localDate(ev.start_datetime);
+  if (!ev.end_datetime) return start;
+  const end = localDate(ev.end_datetime);
+  if (end <= start) return start;
+  if (ev.all_day || !ev.end_datetime.includes('T')) return end;
+  return localTime(ev.end_datetime) === '00:00' ? addDays(end, -1) : end;
 }
 
 /** True, wenn Start- und Enddatum auf verschiedene Kalendertage fallen. */
 function isMultiDayEvent(ev) {
   if (!ev || !ev.start_datetime || !ev.end_datetime) return false;
-  return localDate(ev.start_datetime) !== localDate(ev.end_datetime);
+  return localDate(ev.start_datetime) !== eventEndDate(ev);
 }
 
 /**
@@ -843,7 +891,7 @@ function agendaSegmentKind(ev, dayStr) {
   if (ev.all_day || !ev.start_datetime.includes('T')) return 'all-day';
   if (!isMultiDayEvent(ev)) return 'single';
   const startDay = localDate(ev.start_datetime);
-  const endDay   = localDate(ev.end_datetime);
+  const endDay   = eventEndDate(ev);
   if (dayStr === startDay) return 'start';
   if (dayStr === endDay)   return 'end';
   return 'middle';
@@ -892,10 +940,18 @@ function renderTaskChip(task, { interactive = true, icon = true } = {}) {
   const button   = interactive
     ? ` role="button" tabindex="0" aria-label="${esc(t('calendar.taskChipAriaLabel', { title: task.title }))}"`
     : '';
+  // Die Prioritaet steht als Rangmarke im Punkt (list-row.css), nicht mehr als
+  // getoentes Feld mit getoenter Schrift: dieselbe Stufe, die die Aufgabenliste
+  // seit v2.23.0 so zeigt. „Ohne" bekommt keinen Punkt - eine Marke fuer eine
+  // Abwesenheit waere eine fuenfte Stufe.
+  const dot = priority !== 'none'
+    ? `<span class="priority-dot priority-dot--${priority}" aria-hidden="true"></span>`
+    : '';
   return `<div class="cal-task-chip cal-task-chip--${priority}"
                data-task-id="${task.id}"${button}
                title="${label}${esc(timeStr)}">
     ${icon ? '<i data-lucide="check-square" class="icon-sm" aria-hidden="true"></i>' : ''}
+    ${dot}
     <span>${label}${esc(timeStr)}</span>
   </div>`;
 }
@@ -904,8 +960,28 @@ function renderTaskChip(task, { interactive = true, icon = true } = {}) {
 // API
 // --------------------------------------------------------
 
+/**
+ * Ladefenster mit einem Tag Rand an beiden Seiten.
+ *
+ * Extern synchronisierte Termine liegen als UTC in der Datenbank
+ * (`2035-03-13T02:00:00Z`), der Serverfilter vergleicht deren UTC-Kalendertag
+ * gegen die lokalen Tagesschluessel dieser Ansicht. Westlich von UTC faellt ein
+ * Abendtermin dadurch auf den UTC-Folgetag und aus einem Fenster heraus, das
+ * genau die angezeigten Tage umfasst: in der Tagesansicht (Fenster = ein Tag)
+ * fehlte er komplett, in Woche und Monat nur am Rand (#824).
+ *
+ * Der Rand deckt jeden realen Zeitzonenversatz (UTC-12..UTC+14) ab. Welche
+ * Termine wirklich auf einen Tag gehoeren, entscheidet ohnehin erst
+ * buildDayIndex() lokal - dort klammert state.rangeFrom/rangeTo auf das
+ * Anzeigefenster, weshalb die Randtage nichts Fremdes einblenden.
+ */
+function fetchWindow(from, to) {
+  return { from: addLocalDays(from, -1), to: addLocalDays(to, 1) };
+}
+
 async function loadRange(from, to) {
-  const calPath = `/calendar?from=${from}&to=${to}`;
+  const win     = fetchWindow(from, to);
+  const calPath = `/calendar?from=${win.from}&to=${win.to}`;
   try {
     const [evRes, taskRes, holRes] = await Promise.all([
       api.get(calPath),
@@ -941,7 +1017,8 @@ async function loadRange(from, to) {
 async function reloadCalendarEventsOnly() {
   if (!state.rangeFrom || !state.rangeTo) return;
   try {
-    const res = await api.get(`/calendar?from=${state.rangeFrom}&to=${state.rangeTo}`);
+    const win = fetchWindow(state.rangeFrom, state.rangeTo);
+    const res = await api.get(`/calendar?from=${win.from}&to=${win.to}`);
     state.events = (res.data ?? []).map(localizeBirthdayEvent);
   } catch (err) {
     console.error('[Calendar] reloadCalendarEventsOnly Fehler:', err);
@@ -1044,6 +1121,7 @@ export async function render(container, { user }) {
   state.documentUploadBackend = documentOptionsRes.data?.active_upload_backend ?? 'local';
   state.layerHolidays = localStorage.getItem(LAYER_HOLIDAYS_KEY) !== 'false';
   state.layerSchool   = localStorage.getItem(LAYER_SCHOOL_KEY)   !== 'false';
+  state.layerBirthdays = localStorage.getItem(LAYER_BIRTHDAYS_KEY) !== 'false';
   state.currentUserId = user?.id ?? null;
   state.assignedToMe  = localStorage.getItem(ASSIGNED_TO_ME_KEY) === '1';
 
@@ -1084,7 +1162,13 @@ function renderToolbar() {
   const showHolidayToggle = hp.holiday_show_public;
   const showSchoolToggle  = hp.holiday_show_school;
 
-  const holidayToggleHtml = (showHolidayToggle || showSchoolToggle) ? `
+  // Der Geburtstags-Schalter erscheint nur, wenn im geladenen Bereich wirklich
+  // Geburtstage liegen - oder wenn die Ebene aus ist, denn sonst gaebe es keinen
+  // Weg zurueck: ohne sichtbare Geburtstage verschwaende der Knopf, der sie
+  // wieder einschaltet.
+  const showBirthdayToggle = hasBirthdayEvents() || !state.layerBirthdays;
+
+  const holidayToggleHtml = (showHolidayToggle || showSchoolToggle || showBirthdayToggle) ? `
     <div class="cal-toolbar__layers">
       ${showHolidayToggle ? `
         <button class="cal-toolbar__layer-btn ${state.layerHolidays ? 'cal-toolbar__layer-btn--active' : ''}"
@@ -1102,6 +1186,15 @@ function renderToolbar() {
                 style="--layer-color:${esc(hp.holiday_school_color ?? '#34C759')}">
           <span class="cal-toolbar__layer-dot"></span>
           <span>${t('calendar.toggleSchool')}</span>
+        </button>
+      ` : ''}
+      ${showBirthdayToggle ? `
+        <button class="cal-toolbar__layer-btn ${state.layerBirthdays ? 'cal-toolbar__layer-btn--active' : ''}"
+                id="cal-layer-birthdays" data-layer="birthdays"
+                title="${t('calendar.toggleBirthdays')}"
+                style="--layer-color:var(--color-accent)">
+          <span class="cal-toolbar__layer-dot"></span>
+          <span>${t('calendar.toggleBirthdays')}</span>
         </button>
       ` : ''}
     </div>
@@ -1185,6 +1278,10 @@ function renderToolbar() {
         state.layerSchool = !state.layerSchool;
         localStorage.setItem(LAYER_SCHOOL_KEY, state.layerSchool);
         btn.classList.toggle('cal-toolbar__layer-btn--active', state.layerSchool);
+      } else if (layer === 'birthdays') {
+        state.layerBirthdays = !state.layerBirthdays;
+        localStorage.setItem(LAYER_BIRTHDAYS_KEY, state.layerBirthdays);
+        btn.classList.toggle('cal-toolbar__layer-btn--active', state.layerBirthdays);
       }
       renderView();
     });
@@ -1456,7 +1553,7 @@ function renderMonthView(container) {
       <div class="month-weekdays">
         ${weekdayOrder(state.weekStart).map((idx) => `<div class="month-weekday">${DAY_NAMES_SHORT()[idx]}</div>`).join('')}
       </div>
-      <div class="month-grid" id="month-grid">
+      <div class="month-grid page-scrollport" id="month-grid">
         ${days.map(({ date, inMonth }) => renderMonthDay(date, inMonth)).join('')}
       </div>
     </div>
@@ -1509,16 +1606,27 @@ function renderMonthView(container) {
   _monthGridResizeObserver.observe(grid);
 }
 
+/**
+ * Klassen einer Monatszelle - eigene Funktion, weil hier der Wochentag über den
+ * Tag selbst entschieden wird und nicht über seine Spalte im Raster. Die
+ * Wochenend-Tönung hing früher an `:nth-child(7n)`/`7n-1` im CSS, was nur bei
+ * Wochenstart Montag Sa/So traf: bei Sonntag-Start färbte sie Fr/Sa (#780).
+ */
+function monthDayClasses(date, inMonth, todayKey = state.today) {
+  return [
+    'month-day',
+    !inMonth            ? 'month-day--outside' : '',
+    date === todayKey   ? 'month-day--today'   : '',
+    isWeekendKey(date)  ? 'month-day--weekend' : '',
+  ].filter(Boolean).join(' ');
+}
+
 function renderMonthDay(date, inMonth) {
   const evs      = eventsOnDay(date);
   const dayTasks = tasksOnDay(date);
   const dayHols  = holidaysOnDay(date);
   const isToday  = date === state.today;
-  const classes  = [
-    'month-day',
-    !inMonth ? 'month-day--outside' : '',
-    isToday  ? 'month-day--today' : '',
-  ].filter(Boolean).join(' ');
+  const classes  = monthDayClasses(date, inMonth);
 
   // Alle Chips (Feiertagsband, Termine, Aufgaben) bis zu einem großzügigen Puffer
   // ins DOM rendern; welche sichtbar bleiben, entscheidet fitMonthDayCells aus der
@@ -1628,7 +1736,7 @@ function renderWeekView(container) {
           </div>
         `).join('')}
       </div>
-      <div class="week-view__scroll" id="week-scroll">
+      <div class="week-view__scroll page-scrollport" id="week-scroll">
         <div class="week-view__body">
           <div class="week-view__times">
             ${Array.from({ length: 24 }, (_, h) => `
@@ -1853,7 +1961,7 @@ function renderDayView(container) {
           ${tasksOnDay(state.cursor).map(renderTaskChip).join('')}
         </div>
       </div>` : ''}
-      <div class="day-view__scroll" id="day-scroll">
+      <div class="day-view__scroll page-scrollport" id="day-scroll">
         <div class="day-view__body">
           <div class="day-view__times">
             ${Array.from({ length: 24 }, (_, h) => `
@@ -1962,7 +2070,7 @@ function renderAgendaView(container) {
 
   container.replaceChildren();
   container.insertAdjacentHTML('beforeend', `
-    <div class="agenda-view" id="agenda-view">
+    <div class="agenda-view page-scrollport" id="agenda-view">
       ${groups.length === 0
         ? `<div class="empty-state">
              <i data-lucide="calendar-plus" class="empty-state__icon" aria-hidden="true"></i>
@@ -2196,7 +2304,7 @@ function renderCalendarSearchResults(body) {
   }
 
   body.insertAdjacentHTML('beforeend', `
-    <div class="agenda-view cal-search-results" id="cal-search-results">
+    <div class="agenda-view page-scrollport cal-search-results" id="cal-search-results">
       <p class="cal-search-results__count" aria-hidden="true">${esc(calendarSearchCountLabel())}</p>
       ${groups.map(({ date, events }) => `
         <div class="agenda-day" data-date="${esc(date)}">
@@ -2256,11 +2364,14 @@ async function openFoundEvent(ev) {
 }
 
 export const __test = {
+  fetchWindow,
+  isVisibleLayer,
   normalizeCalendarView,
   defaultCalendarViewFromState,
   newEventDefaultDate,
   filterTasksForCalendar,
   tasksOnDay,
+  eventEndDate,
   isMultiDayEvent,
   isAllDayLike,
   agendaSegmentKind,
@@ -2271,6 +2382,7 @@ export const __test = {
   attachmentUrls,
   clickedTime,
   hourOffset,
+  monthDayClasses,
 };
 
 function renderAgendaEvent(ev, dayStr) {
@@ -2413,6 +2525,10 @@ function renderEventDetail(ev, reminders = []) {
       value: reminderSummary(ev, reminders),
     },
     visibilityRow(ev.visibility),
+    // Nur wenn markiert (#647): eine Zeile „Countdown: nein" an jedem Termin
+    // wäre ein Feld, das die Leseansicht erklärt statt sie zu beantworten. Die
+    // Detailansicht lässt leere Werte ohnehin weg.
+    { icon: 'hourglass', label: t('dashboard.countdownTitle'), value: ev.countdown ? t('calendar.countdownDetail') : '' },
     {
       icon: 'align-left',
       label: t('calendar.descriptionLabel'),
@@ -2720,10 +2836,14 @@ async function loadSyncTargets(selectElement, currentEvent = null) {
   // sind admin-only und lieferten Familienmitgliedern nur 403 - übrig blieb
   // "Lokal speichern". /sync-targets liefert bereits gefiltert (aktiviert +
   // beschreibbar) und ohne Zugangsdaten.
-  let targets = { google: [], caldav: [] };
+  let targets = { google: [], caldav: [], outlook: [] };
   try {
     const res = await api.get('/calendar/sync-targets');
-    targets = { google: res.data?.google || [], caldav: res.data?.caldav || [] };
+    targets = {
+      google: res.data?.google || [],
+      caldav: res.data?.caldav || [],
+      outlook: res.data?.outlook || [],
+    };
   } catch (err) {
     console.warn('Failed to load sync targets:', err);
   }
@@ -2758,6 +2878,22 @@ async function loadSyncTargets(selectElement, currentEvent = null) {
     caldavGroup.appendChild(option);
   }
 
+  // Outlook-Kalender nach Konto gruppieren (gleiche Grammatik wie CalDAV).
+  let outlookGroup = null;
+  let outlookGroupAccountId = null;
+  for (const cal of targets.outlook) {
+    if (outlookGroupAccountId !== cal.accountId) {
+      outlookGroup = document.createElement('optgroup');
+      outlookGroup.label = `${t('calendar.syncTargetOutlookGroup')} · ${cal.accountName}`;
+      outlookGroupAccountId = cal.accountId;
+      selectElement.appendChild(outlookGroup);
+    }
+    const option = document.createElement('option');
+    option.value = outlookTargetValue(cal.accountId, cal.calendarId);
+    option.textContent = cal.calendarName || cal.calendarId;
+    outlookGroup.appendChild(option);
+  }
+
   // Pre-select the editing event's existing target
   if (currentEvent?.target_google_calendar_id) {
     const value = googleTargetValue(currentEvent.target_google_calendar_id);
@@ -2780,6 +2916,8 @@ async function loadSyncTargets(selectElement, currentEvent = null) {
     selectElement.value = value;
   } else if (currentEvent?.target_caldav_account_id && currentEvent?.target_caldav_calendar_url) {
     selectElement.value = caldavTargetValue(currentEvent.target_caldav_account_id, currentEvent.target_caldav_calendar_url);
+  } else if (currentEvent?.target_outlook_account_id && currentEvent?.target_outlook_calendar_id) {
+    selectElement.value = outlookTargetValue(currentEvent.target_outlook_account_id, currentEvent.target_outlook_calendar_id);
   } else if (!currentEvent) {
     // Nur für NEUE Termine (#620). Ein bestehender Termin behält sein Ziel, auch
     // wenn es "Lokal" ist - sonst würde das Öffnen und Speichern eines lokalen
@@ -3035,7 +3173,17 @@ function wireEventForm(panel, { mode, event = null, reminder = null }) {
   // Load unified sync targets (Google + CalDAV)
   const syncTargetSelect = panel.querySelector('#event-sync-target');
   if (syncTargetSelect) {
-    loadSyncTargets(syncTargetSelect, event);
+    // Outlook ist der einzige One-way-Push: Aenderungen in Outlook werden beim
+    // naechsten Sync ueberschrieben. Der Hinweis gehoert an die Stelle der
+    // Zielwahl, nicht nur in die Sync-Einstellungen. Erst nach loadSyncTargets
+    // pruefen - die Vorauswahl eines bestehenden Outlook-Ziels setzt das select
+    // asynchron.
+    const outlookHint = panel.querySelector('#event-sync-target-outlook-hint');
+    const syncOutlookHint = () => {
+      if (outlookHint) outlookHint.hidden = !syncTargetSelect.value.startsWith('outlook:');
+    };
+    syncTargetSelect.addEventListener('change', syncOutlookHint);
+    loadSyncTargets(syncTargetSelect, event).then(syncOutlookHint);
   }
 
   // Enddatum dem Startdatum nachführen, damit das Verschieben des Starts
@@ -3186,6 +3334,7 @@ function buildEventModalContent({ mode, event, date, reminder = null, time = nul
         <option value="">${t('calendar.syncTargetLocal')}</option>
       </select>
       <small class="form-hint">${t('calendar.syncTargetHint')}</small>
+      <small class="form-hint" id="event-sync-target-outlook-hint" hidden>${t('settings.outlookPushHint')}</small>
     </div>
 
     <div class="form-group">
@@ -3312,6 +3461,29 @@ function buildEventModalContent({ mode, event, date, reminder = null, time = nul
       <p class="form-hint field-hint--warn" id="modal-visibility-warning" role="status" hidden><i data-lucide="alert-triangle" aria-hidden="true"></i><span>${t('common.visibility.assigneesNobodyHint')}</span></p>
     </div>` : ''}
 
+    <!-- #647: der Schalter, den @Kyrodan beschrieben hat - „einen Termin als
+         Countdown markieren" statt eines zweiten Systems daneben. Er steht im
+         Hauptbereich und nicht hinter „Weitere Einstellungen", weil er der
+         einzige Weg zu diesem Feature ist: hinter dem Aufklapper gaebe es die
+         Kachel fuer niemanden, der nicht danach sucht. -->
+    <div class="form-group">
+      <label class="toggle">
+        <input type="checkbox" id="modal-countdown" aria-describedby="modal-countdown-hint"
+               ${isEdit && event.countdown ? 'checked' : ''}>
+        <span class="toggle__track"></span>
+        <span>${t('calendar.countdownToggle')}</span>
+      </label>
+      <!-- cal-field-hint UND NICHT form-hint: die Regel fuer form-hint steht in
+           settings.css, und der Router laedt genau ein Page-CSS pro Seite - auf
+           /calendar ist sie schlicht nicht geladen. Der Hinweis rendert dort in
+           16px voller Primaertinte und war damit lauter als der Schalter, zu dem
+           er gehoert (gemessen 4 Zeilen / 94px).
+           Die uebrigen fuenf form-hint dieses Dialogs haben dasselbe Problem und
+           app-weit noch 34 weitere in elf Modulen - das ist ein eigener Umzug
+           und keine Beifang-Aenderung dieses Features. -->
+      <p class="cal-field-hint" id="modal-countdown-hint">${t('calendar.countdownHint')}</p>
+    </div>
+
     ${advancedSection(advancedFieldsHtml, { open: advancedFieldsOpen })}
 
     ${renderRRuleFields('event', isEdit ? event.recurrence_rule : null, { allowCount: true })}
@@ -3414,7 +3586,7 @@ async function saveEvent(overlay, mode, event, existingReminder = null, attachme
     const attachmentFile = overlay.querySelector('#modal-attachment')?.files?.[0];
     let attachmentPayload = null;
     if (attachmentFile) {
-      if (attachmentFile.size > MAX_ATTACHMENT_BYTES) throw new Error(t('calendar.attachmentTooLarge'));
+      if (attachmentFile.size > maxUploadBytes()) throw new Error(t('calendar.attachmentTooLarge', { size: maxUploadMb() }));
       attachmentPayload = {
         name: attachmentFile.name,
         mime: attachmentFile.type || 'application/octet-stream',
@@ -3423,11 +3595,13 @@ async function saveEvent(overlay, mode, event, existingReminder = null, attachme
       };
     }
 
-    // Extract sync target (unified Google + CalDAV picker)
+    // Extract sync target (unified Google + CalDAV + Outlook picker)
     const syncTargetValue = overlay.querySelector('#event-sync-target')?.value || '';
     let target_google_calendar_id = null;
     let target_caldav_account_id = null;
     let target_caldav_calendar_url = null;
+    let target_outlook_account_id = null;
+    let target_outlook_calendar_id = null;
 
     if (syncTargetValue.startsWith('google:')) {
       target_google_calendar_id = syncTargetValue.slice('google:'.length);
@@ -3437,6 +3611,12 @@ async function saveEvent(overlay, mode, event, existingReminder = null, attachme
         target_caldav_account_id = parseInt(accountId, 10);
         target_caldav_calendar_url = calendarUrl;
       }
+    } else if (syncTargetValue.startsWith('outlook:')) {
+      const [accountId, calendarId] = syncTargetValue.slice('outlook:'.length).split('|');
+      if (accountId && calendarId) {
+        target_outlook_account_id = parseInt(accountId, 10);
+        target_outlook_calendar_id = calendarId;
+      }
     }
 
     const body = {
@@ -3444,10 +3624,13 @@ async function saveEvent(overlay, mode, event, existingReminder = null, attachme
       all_day: allday ? 1 : 0,
       location, color, icon, assigned_to,
       visibility: overlay.querySelector('#modal-visibility')?.value || 'all',
+      countdown: overlay.querySelector('#modal-countdown')?.checked ? 1 : 0,
       recurrence_rule: rrule.recurrence_rule,
       target_google_calendar_id,
       target_caldav_account_id,
       target_caldav_calendar_url,
+      target_outlook_account_id,
+      target_outlook_calendar_id,
     };
     if (attachmentPayload) {
       Object.assign(body, {

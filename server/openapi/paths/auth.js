@@ -52,6 +52,34 @@ export function authPaths() {
         },
       }),
     },
+    '/api/v1/auth/oidc/link': {
+      get: op({
+        summary: 'Get OIDC link status of the current account',
+        tag: 'Auth',
+        description: 'Whether OIDC is configured, whether this account is linked, which provider it is linked to, and whether the link may be removed. Removal is refused while the link is the only way into the account (an account created through SSO carries no password).',
+      }),
+      delete: op({
+        summary: 'Remove the OIDC link of the current account',
+        tag: 'Auth',
+        stateChanging: true,
+        responses: {
+          409: { description: 'Not linked, or the account has no password and would lose its only way in' },
+        },
+      }),
+    },
+    '/api/v1/auth/oidc/link/start': {
+      post: op({
+        summary: 'Start linking an OIDC account to the current account',
+        tag: 'Auth',
+        stateChanging: true,
+        description: 'Returns the provider authorization URL for the browser to follow. Deliberately a POST with CSRF protection: as a plain link, a forged request could attach an attacker-owned identity to the signed-in session.',
+        responses: {
+          200: { description: 'Authorization URL to follow' },
+          404: { description: 'OIDC is not configured' },
+          409: { description: 'Account is already linked' },
+        },
+      }),
+    },
     '/api/v1/auth/setup': {
       post: op({
         summary: 'Initial setup: create first admin',

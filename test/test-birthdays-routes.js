@@ -177,6 +177,47 @@ test('GET /upcoming: ungültiges limit → Default 5', async () => {
 });
 
 // --------------------------------------------------------------------------
+// Identitätsfarbe des verknüpften Mitglieds
+// --------------------------------------------------------------------------
+/**
+ * REGEL: eine Person zeigt sich überall in ihrer Identitätsfarbe (DESIGN.md,
+ * Colors: die Identitätsfarben-Regel).
+ *
+ * `SELECT * FROM birthdays` lieferte `family_user_id`, aber nicht die Farbe
+ * dahinter - und damit saß jedes Haushaltsmitglied in der Geburtstagsliste auf
+ * derselben neutralen Scheibe wie eine Tante ohne Zugang, während dieselbe
+ * Person auf der Übersichtskachel ihre eigene trug. Der Join gehört zu ALLEN
+ * drei Lesewegen (Liste, /upcoming, Einzelabruf nach Schreiben), sonst kommt
+ * die Lücke an einem davon zurück.
+ */
+test('GET /, /upcoming und PUT liefern Farbe und Namen des verknüpften Mitglieds', async () => {
+  const member = db.prepare(
+    `INSERT INTO users (username, display_name, password_hash, role, avatar_color)
+     VALUES ('emma','Emma Johnson','x','member','#DB2777')`,
+  ).run().lastInsertRowid;
+  const created = await call('POST', '/', { name: 'Emma', birth_date: '2015-03-04' });
+  db.prepare('UPDATE birthdays SET family_user_id = ? WHERE id = ?').run(member, created.body.data.id);
+
+  const inList = (res) => res.body.data.find((b) => b.id === created.body.data.id);
+
+  const list = await call('GET', '/');
+  assert.equal(inList(list).family_avatar_color, '#DB2777');
+  assert.equal(inList(list).family_display_name, 'Emma Johnson');
+
+  const upcoming = await call('GET', '/upcoming?limit=50');
+  assert.equal(inList(upcoming).family_avatar_color, '#DB2777');
+
+  const updated = await call('PUT', `/${created.body.data.id}`, { notes: 'mag Kuchen' });
+  assert.equal(updated.body.data.family_avatar_color, '#DB2777');
+
+  // Und die Gegenrichtung: wer zu niemandem gehört, bekommt keine Farbe
+  // angedichtet - er ist neutral, nicht modul-getönt.
+  const loose = await call('POST', '/', { name: 'Tante Claire', birth_date: '1989-08-30' });
+  const after = await call('GET', '/');
+  assert.equal(after.body.data.find((b) => b.id === loose.body.data.id).family_avatar_color, null);
+});
+
+// --------------------------------------------------------------------------
 // PUT /:id (404, Validierung, partielles COALESCE-Update)
 // --------------------------------------------------------------------------
 test('PUT /:id: nicht existent → 404', async () => {

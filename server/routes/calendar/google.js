@@ -211,12 +211,33 @@ router.patch('/external-calendars', requireAdmin, (req, res) => {
 /**
  * DELETE /api/v1/calendar/google/disconnect
  * Admin only. Tokens löschen und Verbindung trennen.
- * Response: { ok: true }
+ * Query: ?deleteEvents=true nimmt die gespiegelten Termine mit (#820).
+ * Response: { ok: true, removed: number }
  */
 router.delete('/google/disconnect', requireAdmin, (req, res) => {
   try {
-    googleCalendar.disconnect();
-    res.json({ ok: true });
+    const { removed } = googleCalendar.disconnect({
+      deleteEvents: req.query.deleteEvents === 'true',
+    });
+    res.json({ ok: true, removed });
+  } catch (err) {
+    log.error('', err);
+    res.status(500).json({ error: 'Interner Fehler', code: 500 });
+  }
+});
+
+/**
+ * DELETE /api/v1/calendar/google/mirrored-events
+ * Admin only. Entfernt die lokal gespiegelten Google-Termine, ohne die Verbindung
+ * anzufassen (#820). Der Weg für alle, die schon getrennt haben: dort ist der
+ * Rückstand sonst nur noch von Hand und Termin für Termin zu räumen.
+ *
+ * Der Google-Kalender bleibt unberührt - geräumt wird die lokale Kopie.
+ * Response: { data: { removed: number } }
+ */
+router.delete('/google/mirrored-events', requireAdmin, (req, res) => {
+  try {
+    res.json({ data: { removed: googleCalendar.clearMirroredEvents() } });
   } catch (err) {
     log.error('', err);
     res.status(500).json({ error: 'Interner Fehler', code: 500 });

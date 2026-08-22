@@ -4,6 +4,12 @@
  *        erfolgt über die bestehenden Bearer-API-Tokens (siehe server/auth.js);
  *        der Router wird in index.js hinter `requireAuth` gemountet, daher greift
  *        der CSRF-Bypass für `api_token` automatisch.
+ *
+ *        Hier wird der Akteur für die Tool-Schicht zusammengesetzt. Das ist
+ *        keine Formsache: die Kern-Tools laufen in-process gegen SQLite und
+ *        sehen die /api/v1-Middleware NIE. Was diese Middleware an Rechten
+ *        prüft, muss deshalb im Akteur mitreisen - Token-Scopes, Modulrechte
+ *        des Nutzers (#467/#823) und der Split-Guest-Status (#823).
  * Abhängigkeiten: express, server/db.js, server/logger.js, server/mcp/protocol.js
  */
 
@@ -15,6 +21,20 @@ import { handleMcpRequest, PARSE_ERROR } from './protocol.js';
 const log = createLogger('MCP');
 const router = express.Router();
 
+// Gast-Konto für geteilte Ausgaben? Unter /api/v1 sperrt ein eigener Guard diese
+// Konten auf /split-expenses ein; /mcp liegt bewusst ausserhalb davon und hatte
+// die Sperre damit gar nicht. Fehler beim Lesen zählen als Gast: im Zweifel
+// zumachen, nicht aufmachen.
+function isSplitGuest(userId) {
+  if (userId == null) return true;
+  try {
+    return Boolean(db.get().prepare('SELECT 1 FROM split_expense_guest_users WHERE user_id = ?').get(userId));
+  } catch (err) {
+    log.error('Split-guest lookup failed:', err.message);
+    return true;
+  }
+}
+
 // POST: einzelne JSON-RPC-Nachricht → einzelne JSON-Antwort (oder 202 bei Notification).
 router.post('/', async (req, res) => {
   try {
@@ -24,7 +44,14 @@ router.post('/', async (req, res) => {
         error: { code: PARSE_ERROR, message: 'Parse error: expected a JSON-RPC 2.0 body.' },
       });
     }
-    const actor = { id: req.authUserId, role: req.authRole, scopes: req.authScopes ?? null };
+    const actor = {
+      id: req.authUserId,
+      role: req.authRole,
+      scopes: req.authScopes ?? null,
+      // Von requireAuth aufgelöst: null = Admin oder unbeschränkt.
+      moduleAccess: req.sessionModuleAccess ?? null,
+      splitGuest: isSplitGuest(req.authUserId),
+    };
     const response = await handleMcpRequest(
       db.get(),
       actor,

@@ -31,6 +31,7 @@ import {
   testConnection as testStorageConnection,
   verifyExistingWebdavDocument,
 } from '../services/document-storage.js';
+import { MAX_UPLOAD_BYTES, MAX_UPLOAD_MB } from '../utils/upload-limit.js';
 
 let dmsAdapterFactory = defaultGetDmsAdapter;
 export function _setDmsAdapterFactory(fn) { dmsAdapterFactory = fn || defaultGetDmsAdapter; }
@@ -47,7 +48,7 @@ const router = express.Router();
 const CATEGORIES = ['medical', 'school', 'identity', 'insurance', 'finance', 'home', 'vehicle', 'legal', 'travel', 'pets', 'warranty', 'taxes', 'work', 'other'];
 const VISIBILITIES = ['family', 'restricted', 'private'];
 const STATUSES = ['active', 'archived'];
-const MAX_FILE_BYTES = 5 * 1024 * 1024;
+const MAX_FILE_BYTES = MAX_UPLOAD_BYTES;
 const ALLOWED_MIME = new Set([
   'application/pdf',
   'image/png',
@@ -130,7 +131,7 @@ function parseDataUrl(dataUrl) {
   const base64 = match[2].replace(/\s/g, '');
   const buffer = Buffer.from(base64, 'base64');
   if (!buffer.length) return { error: 'File content is empty.' };
-  if (buffer.length > MAX_FILE_BYTES) return { error: 'File may be at most 5 MB.' };
+  if (buffer.length > MAX_FILE_BYTES) return { error: `File may be at most ${MAX_UPLOAD_MB} MB.` };
   return { mime, base64, size: buffer.length, buffer };
 }
 

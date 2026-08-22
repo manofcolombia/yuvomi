@@ -424,9 +424,22 @@ test('keine Datenreihe deckt sich mit dem Modulton einer Seite, die Diagramme ze
   assert.ok(checked >= 14, `Nur ${checked} Paare gemessen - erwartet werden 7 Serien x 2 Themes je Modul.`);
 });
 
-test('die Trendkurve beschriftet Skala und Zeitraum', () => {
-  assert.match(stats, /class="budget-stats__axis-max"/);
-  assert.match(stats, /class="budget-stats__axis-x"/);
+test('die Trendkurve beschriftet Skala und Zeitraum - IM Bild', () => {
+  // Die Zusage ist dieselbe geblieben, ihr Ort nicht. Hier stand die Pruefung
+  // auf `budget-stats__axis-max` und `__axis-x`, also auf Beschriftung
+  // AUSSERHALB des SVG. Die lag dort, weil `preserveAspectRatio="none"` jeden
+  // Text im Bild verzerrt haette - und genau diese Kausalitaet war verkehrt
+  // herum: ohne feste Raender gibt es keinen Platz fuer eine Achse im Bild.
+  // Draussen verschiebt sie sich gegen ihre eigenen Gitterlinien, sobald das
+  // Diagramm skaliert (gemessen: 600x180-viewBox auf 720x216 gestreckt).
+  //
+  // Seit der Extraktion nach `utils/chart.js` bringt die geteilte Geometrie
+  // ihren linken Gutter mit. Geprueft wird deshalb: die Achse kommt aus der
+  // geteilten Quelle, und das Streckungs-Attribut ist weg.
+  assert.match(stats, /chartGridMarkup\(0, max,/, 'die Werteachse kommt aus der geteilten Geometrie');
+  assert.match(stats, /chartXLabelsMarkup\(/, 'die Zeitachse kommt aus der geteilten Geometrie');
+  assert.doesNotMatch(stats, /preserveAspectRatio="none"/, 'eine Kurve mit Achse darf nicht gestreckt werden - der Text im Bild verzerrt mit');
+  assert.doesNotMatch(stats, /budget-stats__axis-(max|mid|x)/, 'die Achse steht im SVG, nicht als HTML daneben');
 });
 
 test('die Trendkurve macht Einzelwerte ohne Zeigegerät ablesbar', () => {

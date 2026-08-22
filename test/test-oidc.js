@@ -514,6 +514,127 @@ test('setzt beim Linking ebenfalls den iss-Claim', () => {
   assert(user.oidc_provider === 'https://real-idp.example.com/', `Falscher oidc_provider: ${user.oidc_provider}`);
 });
 
+// ─── Verknuepfen und Loesen (#832) ────────────────────────────────────────────
+//
+// Ein gleicher Benutzername verknuepft bewusst NICHT - sonst naehme sich jeder,
+// der sich im IdP "admin" nennt, das lokale Admin-Konto. Wer beide Konten
+// wirklich besitzt, bekam damit aber ein zweites Konto (test1-1) und seine
+// Daten blieben im ersten. Diesen Weg geht der Nutzer deshalb selbst und
+// angemeldet.
+
+console.log('\n[OIDC-Test] Verknuepfen und Loesen\n');
+
+const { linkOidcAccount, unlinkOidcAccount } = await import('../server/auth.js');
+
+/** Lokales Konto mit echtem Passwort-Hash. */
+function addLocalUser(db, username) {
+  const { lastInsertRowid } = db.prepare(
+    "INSERT INTO users (username, display_name, password_hash) VALUES (?, ?, '$2b$12$fakehash')",
+  ).run(username, username);
+  return Number(lastInsertRowid);
+}
+
+const subOf = (db, id) => db.prepare('SELECT oidc_sub FROM users WHERE id = ?').get(id)?.oidc_sub ?? null;
+
+test('verknuepft ein angemeldetes Konto mit dem validierten sub', () => {
+  const db = buildOidcTestDb();
+  const userId = addLocalUser(db, 'test1');
+
+  const result = linkOidcAccount(db, userId, { sub: 'authentik-sub-1', iss: 'https://idp.example/' });
+
+  assert(result.ok === true, 'Verknuepfung muss durchgehen');
+  assert(subOf(db, userId) === 'authentik-sub-1', 'sub muss am Konto stehen');
+  assert(
+    db.prepare('SELECT oidc_provider FROM users WHERE id = ?').get(userId).oidc_provider === 'https://idp.example/',
+    'Der Issuer wird als Provider festgehalten',
+  );
+});
+
+test('legt dabei kein zweites Konto an', () => {
+  const db = buildOidcTestDb();
+  const userId = addLocalUser(db, 'test1');
+  linkOidcAccount(db, userId, { sub: 'authentik-sub-1', iss: 'https://idp.example/' });
+
+  // Genau das war der Fehler in #832: die erste SSO-Anmeldung legte "test1-1" an.
+  const count = db.prepare('SELECT COUNT(*) AS n FROM users').get().n;
+  assert(count === 1, `Erwartet 1 Konto, gefunden ${count}`);
+
+  // Und ab jetzt findet die Anmeldung genau dieses Konto.
+  const found = findOrCreateOidcUser(db, { sub: 'authentik-sub-1', preferred_username: 'test1' });
+  assert(found.id === userId, 'Die SSO-Anmeldung landet im bestehenden Konto');
+  assert(db.prepare('SELECT COUNT(*) AS n FROM users').get().n === 1, 'Auch danach bleibt es ein Konto');
+});
+
+test('ein fremd vergebener sub wird abgewiesen', () => {
+  // Sonst haetten zwei Konten denselben Identitaetsanker und die
+  // Zeilenreihenfolge entschiede, wer sich damit anmeldet.
+  const db = buildOidcTestDb();
+  const owner  = addLocalUser(db, 'owner');
+  const second = addLocalUser(db, 'second');
+  linkOidcAccount(db, owner, { sub: 'shared-sub' });
+
+  const result = linkOidcAccount(db, second, { sub: 'shared-sub' });
+
+  assert(result.ok === false && result.reason === 'sub_taken', `Erwartet sub_taken, war ${result.reason}`);
+  assert(subOf(db, second) === null, 'Das zweite Konto bleibt unverknuepft');
+  assert(subOf(db, owner) === 'shared-sub', 'Und das erste behaelt seine Verknuepfung');
+});
+
+test('ein bereits verknuepftes Konto wechselt nicht still den Zugang', () => {
+  const db = buildOidcTestDb();
+  const userId = addLocalUser(db, 'test1');
+  linkOidcAccount(db, userId, { sub: 'first-sub' });
+
+  const result = linkOidcAccount(db, userId, { sub: 'other-sub' });
+
+  assert(result.ok === false && result.reason === 'already_linked', `Erwartet already_linked, war ${result.reason}`);
+  assert(subOf(db, userId) === 'first-sub', 'Der bestehende sub bleibt stehen');
+});
+
+test('dieselbe Verknuepfung ein zweites Mal ist folgenlos', () => {
+  const db = buildOidcTestDb();
+  const userId = addLocalUser(db, 'test1');
+  linkOidcAccount(db, userId, { sub: 'same-sub' });
+
+  assert(linkOidcAccount(db, userId, { sub: 'same-sub' }).ok === true, 'Idempotent, kein Fehler');
+});
+
+test('ein verschwundenes Konto verknuepft nichts', () => {
+  const db = buildOidcTestDb();
+  const result = linkOidcAccount(db, 999, { sub: 'ghost-sub' });
+  assert(result.ok === false && result.reason === 'user_gone', `Erwartet user_gone, war ${result.reason}`);
+});
+
+test('loest eine Verknuepfung, wenn ein Passwort gesetzt ist', () => {
+  const db = buildOidcTestDb();
+  const userId = addLocalUser(db, 'test1');
+  linkOidcAccount(db, userId, { sub: 'authentik-sub-1', iss: 'https://idp.example/' });
+
+  assert(unlinkOidcAccount(db, userId).ok === true, 'Loesen muss durchgehen');
+  const row = db.prepare('SELECT oidc_sub, oidc_provider FROM users WHERE id = ?').get(userId);
+  assert(row.oidc_sub === null && row.oidc_provider === null, 'Beide Spalten werden geraeumt');
+});
+
+test('ein per SSO angelegtes Konto darf sich nicht aussperren', () => {
+  // Es traegt kein Passwort, sondern den Platzhalter - ohne OIDC kaeme dort
+  // niemand mehr hinein.
+  const db = buildOidcTestDb();
+  const user = findOrCreateOidcUser(db, { sub: 'sso-only', preferred_username: 'ssouser' });
+  assert(user.password_hash === '$oidc$', 'Vorbedingung: kein echtes Passwort');
+
+  const result = unlinkOidcAccount(db, user.id);
+
+  assert(result.ok === false && result.reason === 'no_password', `Erwartet no_password, war ${result.reason}`);
+  assert(subOf(db, user.id) === 'sso-only', 'Die Verknuepfung bleibt bestehen');
+});
+
+test('ein unverknuepftes Konto hat nichts zu loesen', () => {
+  const db = buildOidcTestDb();
+  const userId = addLocalUser(db, 'test1');
+  const result = unlinkOidcAccount(db, userId);
+  assert(result.ok === false && result.reason === 'not_linked', `Erwartet not_linked, war ${result.reason}`);
+});
+
 // ─── Abschluss ────────────────────────────────────────────────────────────────
 
 console.log(`\n  ${passed} bestanden, ${failed} fehlgeschlagen\n`);

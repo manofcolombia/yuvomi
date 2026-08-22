@@ -38,6 +38,22 @@ export function formatMoney(amount, currency) {
 }
 
 /**
+ * Derselbe Betrag fuer eine WERTEACHSE: ohne Nachkommastellen.
+ *
+ * Eine Achse beschriftet eine Skala, keinen Kontostand - die Cent sind dort
+ * Pseudo-Praezision und kosten den Platz, an dem die Zahl steht. Gemessen:
+ * „5.050,00 €" lief im Trend-Chart des Budgets links aus dem Bild und stand als
+ * „050,00 €" da, also mit dem WICHTIGSTEN Teil abgeschnitten. Dieselbe
+ * Entscheidung trifft health.js seit dem Audit A2-21 fuer seine Ticks
+ * („125,9 mmHg" wurde „126").
+ */
+export function formatMoneyAxis(amount, currency) {
+  return getNumberFormat({
+    style: 'currency', currency, maximumFractionDigits: 0, minimumFractionDigits: 0,
+  }).format(Number(amount) || 0);
+}
+
+/**
  * Nachkommastellen einer Währung: EUR 2, JPY/HUF/VND 0, KWD/BHD 3.
  * Fällt bei fehlendem oder ungültigem ISO-Code auf zwei zurück.
  */

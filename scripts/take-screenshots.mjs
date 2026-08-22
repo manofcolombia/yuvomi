@@ -97,6 +97,17 @@ const MODULES = [
   { path: '/budget',       name: 'budget-loans',         tab: '#budget-tab-loans' },
   { path: '/budget',       name: 'split-expenses',       tab: '#budget-tab-split-expenses' },
   { path: '/documents',    name: 'documents'      },
+  // Achtzehntes Modul (#741). Standardmaessig aus, der Demo-Seed schaltet es ein -
+  // ohne diesen Eintrag beworb die Landingpage ein Modul, das sie nirgends zeigt.
+  //
+  // Nur die Einstiegsansicht: sie traegt die drei Kennzahlen (Posten, Gesamtwert,
+  // Handlungsbedarf) und ist damit die, die auf Daumennagelgroesse noch etwas
+  // sagt. Eine zweite Aufnahme der aufgeklappten Kategorie gab es kurzzeitig,
+  // sie wurde von keiner Seite referenziert - und unreferenzierte Aufnahmen sind
+  // genau der Bestand, den diese Runde abgebaut hat. Wieder aufnehmen mit:
+  // { path: '/inventory', name: 'inventory-items',
+  //   tab: '[data-category="electronics"] [data-action="open-category"]' },
+  { path: '/inventory',    name: 'inventory'      },
   { path: '/housekeeping', name: 'housekeeping'          },
   { path: '/housekeeping', name: 'housekeeping-tasks',   tab: '.housekeeping-tabs [data-tab-id="tasks"]' },
   { path: '/housekeeping', name: 'housekeeping-reports', tab: '.housekeeping-tabs [data-tab-id="reports"]' },

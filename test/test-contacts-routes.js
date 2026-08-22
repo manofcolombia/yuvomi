@@ -273,6 +273,41 @@ try {
   });
 
   // ------------------------------------------------------------------
+  // Identitaetsfarbe eines verknuepften Mitglieds (Vollton-Regel, DESIGN.md)
+  //
+  // Die Kontaktzeile zeigte fuer JEDES Mitglied dieselbe Scheibe im Modulton,
+  // waehrend dieselben Menschen auf dem Dashboard, im Kalender und in den
+  // Aufgaben ihre eigene Farbe tragen. Sie konnte gar nicht anders: die Antwort
+  // fuehrte nur `family_user_id`.
+  //
+  // Geprueft werden LISTE UND DETAIL, weil beide denselben Kontakt liefern -
+  // laege der Join nur in der Liste, spraeche die geoeffnete Karte wieder den
+  // Modulton (die Reichweite einer Korrektur ist nicht ihre Datei).
+  // ------------------------------------------------------------------
+  await asyncTest('Liste und Detail liefern die Identitaet eines verknuepften Mitglieds', async () => {
+    const linkedId = database.prepare(
+      "INSERT INTO contacts (name, category, family_user_id) VALUES ('Mitglied Kontakt', 'misc', ?)"
+    ).run(famUserId).lastInsertRowid;
+
+    const list = await jsend(`${base}`, 'GET');
+    const row = list.body.data.find((c) => c.id === linkedId);
+    assert(row, 'Kontakt steht in der Liste');
+    assert(row.family_avatar_color === '#007AFF', `Liste: Farbe ${row.family_avatar_color}`);
+    assert(row.family_display_name === 'Fam Mitglied', `Liste: Name ${row.family_display_name}`);
+
+    const detail = await jsend(`${base}/${linkedId}`, 'GET');
+    assert(detail.body.data.family_avatar_color === '#007AFF', 'Detail: dieselbe Farbe');
+
+    // Ein Kontakt OHNE Verknuepfung bringt keine fremde Identitaet mit - sonst
+    // wuerde die Marke eine Person behaupten, die es nicht gibt.
+    const plain = list.body.data.find((c) => !c.family_user_id);
+    assert(plain, 'es gibt einen unverknuepften Kontakt');
+    assert(plain.family_avatar_color === null, `unverknuepft: ${plain.family_avatar_color}`);
+
+    database.prepare('DELETE FROM contacts WHERE id = ?').run(linkedId);
+  });
+
+  // ------------------------------------------------------------------
   // DELETE /:id - Familienmitglied-Schutz (403), Erfolg (204), 404
   // ------------------------------------------------------------------
   await asyncTest('DELETE /:id eines Familienmitglied-Kontakts → 403', async () => {

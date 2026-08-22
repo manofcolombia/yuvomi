@@ -14,6 +14,7 @@ import { createLogger } from './logger.js';
 import * as db from './db.js';
 import { router as authRouter, sessionMiddleware, requireAuth, requireAdmin } from './auth.js';
 import { csrfMiddleware } from './middleware/csrf.js';
+import idempotencyMiddleware from './middleware/idempotency.js';
 import { buildOpenApiSpec } from './openapi.js';
 import * as googleCalendar from './services/google-calendar.js';
 import * as appleCalendar from './services/apple-calendar.js';
@@ -22,6 +23,7 @@ import * as icsExport from './services/ics-export.js';
 import * as inventoryDeadlinesIcs from './services/inventory-deadlines-ics.js';
 import * as caldavReminders from './services/caldav-reminders-sync.js';
 import * as caldavSync from './services/caldav-sync.js';
+import * as outlookCalendar from './services/outlook-calendar.js';
 import * as carddavSync from './services/cardav-sync.js';
 import * as holidays from './services/holidays.js';
 import { startScheduler as startBackupScheduler } from './services/backup-scheduler.js';
@@ -69,6 +71,8 @@ import permissionsRouter from './routes/permissions.js';
 import changelogRouter from './routes/changelog.js';
 import mcpRouter from './mcp/server.js';
 import { moduleForPath, requiredAccess, tokenAllows } from './scopes.js';
+import { moduleAccessVerdict, MODULE_ACCESS_DENIED, MODULE_ACCESS_READ_ONLY } from './permissions.js';
+import { BODY_LIMIT, MAX_UPLOAD_BYTES, MAX_UPLOAD_MB } from './utils/upload-limit.js';
 
 const log     = createLogger('Server');
 const logSync = createLogger('Sync');
@@ -129,8 +133,8 @@ app.use(compression());
 // --------------------------------------------------------
 // Request-Parsing
 // --------------------------------------------------------
-app.use(express.json({ limit: '7mb' }));
-app.use(express.urlencoded({ extended: true, limit: '7mb' }));
+app.use(express.json({ limit: BODY_LIMIT }));
+app.use(express.urlencoded({ extended: true, limit: BODY_LIMIT }));
 
 // JSON-Parse-Fehler abfangen (gibt sonst HTML zurück)
 app.use((err, req, res, next) => {
@@ -138,7 +142,7 @@ app.use((err, req, res, next) => {
     return res.status(400).json({ error: 'Invalid JSON in request body.', code: 400 });
   }
   if (err.type === 'entity.too.large') {
-    return res.status(413).json({ error: 'Request body too large (max. 7 MB).', code: 413 });
+    return res.status(413).json({ error: `Request body too large (max. ${MAX_UPLOAD_MB} MB per file).`, code: 413 });
   }
   next(err);
 });
@@ -261,6 +265,10 @@ function buildVersionPayload(includeVersion = false) {
     app_name: appName,
     setup_required: setupRequired,
     password_reset_enabled: passwordResetEnabled,
+    // Nur für Angemeldete: die Oberfläche muss dieselbe Obergrenze nennen und
+    // prüfen, die der Server annimmt (#806). Vor der Anmeldung gibt es nichts
+    // hochzuladen, also auch keinen Grund, die Konfiguration zu verraten.
+    ...(includeVersion ? { max_upload_bytes: MAX_UPLOAD_BYTES } : {}),
   };
 }
 
@@ -388,9 +396,9 @@ app.use('/api/v1', (req, res, next) => {
       || req.path === '/auth/logout'
       || req.path === '/version';
     if (allowed) return next();
-    return res.status(403).json({ error: 'This account can only access Split expenses.', code: 403 });
+    return res.status(403).json({ error: 'This account can only access Shared expenses.', code: 403 });
   } catch {
-    return res.status(403).json({ error: 'This account can only access Split expenses.', code: 403 });
+    return res.status(403).json({ error: 'This account can only access Shared expenses.', code: 403 });
   }
 });
 // Token-Scopes: Nur für Token-Auth relevant. Ein gescoptes Token (scopes !== null)
@@ -411,20 +419,26 @@ app.use('/api/v1', (req, res, next) => {
 // erreichbar, damit die App bedienbar bleibt. Admins haben sessionModuleAccess
 // === null (Bypass), ebenso unbeschränkte Mitglieder (Fast-Path).
 app.use('/api/v1', (req, res, next) => {
-  const access = req.sessionModuleAccess;
-  if (!access) return next();
-  const moduleKey = moduleForPath(req.path);
-  if (!moduleKey || !(moduleKey in access)) return next();
-  const level = access[moduleKey];
-  if (level === 'none') {
+  // Die Regel selbst steht in permissions.js — dieselbe Funktion prüft den
+  // MCP-Endpoint (#823), damit beide Oberflächen nicht auseinanderlaufen.
+  const verdict = moduleAccessVerdict(
+    req.sessionModuleAccess,
+    moduleForPath(req.path),
+    requiredAccess(req.method),
+  );
+  if (verdict === MODULE_ACCESS_DENIED) {
     return res.status(403).json({ error: 'You do not have access to this module.', code: 403 });
   }
-  if (level === 'read' && requiredAccess(req.method) === 'write') {
+  if (verdict === MODULE_ACCESS_READ_ONLY) {
     return res.status(403).json({ error: 'You have read-only access to this module.', code: 403 });
   }
   return next();
 });
 app.use('/api/v1', csrfMiddleware);
+// Retry-Sicherheit für schreibende Aufrufer (#822): greift nur, wenn ein
+// `Idempotency-Key` mitkommt, und liegt hinter Auth, Scopes und CSRF - ein
+// abgewiesener Aufruf darf keinen Schlüssel verbrauchen.
+app.use('/api/v1', idempotencyMiddleware);
 app.use('/api/v1/dashboard', dashboardRouter);
 app.use('/api/v1/tasks', tasksRouter);
 app.use('/api/v1/shopping', shoppingRouter);
@@ -530,6 +544,10 @@ async function runSync() {
   // CalDAV Reminders (VTODO → Tasks/Shopping): kein Guard nötig — sync() kehrt sofort
   // zurück, wenn keine aktivierten Reminder-Listen konfiguriert sind.
   caldavReminders.sync().catch((e) => logSync.error('CalDAV reminders error:', e.message));
+
+  // Outlook-Push (Microsoft Graph, one-way): kein Guard nötig — sync() kehrt sofort
+  // zurück, wenn keine Konten verbunden sind.
+  outlookCalendar.sync().catch((e) => logSync.error('Outlook error:', e.message));
 
   // CardDAV Kontakte: kein Guard nötig — sync() kehrt sofort zurück, wenn keine
   // Accounts konfiguriert sind.

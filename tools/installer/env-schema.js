@@ -24,6 +24,12 @@ export const ENV_SCHEMA = [
   { key: 'APPLE_USERNAME',              type: 'user',    label: 'Apple ID (email)',          required: false, group: 'apple',   writeToEnv: true },
   { key: 'APPLE_APP_SPECIFIC_PASSWORD', type: 'user',    label: 'App-Specific Password',    required: false, group: 'apple',   writeToEnv: true },
   { key: 'APPLE_CALDAV_URL',            type: 'default', label: 'CalDAV URL',               default: 'https://caldav.icloud.com', group: 'apple', writeToEnv: true },
+  // Outlook-Push (Microsoft Graph), optional; alle drei zusammen oder keiner.
+  // Die Redirect-URI leitet der Wizard aus der geplanten Origin ab
+  // (.../api/v1/calendar/outlook/callback), wie bei Google Calendar.
+  { key: 'MS_CLIENT_ID',                type: 'user',    label: 'Microsoft Client ID',      required: false, group: 'outlook', writeToEnv: true },
+  { key: 'MS_CLIENT_SECRET',            type: 'user',    label: 'Microsoft Client Secret',  required: false, group: 'outlook', writeToEnv: true, secret: true },
+  { key: 'MS_REDIRECT_URI',             type: 'user',    label: 'Microsoft Redirect URI',   required: false, group: 'outlook', writeToEnv: true },
   { key: 'SYNC_INTERVAL_MINUTES',       type: 'default', label: 'Sync Interval (minutes)', default: '15',   group: 'sync',    writeToEnv: true },
   // ICS-Abos: der SSRF-Guard blockt Feeds im eigenen LAN (Home Assistant, *arr).
   // Ohne diesen Schalter scheitert genau der häufigste Self-Hoster-Fall stumm.
@@ -38,6 +44,25 @@ export const ENV_SCHEMA = [
   // neben die Compose-Datei). Ohne Eintrag im Installer musste er von Hand in
   // die .env - und ein zweiter Lauf hätte ihn wieder gelöscht.
   { key: 'DATA_DIR',                    type: 'default', label: 'Host Data Folder',         default: './data', required: false, group: 'system', writeToEnv: true },
+  // BACKUP_DIR und MODULES_DIR fehlen hier bewusst, und der Grund ist EINE Regel,
+  // nicht zwei Einzelfaelle: DATA_DIR steht im Wizard, weil die App den Namen NIE
+  // liest - er existiert ausschliesslich als Compose-Substitution fuer die
+  // Mount-Quelle. BACKUP_DIR und MODULES_DIR liest die App dagegen selbst
+  // (server/services/backup-scheduler.js, server/services/modules.js), und dort
+  // bedeutet der Name etwas anderes: das Ziel IM Container. Ein Host-Pfad wie
+  // './backups' in der .env wird dort zu /app/backups, ausserhalb des gemounteten
+  // Volumes und fuer den node-User nicht anlegbar - das war #579.
+  //
+  // Die Compose-Descriptoren fangen das ab, indem sie BACKUP_DIR unter
+  // "environment:" auf /backups pinnen (environment schlaegt env_file), und ein
+  // Guard erzwingt das in jedem Ziel. Darauf ruht die Ausnahme aber NICHT: die
+  // .env.example warnt ausdruecklich davor, die Datei einem blanken
+  // "docker run --env-file" zu geben, und dort gibt es kein Override. MODULES_DIR
+  // pinnt ohnehin kein Descriptor.
+  //
+  // Wer die Sicherungen auf ein NAS-Array legen will, aendert deshalb den MOUNT
+  // in der Compose-Datei, nicht diese Variable - so steht es in
+  // docs/installation.md. Ein Wizard-Feld waere der bequemere und der falsche Weg.
   // Absolute Origin für Passwort-Reset-Links & Push. Vom Installer aus Schema/Host/Port
   // abgeleitet, nie aus dem Request-Host-Header (Reset-Poisoning-Schutz).
   { key: 'BASE_URL',                    type: 'default', label: 'Base URL',                 default: '',     group: 'system',  writeToEnv: true },
@@ -69,6 +94,11 @@ export const ENV_SCHEMA = [
   // bei Erstnutzung automatisch erzeugt; nur das Subject ist hier konfigurierbar.
   { key: 'VAPID_SUBJECT',               type: 'default', label: 'Push Contact (VAPID Subject)', default: '', group: 'push',  writeToEnv: true },
   // Optionaler lokaler Ordner-Speicher (Host-Mount) für neu hochgeladene Dokumentdateien.
+  // Obergrenze fuer JEDEN Upload (#806). Sie ist kein Speicherlimit, sondern ein
+  // Prozesslimit: express.json puffert den Body vollstaendig im Arbeitsspeicher,
+  // bevor eine Route ihn sieht. Deshalb ist der Wert im Server auf 1-100 MB
+  // gedeckelt, statt beliebig zu sein.
+  { key: 'MAX_UPLOAD_MB',                    type: 'default', label: 'Max Upload Size (MB)',             default: '5',          required: false, group: 'documentStorage', writeToEnv: true },
   { key: 'DOCUMENT_STORAGE_LOCAL_ENABLED',   type: 'default', label: 'Local Document Storage Enabled',   default: 'false',      required: false, group: 'documentStorage', writeToEnv: true },
   { key: 'DOCUMENT_STORAGE_LOCAL_PATH',      type: 'default', label: 'Local Document Storage Path',      default: '/documents', required: false, group: 'documentStorage', writeToEnv: true },
   // Der Host-Ordner, der auf DOCUMENT_STORAGE_LOCAL_PATH gemountet wird. Fehlte

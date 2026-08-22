@@ -438,6 +438,71 @@ test('agendaSegmentKind: Ganztags-Event ist all-day', () => {
   assert(agendaSegmentKind(ev, '2026-06-14') === 'all-day', 'Ganztägig → all-day');
 });
 
+// --------------------------------------------------------
+// Ende um Mitternacht (#804)
+//
+// Ein Zeit-Event, das exakt um Mitternacht endet, belegt den Folgetag nicht.
+// Vor dem Fix galt das Ende als inklusiv: das Event landete im Tages-Bucket des
+// Folgetags UND wurde als mehrtägig eingestuft, wodurch es über isAllDayLike()
+// fälschlich als Ganztags-Balken über beide Tage lief.
+//
+// Die Ganztags-Fälle sind die Gegenprobe: sie speichern ihr Ende ebenfalls als
+// T00:00, meinen es aber INKLUSIV - dort darf die Regel nicht greifen.
+// --------------------------------------------------------
+const { eventEndDate } = calendarHelpers;
+
+test('eventEndDate: Zeit-Event bis Mitternacht endet am Vortag', () => {
+  const ev = { start_datetime: '2026-06-19T21:00', end_datetime: '2026-06-20T00:00', all_day: 0 };
+  assert(eventEndDate(ev) === '2026-06-19', 'Fr 21:00–24:00 endet am Freitag');
+});
+
+test('eventEndDate: Zeit-Event mit Restminute belegt den Folgetag', () => {
+  const ev = { start_datetime: '2026-06-19T21:00', end_datetime: '2026-06-20T00:01', all_day: 0 };
+  assert(eventEndDate(ev) === '2026-06-20', 'Ende nach Mitternacht → Folgetag zählt');
+});
+
+test('eventEndDate: mehrtägiges Zeit-Event bis Mitternacht verliert nur den Schlusstag', () => {
+  const ev = { start_datetime: '2026-06-14T09:00', end_datetime: '2026-06-19T00:00', all_day: 0 };
+  assert(eventEndDate(ev) === '2026-06-18', 'Endet am 18., nicht am 19.');
+});
+
+test('eventEndDate: Ganztags-Event behält seinen Schlusstag', () => {
+  // Regressionsschutz: Ganztags-Events speichern das Ende als T00:00 und meinen
+  // es inklusiv - eine Reise 07.–09.09. darf am 09. nicht verschwinden.
+  const ev = { start_datetime: '2026-09-07T00:00', end_datetime: '2026-09-09T00:00', all_day: 1 };
+  assert(eventEndDate(ev) === '2026-09-09', 'Ganztags-Ende bleibt inklusiv');
+});
+
+test('eventEndDate: datums-only Ende bleibt unangetastet', () => {
+  const ev = { start_datetime: '2026-06-14', end_datetime: '2026-06-16', all_day: 1 };
+  assert(eventEndDate(ev) === '2026-06-16', 'Ohne Zeitanteil greift die Regel nicht');
+});
+
+test('eventEndDate: ohne Enddatum gilt der Starttag', () => {
+  const ev = { start_datetime: '2026-06-14T09:00', end_datetime: null, all_day: 0 };
+  assert(eventEndDate(ev) === '2026-06-14', 'Kein Ende → Starttag');
+});
+
+test('eventEndDate: Ende vor dem Start fällt auf den Starttag zurück', () => {
+  const ev = { start_datetime: '2026-06-14T09:00', end_datetime: '2026-06-13T00:00', all_day: 0 };
+  assert(eventEndDate(ev) === '2026-06-14', 'Verdrehtes Ende erzeugt keinen Rückwärtsbereich');
+});
+
+test('isMultiDayEvent: Zeit-Event bis Mitternacht ist nicht mehrtägig (#804)', () => {
+  const ev = { start_datetime: '2026-06-19T21:00', end_datetime: '2026-06-20T00:00', all_day: 0 };
+  assert(isMultiDayEvent(ev) === false, 'Fr 21:00–24:00 ist ein Eintagestermin');
+});
+
+test('isAllDayLike: Zeit-Event bis Mitternacht bleibt im Zeitraster (#804)', () => {
+  const ev = { start_datetime: '2026-06-19T21:00', end_datetime: '2026-06-20T00:00', all_day: 0 };
+  assert(isAllDayLike(ev) === false, 'Darf nicht in die Ganztags-Zeile rutschen');
+});
+
+test('agendaSegmentKind: Zeit-Event bis Mitternacht ist single (#804)', () => {
+  const ev = { start_datetime: '2026-06-19T21:00', end_datetime: '2026-06-20T00:00', all_day: 0 };
+  assert(agendaSegmentKind(ev, '2026-06-19') === 'single', 'Ein Segment am Freitag');
+});
+
 const { clickedTime } = calendarHelpers;
 
 /* Die Stundenhöhe kommt nicht mehr aus einer Konstante in calendar.js, sondern
@@ -629,6 +694,105 @@ test('jedes „+" ohne angeklickten Tag reicht ein Datum durch (nur die Suche ni
   assert(withoutDate.length === 1,
     `genau ein „+" darf ohne Datum öffnen (der Leerzustand der Suche, dort steht kein Zeitraum `
     + `auf dem Schirm), gefunden: ${withoutDate.length} - ${withoutDate.join(' | ')}`);
+});
+
+// --------------------------------------------------------
+// Wochenend-Tönung im Monatsraster (#780)
+// --------------------------------------------------------
+
+/**
+ * Baut dieselben 42 Rasterzellen wie renderMonthView für einen gegebenen
+ * Wochenstart und liefert je Zelle {date, weekday, tinted, column}.
+ * `tinted` kommt aus dem echten Klassen-Bauer der Seite, nicht aus einer
+ * Testkopie seiner Regel.
+ */
+function monthGrid(year, month, weekStart) {
+  const firstOfMonth = new Date(year, month, 1);
+  const startOffset  = (firstOfMonth.getDay() - weekStart + 7) % 7;
+  return Array.from({ length: 42 }, (_, i) => {
+    const dt = new Date(year, month, 1 - startOffset + i);
+    const y  = dt.getFullYear();
+    const m  = String(dt.getMonth() + 1).padStart(2, '0');
+    const d  = String(dt.getDate()).padStart(2, '0');
+    const date = `${y}-${m}-${d}`;
+    return {
+      date,
+      weekday: dt.getDay(),
+      column:  (i % 7) + 1,          // 1..7, wie :nth-child im 7-Spalten-Raster
+      tinted:  calendarHelpers.monthDayClasses(date, dt.getMonth() === month, '')
+        .split(' ').includes('month-day--weekend'),
+    };
+  });
+}
+
+// Der Anlassfall des Bugreports: Wochenstart Sonntag. Geprüft wird für ALLE drei
+// Wochenstarts, dass genau Sa/So getönt sind - und mit der Gegenprobe, dass die
+// frühere Spaltenregel (:nth-child(7n) / 7n-1 = letzte zwei Spalten) bei nicht-
+// montäglichem Start eben NICHT dasselbe ergibt. Ohne die Gegenprobe wäre der
+// Guard auch über dem alten, kaputten Stand grün gewesen.
+for (const [label, weekStart] of [['Montag', 1], ['Sonntag', 0], ['Samstag', 6]]) {
+  test(`Monatsraster: bei Wochenstart ${label} sind genau Sa/So getönt`, () => {
+    for (const { year, month } of [{ year: 2026, month: 7 }, { year: 2026, month: 1 }, { year: 2027, month: 0 }]) {
+      for (const cell of monthGrid(year, month, weekStart)) {
+        const isWeekend = cell.weekday === 0 || cell.weekday === 6;
+        assert(cell.tinted === isWeekend,
+          `${cell.date} (getDay ${cell.weekday}, Spalte ${cell.column}, Wochenstart ${label}): `
+          + `getönt=${cell.tinted}, erwartet=${isWeekend}`);
+      }
+    }
+  });
+}
+
+test('Monatsraster: die Tönung folgt dem Wochentag, nicht der Spaltenposition', () => {
+  // Gegenprobe gegen den alten Stand: die letzten beiden Spalten (7n-1, 7n).
+  const positional = (cell) => cell.column === 6 || cell.column === 7;
+  const sunday = monthGrid(2026, 7, 0);
+  assert(sunday.some((cell) => cell.tinted !== positional(cell)),
+    'bei Sonntag-Start müssen sich Wochentags- und Spaltenregel unterscheiden - '
+    + 'sonst prüft dieser Guard nichts');
+  const monday = monthGrid(2026, 7, 1);
+  assert(monday.every((cell) => cell.tinted === positional(cell)),
+    'bei Montag-Start dürfen beide Regeln dasselbe ergeben (Regression der Standardansicht)');
+});
+
+test('Monatsraster: das CSS hängt die Tönung an die Klasse, nicht an nth-child', () => {
+  const tint = [...eachRule(calendarCss)]
+    .filter((r) => /--module-accent/.test(r.body) && /background-color/.test(r.body))
+    .filter((r) => r.selector.includes('.month-day'));
+  assert(tint.length > 0, 'die Wochenend-Tönung im Monatsraster ist verschwunden');
+  for (const rule of tint) {
+    assert(rule.selector.includes('month-day--weekend'),
+      `getönte Monatszellen müssen über .month-day--weekend adressiert werden, gefunden: ${rule.selector}`);
+    assert(!/nth-child/.test(rule.selector),
+      `die Tönung darf nicht an der Spaltenposition hängen (${rule.selector}): die Spalte sagt nur `
+      + 'bei Wochenstart Montag den Wochentag');
+  }
+});
+
+// --------------------------------------------------------
+// Geburtstags-Ebene (#778)
+//
+// Geburtstage kommen aus den Kontakten und fuellen bei einem grossen Adressbuch
+// den Kalender mit Terminen, die niemand als Termin geplant hat. Sie einzeln zu
+// loeschen half nicht - der naechste Abgleich legt sie wieder an ("keeps coming
+// back"). Sie sind deshalb eine Ebene wie die Feiertage.
+// --------------------------------------------------------
+
+test('Die Geburtstags-Ebene blendet genau die Geburtstage aus', () => {
+  const geburtstag = { id: 1, title: 'Anna', birthday_name: 'Anna' };
+  const termin     = { id: 2, title: 'Zahnarzt' };
+
+  assert(calendarHelpers.isVisibleLayer(geburtstag, false) === false, 'ausgeschaltet verschwindet der Geburtstag');
+  assert(calendarHelpers.isVisibleLayer(geburtstag, true)  === true,  'eingeschaltet ist er da');
+  assert(calendarHelpers.isVisibleLayer(termin, false) === true,
+    'ein gewoehnlicher Termin darf von der Ebene nie betroffen sein - sonst raeumt der Schalter den Kalender leer');
+  assert(calendarHelpers.isVisibleLayer(termin, true) === true);
+});
+
+test('Der Marker ist birthday_name, nicht der Titel', () => {
+  // Ein Termin, der zufaellig "Geburtstag" heisst, gehoert dem Nutzer und bleibt.
+  const eigener = { id: 3, title: 'Geburtstagsfeier planen' };
+  assert(calendarHelpers.isVisibleLayer(eigener, false) === true);
 });
 
 // --------------------------------------------------------

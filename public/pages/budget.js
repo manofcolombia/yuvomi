@@ -597,7 +597,7 @@ function renderBody() {
   const p    = state.prevSummary;
   updateTabs();
   if (state.activeTab === 'reports') {
-    setHtml(body, '<div class="budget-tab-panel budget-tab-panel--reports" id="budget-reports-panel"></div>');
+    setHtml(body, '<div class="budget-tab-panel page-scrollport budget-tab-panel--reports" id="budget-reports-panel"></div>');
     renderStats(body.querySelector('#budget-reports-panel'), {
       user: _user, currency: state.currency,
       budgetMode: state.budgetMode, scope: state.scope,
@@ -621,7 +621,7 @@ function renderBody() {
     return;
   }
   if (state.activeTab === 'plan') {
-    setHtml(body, '<div class="budget-tab-panel budget-tab-panel--reading budget-tab-panel--plan" id="budget-plan-panel"></div>');
+    setHtml(body, '<div class="budget-tab-panel page-scrollport budget-tab-panel--reading budget-tab-panel--plan" id="budget-plan-panel"></div>');
     renderPlans(body.querySelector('#budget-plan-panel'), {
       user: _user, currency: state.currency, month: state.month,
       formatAmount, categoryLabel, esc,
@@ -647,14 +647,14 @@ function renderBody() {
     return;
   }
   if (state.activeTab === 'subscriptions') {
-    setHtml(body, '<div class="budget-tab-panel budget-tab-panel--subscriptions" id="budget-subscriptions-panel"></div>');
+    setHtml(body, '<div class="budget-tab-panel page-scrollport budget-tab-panel--subscriptions" id="budget-subscriptions-panel"></div>');
     renderSubscriptions(body.querySelector('#budget-subscriptions-panel'), { user: _user }).catch((err) => {
       console.error('[Budget] subscriptions render error:', err);
     });
     return;
   }
   if (state.activeTab === 'split-expenses') {
-    setHtml(body, '<div class="budget-tab-panel budget-tab-panel--split-expenses" id="budget-split-expenses-panel"></div>');
+    setHtml(body, '<div class="budget-tab-panel page-scrollport budget-tab-panel--split-expenses" id="budget-split-expenses-panel"></div>');
     const panel = body.querySelector('#budget-split-expenses-panel');
     renderSplitExpenses(panel, { embedded: true, user: _user }).catch((err) => {
       console.error('[Budget] split expenses render error:', err);
@@ -723,7 +723,7 @@ function renderBody() {
       </div>`;
 
   setHtml(body, `
-    <div class="budget-tab-panel budget-tab-panel--budget">
+    <div class="budget-tab-panel page-scrollport budget-tab-panel--budget">
     <!-- Anzeige-Umschalter: nur Ausgaben vs. volle Zusammenfassung -->
     <div class="budget-summary-bar">
       <button class="budget-expenses-toggle${expensesOnly ? ' budget-expenses-toggle--active' : ''}"
@@ -774,7 +774,7 @@ function renderBody() {
         </a>` : ''}
         </div>
       </div>
-      <div class="budget-list" id="budget-list">
+      <div class="budget-list page-scrollport" id="budget-list">
         ${renderEntries()}
       </div>
     </div>
@@ -1081,7 +1081,7 @@ function renderAccountsPage() {
 
   if (!all.length) {
     return `
-      <div class="budget-tab-panel budget-tab-panel--accounts">
+      <div class="budget-tab-panel page-scrollport budget-tab-panel--accounts">
         ${header}
         <div class="empty-state">
           <i data-lucide="wallet" class="empty-state__icon" aria-hidden="true"></i>
@@ -1130,7 +1130,7 @@ function renderAccountsPage() {
   }).join('');
 
   return `
-    <div class="budget-tab-panel budget-tab-panel--accounts">
+    <div class="budget-tab-panel page-scrollport budget-tab-panel--accounts">
       ${header}
       <div class="budget-accounts__list">${cards}</div>
     </div>`;
@@ -1521,7 +1521,7 @@ function renderLoanPaymentEntry(loan, payment) {
 function renderLoansPage() {
   const loans = state.loans?.loans ?? [];
   if (!loans.length) {
-    return `<div class="budget-tab-panel budget-tab-panel--loans">
+    return `<div class="budget-tab-panel page-scrollport budget-tab-panel--loans">
       <div class="empty-state">
         <i data-lucide="hand-coins" class="empty-state__icon" aria-hidden="true"></i>
         <div class="empty-state__title">${t('budget.loansEmpty')}</div>
@@ -1534,7 +1534,7 @@ function renderLoansPage() {
     </div>`;
   }
 
-  return `<div class="budget-tab-panel budget-tab-panel--loans">
+  return `<div class="budget-tab-panel page-scrollport budget-tab-panel--loans">
     ${renderLoansDashboard()}
   </div>`;
 }

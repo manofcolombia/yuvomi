@@ -5,9 +5,12 @@
  */
 
 import { StorageError } from '../../services/document-storage.js';
+import { MAX_UPLOAD_BYTES, MAX_UPLOAD_MB } from '../../utils/upload-limit.js';
 
 export const VALID_SOURCES  = ['local', 'google', 'apple', 'ics'];
-export const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
+// Ein Termin-Anhang ist ein Upload wie jeder andere und teilt deshalb die
+// gemeinsame Grenze (#806).
+export const MAX_ATTACHMENT_BYTES = MAX_UPLOAD_BYTES;
 export const DEFAULT_ATTACHMENT_FOLDER = 'Calendar items';
 export const ATTACHMENT_MIME = new Set([
   'image/png',
@@ -70,7 +73,7 @@ export function parseAttachment(dataUrl) {
   const base64 = match[2].replace(/\s/g, '');
   const buffer = Buffer.from(base64, 'base64');
   if (!buffer.length) throw new Error('attachment_data: Datei ist leer.');
-  if (buffer.length > MAX_ATTACHMENT_BYTES) throw new Error('attachment_data: Datei darf höchstens 5 MB groß sein.');
+  if (buffer.length > MAX_ATTACHMENT_BYTES) throw new Error(`attachment_data: Datei darf höchstens ${MAX_UPLOAD_MB} MB groß sein.`);
   return { mime, size: buffer.length, buffer };
 }
 
@@ -95,6 +98,28 @@ export function caldavTarget(body) {
     return { value: null, error: 'target_caldav_calendar_url: zu lang.' };
   }
   return { value: { accountId, calendarUrl }, error: null };
+}
+
+// Outlook-Push-Ziel eines Events validieren (Muster caldavTarget). Leere/fehlende
+// account_id bedeutet "Lokal" (kein Push zu Outlook).
+export function outlookTarget(body) {
+  const rawId  = body.target_outlook_account_id;
+  const rawCal = body.target_outlook_calendar_id;
+  if (rawId === null || rawId === undefined || rawId === '') {
+    return { value: { accountId: null, calendarId: null }, error: null };
+  }
+  const accountId = typeof rawId === 'number' ? rawId : parseInt(rawId, 10);
+  if (!Number.isInteger(accountId) || accountId < 1) {
+    return { value: null, error: 'target_outlook_account_id: ungültige Konto-ID.' };
+  }
+  const calendarId = typeof rawCal === 'string' ? rawCal.trim() : '';
+  if (!calendarId) {
+    return { value: null, error: 'target_outlook_calendar_id: fehlt für Outlook-Ziel.' };
+  }
+  if (calendarId.length > 2048) {
+    return { value: null, error: 'target_outlook_calendar_id: zu lang.' };
+  }
+  return { value: { accountId, calendarId }, error: null };
 }
 
 // Google-Outbound-Ziel eines Events validieren (Issue #237). Leeres/fehlendes

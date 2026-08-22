@@ -8,7 +8,7 @@ colors:
   accent-light: "#F3EFFE"
   grouped-bg: "#F5F3ED"
   surface: "#FFFFFF"
-  surface-dark: "#262422"
+  surface-dark: "#2B2825"
   surface-3: "#EDEAE3"
   fill-well: "#EDEAE3"
   surface-elevated: "#FBFAF7"
@@ -16,7 +16,7 @@ colors:
   bg-dark: "#191816"
   label: "#1D1B17"
   text-secondary: "#63615B"
-  text-tertiary: "#68686F"
+  text-tertiary: "#6B675F"
   text-quaternary: "#8C8880"
   border: "#E4E0D7"
   border-subtle: "#EDEAE3"
@@ -26,13 +26,15 @@ colors:
   warning: "#A85D00"
   danger: "#D70015"
   info: "#0663C7"
-  # Familientoene (Block 2, 2026-08-10): die 17 Modul-Einzeltoene sind neun
-  # Familien; jedes --module-* bezieht aus seiner Familie. Quelle der Wahrheit
-  # und Modul-Zuordnung: public/styles/tokens.css, Abschnitt 4.
+  # Familientoene (Block 2, 2026-08-10): die Modul-Einzeltoene sind neun
+  # Familien; jedes --module-* bezieht aus seiner Familie. Hier steht bewusst
+  # keine Zahl - sie ist schon einmal gedriftet (CLAUDE.md, „Kanonische
+  # Quellen"). Quelle der Wahrheit und Modul-Zuordnung:
+  # public/styles/tokens.css, Abschnitt 4.
   # overview: dashboard - time: calendar, reminders - work: tasks,
   # housekeeping, rewards - kitchen: meals, recipes, shopping, pantry -
   # money: budget, split-expenses - people: contacts, birthdays -
-  # health: health - records: documents, notes - neutral: settings
+  # health: health - records: documents, notes, inventory - neutral: settings
   family-overview: "#6C3AED"
   family-time: "#00668F"
   family-work: "#157F3D"
@@ -42,6 +44,18 @@ colors:
   family-health: "#9E1E88"
   family-records: "#42587E"
   family-neutral: "#677079"
+  # Wetterlagen (2026-08-17): eine PARALLELE Domaenenfamilie, keine zehnte
+  # Familie. Die Familientoene beantworten „welches Modul", die Wetterlage
+  # beantwortet „was ist draussen" - deshalb teilt keine Lage den Wert einer
+  # Familie, und keine erscheint ausserhalb einer Wetterflaeche. Bauart wie bei
+  # den Mahlzeit-Typen. Dark-Werte und die fuenf Temperaturbaender der
+  # Verlaufszeile: public/styles/tokens.css, Abschnitt 5b.
+  weather-clear: "#B45309"
+  weather-night: "#4C4FBF"
+  weather-cloud: "#4F6478"
+  weather-rain: "#0A5C9E"
+  weather-snow: "#00768C"
+  weather-storm: "#8B2FC9"
 typography:
   display:
     fontFamily: "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', 'Segoe UI', Roboto, Arial, sans-serif"
@@ -143,18 +157,22 @@ components:
   button-icon:
     rounded: "{rounded.full}"
     size: "44px"
+  # Erhabene Surface-Pille, Modulton NUR in der Tinte (seit 2026-08-12; die
+  # gefuellte Fassung ist zurueckgenommen, Rezept in tokens.css Abschnitt 6c).
+  # rounded.full gilt fuer die Shell-Pille (.sub-tab); rounded.sm nur fuer das
+  # konzentrisch eingesetzte .segmented__item im radius-md-Traeger.
   segment-active:
-    backgroundColor: "var(--module-accent, #6C3AED)"
-    textColor: "{colors.ink-on-vivid}"
-    rounded: "{rounded.sm}"
+    backgroundColor: "var(--seg-active-bg)"
+    textColor: "color-mix(in srgb, var(--module-accent, var(--color-accent)) var(--tint-ink), var(--color-text-primary))"
+    rounded: "{rounded.full}"
   card:
     backgroundColor: "{colors.surface}"
     rounded: "{rounded.md}"
     padding: "16px"
   widget-header:
-    backgroundColor: "color-mix(in srgb, var(--widget-accent, var(--color-accent)) var(--tint-wash), var(--color-surface))"
-    padding: "12px 16px"
-    height: "44px"
+    backgroundColor: "{colors.surface} (bandlos seit 2026-08-17; Absender ist das Vollton-Siegel)"
+    padding: "12px 16px 8px (die .widget__header-Basisregel; keine Dashboard-Sonderregel mehr)"
+    height: "52px (Titelzeile 32px + 12/8px Polster; keine Kante, keine min-height)"
   day-sheet:
     backgroundColor: "{colors.surface}"
     rounded: "{rounded.xl}"
@@ -198,7 +216,96 @@ components:
      Frontmatter-Wert und hat dabei drei Angaben korrigiert, die kein Token mehr
      deckte: den erfundenen 32px-Radius, den Modulton am Primaerknopf und den
      Modulton am Fokusring - die beiden letzten waren Reste aus der Zeit vor der
-     Eine-Stimme-Regel und standen hier laenger als im Code. -->
+     Eine-Stimme-Regel und standen hier laenger als im Code.
+
+     Nachgefuehrt 2026-08-15 gegen tokens.css und die Komponenten (109 Commits
+     auf public seit dem letzten Edit). Der FLIESSTEXT war durchweg gedeckt, das
+     FRONTMATTER an drei Stellen nicht: `segment-active` beschrieb noch die
+     gefuellte Pille, obwohl der Body die Ruecknahme vom 12.08. schon fuehrt;
+     `widget-header` trug Polster und Hoehe aus der Zeit vor der v2.6.0-Kur
+     (12/44 statt 8/49); die Familienzuordnung kannte `inventory` nicht (PR #741,
+     records-Familie). Die Modulzahl steht hier seither gar nicht mehr - sie war
+     schon vor dem Merge nicht die Laenge ihrer eigenen Liste. Derselbe Lauf hat
+     drei ueberlebte Kommentare im Code korrigiert (.btn--primary in layout.css,
+     .sub-tab--active in sub-tabs.css, --color-text-secondary in tokens.css); in
+     allen dreien war DESIGN.md aktueller als die Quelle.
+
+     Der Sidecar-Nachzug am selben Tag hat eine Luecke aufgedeckt, die vorher
+     niemandem auffiel, weil `.impeccable/design.json` sie zugedeckt hatte: der
+     Sidecar fuehrte zur Eine-Stimme-Regel ein Do und ein Don't, die HIER nie
+     standen (`git log -S` findet sie in keiner Fassung) - die zentrale Regel der
+     App hatte in dieser Liste keinen einzigen Eintrag. Beide stehen jetzt in
+     Do's and Don'ts, und der Sidecar leitet sie von dort ab statt sie zu
+     erfinden. Im selben Zug sind die beiden verbliebenen „17" gefallen: der
+     Modulzahl fehlte Inventar, und die Key Characteristics sagten „17
+     AA-verifizierte Modul-Tints", waehrend die Overview zwoelf Zeilen darueber
+     neun Familientoene fuehrt.
+
+     Nachgefuehrt 2026-08-17 mit der Dark-Kur (Etappe 1 der Modernisierung,
+     Critique vom selben Tag): die Dark-FLAECHEN sind gestiegen, die Buehne
+     nicht (Surface #262422 -> #2B2825, Well/Elevated #322F2B -> #37332E,
+     Hover #403C37 -> #443E37; Anlass: Buehne->Karte lag bei 1.15:1 und die
+     Schwarz-Schatten sind auf der Kohle wirkungslos - das Board las als Wand
+     gleich dunkler Rechtecke). Die opaken Dark-Schatten tragen jetzt den
+     1px-Weiss-Ring der Glas-Schatten in leiser Dosierung, das Dark-Glas ist
+     von iOS-Neutralgrau auf die warme Fassung der eigenen Surface gewechselt,
+     und die Tertiaerrolle steht in BEIDEN Themes erstmals warm (#6B675F /
+     #A9A39A statt Hue-291-Resten der abgeloesten Apple-Rampe). Messlauf:
+     .impeccable/redesign-tools/dark-ramp-final.mjs; alle Werte gegen
+     test:frontend-audit (296), test:document-guards (31) und test:typography
+     (15) verifiziert.
+
+     Etappe 2 am selben Tag: das Absenderband ist zurueckgebaut (Band,
+     getoente Trennlinie UND 2px-Oberkante), der Absender jeder Dashboard-
+     Karte ist das Vollton-Siegel, auch in der Kachelreihe. Etappe 3 hat den
+     Vollton anschliessend zum EINEN Siegelgesicht gemacht und die Klasse
+     `--vivid` damit gestrichen. Anlass und Messlatte stehen an der Signature Component
+     „Der Widget-Kopf"; der ignore.md-Eintrag border-accent-on-rounded ist
+     mit der 2px-Linie gegangen.
+
+     Etappe 3 und 4 am selben Tag, beide aus derselben Chroma-Lehre: die
+     Wochen- und Ganztages-Bloecke des Kalenders tragen ihre Layer-Farbe
+     jetzt als 3px-VOLLTON-Kante statt als zweite Waschung (dazu die
+     Initialen-Schwelle 20px/11px und 4px Polster an den Kalender-Chips),
+     und die Familien-Geburtstage sprechen die Identitaetsfarbe ihres
+     Mitglieds statt der Modul-Toenung (unverknuepfte Kontakte behalten
+     sie). Die drei neuen Regeln stehen bei Colors, Typography und an der
+     Signature Component „Event-Bloecke im Kalender"; verifiziert gegen
+     test:frontend-audit (296), test:calendar (65), test:dashboard (71),
+     test:document-guards (31).
+
+     Nachgefuehrt 2026-08-18, geprueft gegen v2.21.0. Waehrend des Laufs kam
+     v2.21.1 dazu (Mitternachts-Termin, Modal-Overflow, UTC-Tagesschluessel);
+     ihre drei public/-Aenderungen beruehren keinen hier dokumentierten Wert -
+     `.modal-panel` wechselt von `overflow: hidden` auf `clip` und ist keine der
+     drei Stellen, an denen dieses Dokument `overflow: hidden` fuehrt. Seit dem
+     letzten Schreibzugriff hat sonst KEIN Commit public/ angefasst, der
+     Abgleich lief deshalb nicht gegen neue Arbeit, sondern gegen die eigene: Frontmatter (Farben, Radien, Spacing,
+     Typo-Rollen), Schattenvokabular, Motion, Icon- und Zielgroessen sind
+     mechanisch gegen tokens.css geprueft und decken sich; von den 115 hier
+     genannten Tokens existiert jedes, von 46 Selektoren und 18 Dateinamen
+     ebenfalls. Was NICHT stimmte, war dreimal dieselbe Stelle: die Etappe-3-
+     Streichung von `module-seal--vivid` und `--seal-base` war an ihrer eigenen
+     Signature Component ausgeschrieben, aber im Widget-Kopf-Abschnitt, im
+     Nachsatz darunter und in der Do-Liste stand die Klasse weiter als gebauter
+     Stand - dieselbe Datei verbot zwei Absaetze weiter oben ihre Rueckkehr per
+     Guard. Zwei Wahrheiten in einer Datei, und die Etappe war nur Stunden alt.
+     Der Sidecar trug denselben Rueckstand schaerfer: sein `.module-seal`-
+     Snippet baute noch die 16-%-Toenung samt `--vivid`-Variante, also genau
+     das, was der Guard verbietet, und `narrative.rules` fuehrte die
+     zurueckgenommene Traeger-Regel als geltende.
+
+     Drei weitere Sidecar-Befunde desselben Laufs, und alle drei sind hier nur
+     deshalb notiert, weil `.impeccable/design.json` gitignored ist und keine
+     CI ihn je anfasst: die tonalen Rampen von `family-overview` und
+     `family-time` lagen auf Hue/Chroma eines Tons, den ihr Token nicht mehr
+     traegt (family-time zeigte eine VIOLETTE Rampe unter einer azurblauen
+     Scheibe - der Rueckstand des Umzugs, den ihre eigene Notiz beschreibt);
+     die sechs Wetterlagen standen seit ihrer Aufnahme ins Frontmatter ohne
+     jedes colorMeta da, waehrend alle neun Familientoene Name, Dark-Wert und
+     Rampe fuehren; und ein Don't war auf seinen ersten Satz gekuerzt. Die
+     Rampen sind aus dem jeweiligen canonical neu gerechnet, alle 29 Eintraege
+     stimmen jetzt gegen ihren Ausgangswert. -->
 
 ## Direction Contract
 
@@ -228,7 +335,7 @@ woertliche Anwendung auf die Haut war es.
 **OWN-WORLD:** Liquid-Glass-Designphilosophie (Lesbarkeit vor Transparenz:
 diffuses, sattes Glas, Inhalte opak). SF-Pro-System-Stack, Apple-Typo-Skala
 (Body 17, Large Title 34, Footnote 13). WARME Neutrale (#F5F3ED grouped /
-#191816 dunkel mit #262422-Flaechen). Eine Stimme: das Violett der Bildmarke
+#191816 dunkel mit #2B2825-Flaechen). Eine Stimme: das Violett der Bildmarke
 #6C3AED. Neun Familientoene als Orientierungsvokabular, im INHALT. Glas nur als
 Chrome (Tab-Bar, Sidebar, Sheets), Inhalte opak. Kapsel-Controls,
 Inset-Grouped-Listen, Feder-Motion.
@@ -268,7 +375,7 @@ Gebaute stimmt mit der belegten Linie ueberein; die kollabierende Large-Title-Le
 von ihr sogar ausdruecklich bestaetigt. **Das war eine Korrektur der Referenzzeile, keine
 Design-Revision.**
 
-Jedes der 17 Module ist ein vertrauter Raum mit eigenem Tint (Apple-Systemapp-Muster:
+Jedes Modul ist ein vertrauter Raum mit eigenem Tint (Apple-Systemapp-Muster:
 jede App ihre Farbe - hier aber im INHALT, siehe die Eine-Stimme-Regel), zusammengehalten
 von warmen Neutralen, dem System-Font-Stack
 und der Apple-Typo-Skala. WCAG AA ist Invariante, nicht Ambition: Apple-Rohwerte, die AA
@@ -282,13 +389,18 @@ Rollout-Stand: die ganze App steht in der neuen Welt. Runde 1 zog die geteilten 
 Runde 2 das Kasten-in-Kasten-Vokabular samt Traeger-Regel, Runde 3 die Befunde des
 Finish-Reviews: die Zeilenlisten-Regel, EINE Buttonform, EIN Toenungsrezept, das
 Wetter-Widget als randlose Karte ohne Verlauf, Notizfarben nach der User-Farben-Regel und
-die Anmeldeseite als Teil der Welt.
+die Anmeldeseite als Teil der Welt. **Das Wetter-Widget hat 2026-08-17 Farbe
+zurueckbekommen, aber nicht seinen Verlauf** - die randlose Karte bleibt, der Ton kommt
+jetzt aus der Wetterlage statt aus dem globalen Akzent (siehe die Signature Component
+„Das Wetter-Widget").
 
 **Der Dashboard-Bogen (v2.4.0 bis v2.6.0) hat die Uebersicht von einem Raster zu einer
 Buehne gemacht** - und dabei drei Formen hinzugefuegt, die es vorher nicht gab: das
 TAGESPROGRAMM als das eine Blatt, das die Seite anfuehrt (Radius und Elevation setzen den
 Rang, nicht Material), das ABSENDERBAND, das die Modulzugehoerigkeit einer Karte aus einer
-2px-Haarlinie in eine getoente Kopfflaeche hebt, und den WAND-MODUS als den wachen Zustand
+2px-Haarlinie in eine getoente Kopfflaeche hebt (2026-08-17 vom VOLLTON-SIEGEL abgeloest -
+die Waschung konnte im Dark keine Farbe tragen, siehe die Signature Component
+„Der Widget-Kopf"), und den WAND-MODUS als den wachen Zustand
 derselben Route - dieselbe Flaeche in anderer Gangart, gelesen aus zwei Metern. Erst mit
 ihm bekommen die Display-Stufen 48/72px die Rolle, fuer die sie reserviert waren.
 
@@ -308,7 +420,7 @@ endgueltig loeschte.
 **Key Characteristics:**
 - Plattform-Kanon statt Eigenwelt: Apple HIG, Liquid Glass, System-Font-Stack
 - Glas nur als Chrome; Inhalte immer opak (Lesbarkeit vor Transparenz)
-- Eine Stimme (Bildmarken-Violett) im Chrome, 17 AA-verifizierte Modul-Tints im Inhalt,
+- Eine Stimme (Bildmarken-Violett) im Chrome, neun AA-verifizierte Familientoene im Inhalt,
   beides auf warmen Neutralen
 - Apple-Typo-Skala (Large Title 34 / Body 17 / Footnote 13), Kapsel-Controls, Inset-Grouped-Listen
 - Eine Kernform fuer Zeilenfolgen: genau ein Traeger, Zeilen als Haarlinien
@@ -321,9 +433,23 @@ endgueltig loeschte.
 
 Warme Neutrale als Buehne, das Violett der Bildmarke als Stimme, 17 Modul-Tints als
 Orientierungsvokabular; alle Textfarben AA-vertieft. Es gibt keinen chromatischen
-Verlauf auf Inhalt - die einzige verbliebene Farbdramatik der App sind die driftenden
-Backdrop-Blobs hinter dem Glas (`--lg-blob-opacity` 0.16 light / 0.20 dark, in
-reduced-transparency und prefers-contrast auf 0).
+Verlauf auf Inhalt. Die Farbdramatik der App ist auf EINE Gattung beschraenkt: weiche,
+kreisrunde Lichtfelder HINTER dem Inhalt, die nie eine Flaeche fuellen und nie unter Text
+liegen, wo sie ihn traegt. Zwei Stellen gehoeren ihr an, und beide teilen dieselben
+Ausschalter (in reduced-transparency und prefers-contrast auf 0):
+
+- die driftenden **Backdrop-Blobs** hinter dem Glas (`--lg-blob-opacity` 0.16 light /
+  0.20 dark);
+- der **Lichthauch der Wetterglyphe** (`--weather-glow-opacity`, 2026-08-17), der aus dem
+  Zeichen zu kommen scheint und lange vor dem Text auslaeuft.
+
+**Die Unterscheidung ist keine Wortklauberei, sie ist die Lehre aus dem Verlauf, den
+Runde 3 entfernt hat.** Der war die Karte: eine deckende Flaeche von Kante zu Kante, im
+GLOBALEN Akzent statt in der Domaene, unter der jeder Text stand - und im Dark ein heller
+Block im dunklen Dashboard. Ein Lichtfeld hinter einer Glyphe teilt davon keine einzige
+Eigenschaft. Was auch nach der Rueckkehr der Farbe gilt: keine getoente Vollflaeche auf
+Inhalt, kein Verlauf ueber eine Karte, kein Text auf einer Flaeche, die nicht gemessen ist
+(der Sekundaertext ueber dem staerksten Punkt des Lichthauchs haelt 4.82-4.97:1).
 
 ### Primary
 - **Das Violett der Bildmarke** (`accent-violet` #6C3AED): die Stimme der App. 6.10:1 auf
@@ -365,12 +491,137 @@ reduced-transparency und prefers-contrast auf 0).
   (`--color-ink-on-vivid`).
 - **Die Modul-Identitaet lebt in den Elementen, nicht in der Flaeche.** Die PWA-theme-color
   ist app-weit der Seitengrund (#F5F3ED / #191816, also `--color-bg`), nicht der Modul-Tint.
-- **Die Sidebar ist die Legende der Modultoene.** Seit die Stimme das Chrome traegt, war die
-  Frage offen, wo die neun Familien noch SICHTBAR werden, ohne den Rahmen wieder
-  umzufaerben. Antwort: dort, wo alle Module nebeneinander stehen - jedes Zeichen in seinem
-  Ton, einmal statt in jedem Zimmer (Apples Settings-Muster). Der Ton sitzt auf dem ICON,
-  nie auf Label oder Flaeche: ein Icon ist Grafik (3:1), ein Label waere Text und muesste
-  4.5:1 gegen die Sidebar-Flaeche halten - was sieben der neun Familientoene reissen wuerden.
+- **Die NAVIGATION ist die Legende der Modultoene** - Sidebar und Tab-Bar, nicht die eine
+  ohne die andere. Seit die Stimme das Chrome traegt, war die Frage offen, wo die neun
+  Familien noch SICHTBAR werden, ohne den Rahmen wieder umzufaerben. Antwort: dort, wo alle
+  Module nebeneinander stehen - jedes Zeichen in seinem Ton, einmal statt in jedem Zimmer
+  (Apples Settings-Muster). Der Ton sitzt auf dem ICON, nie auf Label oder Flaeche: ein Icon
+  ist Grafik (3:1), ein Label waere Text und muesste 4.5:1 halten - was sieben der neun
+  Familientoene reissen wuerden.
+  **Die Regel hing bis 2026-08-17 an einem Breakpoint**, und das war ein Fehler, keine
+  Entscheidung: ueber 1024px trug jedes Nav-Zeichen seinen Ton, darunter waren alle grau.
+  Dieselbe Komponente sprach je nach Fenstergroesse eine andere Sprache, und ausgerechnet auf
+  Telefonen - der Hauptbuehne (PRODUCT.md) - war in der Navigation gar kein Modulton zu
+  sehen. Gemessen gegen die Glaskapsel (der echte Grund ist die Mischung aus Kapsel und
+  Seite, #F9F9FA / #2B2825): Light 4,79-6,81:1, Dark 4,57-8,41:1 - beides ueber der
+  Textschwelle, der Ton ist hier also nicht die Grenze. Aktiv gewinnt in BEIDEN Leisten die
+  Stimme zurueck: eine Zeile, die als Ganzes violett ist, deren Zeichen aber allein seine
+  Familienfarbe behielte, liest sich als „nicht mitgemeint".
+  **Pruefebene: Regel** (`die Sidebar zeigt die Modultoene als Legende` +
+  `die Tab-Bar zeigt dieselbe Legende wie die Sidebar`, `test:frontend-audit`) - zwei Guards,
+  weil die beiden Faelle getrennt kaputtgehen koennen.
+- **DIE VOLLTON-REGEL: was eine Identitaet NENNT, traegt seine Farbe im Vollton** (seit
+  2026-08-18). Eine 16-%-Waschung kann eine Farbaussage nicht tragen, und das ist gemessen,
+  nicht empfunden: im Dark HELLT eine Beimischung fast nur auf (Buntheit 4-8 von 24-73 des
+  Volltons, `dark-chroma.mjs`), im Light kollabieren benachbarte Familientoene auf denselben
+  Wert - Notizen, Dokumente und Inventar teilen die Familie `records` und hatten bei 16 %
+  BITWEISE denselben Scheibengrund. Die Toenung loescht genau den Unterschied, den sie
+  zeigen soll. Die Regel hat zwei Zweige, und welcher gilt, entscheidet die HERKUNFT der
+  Farbe:
+  - **Kuratierter Ton** (Modul-/Familienton, Kategoriefarbe aus einer festen Liste): die
+    Farbe IST die Flaeche, die Tinte ist `--color-ink-on-vivid`. Traeger ist `.vivid-mark`
+    (layout.css) - dieselbe Regel, die auch das `.module-seal` haeutet, damit Sheen und
+    Tinte nicht auseinanderlaufen koennen; die Geometrie bleibt bei der jeweiligen Marke.
+    Gemessen ueber alle betroffenen Marken in beiden Themes, mit und ohne Sheen:
+    **light 3,65-7,17:1, dark 6,17-12,24:1** (`.impeccable/redesign-tools/vollton-marken.mjs`) -
+    dasselbe Feld, das schon am Siegel steht.
+  - **Freie Nutzerfarbe** (Kalenderfarbe, Terminfarbe, Abo-Farbe): der Vollton steht NEBEN
+    dem Inhalt, nicht darunter - als 3px-Kante, Ring oder Punkt. Eine Flaeche braucht eine
+    Tinte, und auf einer frei gewaehlten Helligkeit gibt es keine (ein schwarzer Termin lag
+    bei 1.22:1). Eine Kante braucht keine.
+
+  **DIE GEGENRICHTUNG GEHOERT ZUR REGEL: wer nichts nennt, bleibt neutral.** Ein Platzhalter
+  - die Dropzone, das leere Vorschaufeld, der Avatar eines Kontakts ohne Haushalts-
+  Verknuepfung - sagte mit einer Modultoenung „Dokumente" auf einer Seite, die das schon
+  beantwortet hat. Diese Flaechen sind neutral (`--color-fill-well` plus Sekundaertinte,
+  also der dokumentierte Well und keine eigene Erfindung).
+
+  **UND SIE GILT AUCH FUER DEN ORT, AN DEM DIE FARBE GEWAEHLT WIRD.** Die sieben Toene der
+  Kontakt-Kategorien standen als sieben Regeln `.contact-group--<key>` in contacts.css -
+  ein Selektor auf den Schluessel, der per Konstruktion nur die SEED-Kategorien treffen
+  kann. Seit #357 legt der Haushalt eigene an, und die fielen alle auf den Modulton
+  zurueck: „Familie" und „Dienstleistungen" sahen gleich aus. Seit Migration 152 traegt
+  die Kategorie ihren Ton SELBST, waehlbar aus genau diesen sieben (Endpoint
+  `/contacts/meta`, Palette im Kategorie-Manager), und ohne Wahl bleibt sie neutral.
+  Gespeichert wird der Token-Ausdruck, nicht ein Hex-Wert - die Toene sind
+  themenabhaengig, und ein Hex koennte den Dunkelmodus nicht bedienen (dasselbe Muster
+  wie bei den Kontofarben des Budgets).
+
+  **WARUM EINE ALLOWLIST UND KEIN FREIER FARBWAEHLER:** die Kategoriescheibe ist eine
+  Vollton-Marke, ihre Tinte ist die feste `--color-ink-on-vivid`. Das haelt nur ueber
+  kuratierten Toenen. Eine frei gewaehlte Farbe muesste nach dem zweiten Zweig als Kante
+  erscheinen - und damit gaebe es wieder zwei Gesichter fuer eine Marke.
+
+  **DER ANLASS IST EINE WIEDERHOLUNG, und die ist die eigentliche Lehre.** Die Messung von
+  2026-08-17 hat `module-seal--vivid` und `--seal-base` gestrichen und einen Guard
+  hinterlassen, der die KLASSE nannte. Elf Geschwister derselben Bauart lebten unter anderen
+  Namen weiter - die Kategoriescheibe der Kontakte, das Absenderzeichen der Dokumentenkarte,
+  das Modulzeichen der Einstellungs-Modulliste, die Marke der geteilten Ausgaben, das
+  Schwangerschaftszeichen -, und im Kalender hatte dieselbe Etappe zwei von vier
+  Ereignis-Ansichten umgestellt: Woche und Ganztag trugen die Vollton-Kante, Monat und Tag
+  nicht. Ein Termin sprach zwei Sprachen, je nachdem welchen Ansichtsknopf man gedrueckt
+  hatte. **Ein Guard ueber eine Namensliste deckt keine Regel ab, sondern N Dateien** - zum
+  dritten Mal in diesem Projekt.
+  **Pruefebene: Signatur** (`eine Marke nennt ihre Identitaet im Vollton, nicht zweimal als
+  Waschung`, `test:frontend-audit`). Gesucht wird die BAUART, nicht der Name: ein bemessener
+  Behaelter (`width` UND `height` - eine Marke ist bemessen, ein Chip waechst mit seinem
+  Text), dessen Hintergrund eine Identitaetsfarbe als Waschung fuehrt und der dieselbe Farbe
+  im Vordergrund noch einmal nennt, ohne sie irgendwo voll zu tragen.
+- **DIE SKALEN-REGEL: ein Etikett nennt seinen Ton EINMAL, und zwar voll** (seit
+  2026-08-18). Die Vollton-Regel hat die MARKEN geraeumt; ihr Guard sucht einen bemessenen
+  Behaelter, und genau das liess die zweite Haelfte des Bestands stehen - ein Etikett ist
+  nicht bemessen, es waechst mit seinem Text. Die Bauart war dieselbe: getoente Flaeche,
+  darauf dieselbe Farbe noch einmal gemischt. Auf einer SKALA kostet sie mehr als an einer
+  Marke, weil sie nicht eine Aussage schwaecht, sondern mehrere gegeneinander:
+  - Gemessen an den vier Prioritaetsstufen der Aufgaben (`skalen-vollton.mjs`, CIEDE2000
+    auf der Kartenflaeche): „Hoch" -> „Dringend" liegt als Waschung bei **3,47 light /
+    4,01 dark**. Das ist ueber der Wahrnehmungsschwelle von 2,3, aber ein Drittel dessen,
+    was dieses Projekt fuer die Diagramm-Serien als Abstand akzeptiert hat (11,3) - und
+    zwei Etiketten der Liste stehen nie nebeneinander, sondern jedes allein in seiner
+    Zeile. Im Vollton sind es **12,90 und 23,62**.
+  - Und sie verdeckt Stufen, die es gar nicht gibt: `.birthday-chip--default` und
+    `--soon` waren BITWEISE identisch, obwohl `countdownChip()` drei Stufen kennt und das
+    im Kommentar sagt. Ein Geburtstag morgen und einer in vierzig Tagen sahen gleich aus.
+    Niemandem aufgefallen, weil eine Toenung ohnehin kaum etwas sagt.
+
+  **Drei Antworten, und was gilt, entscheidet, was das Etikett SAGT:**
+  - **Meldung** (Danger/Warning/Success/Info - Vorrat, Inventar-Status, erwartete Buchung):
+    der Ton steht in der SCHRIFT, im vollen Wert, ohne Flaeche. Die semantischen Toene
+    halten das als Kleintext (Danger 5,38:1 light / 5,20:1 dark, Warning 4,96 / 7,13 auf
+    `--color-surface`) - die Ink-Mischung war hier nie noetig, sie stammt aus der Regel
+    fuer MODUL-Toene, die als Schrift wirklich scheitern. Zwei Meldungen nebeneinander
+    trennt ein Mittelpunkt ueber den `+`-Kombinator, nicht eine Kapsel.
+  - **Rangmarke** (eine Stufe einer geordneten Reihe - Aufgaben-Prioritaet): ein
+    8px-Vollton-PUNKT traegt die Farbe, die Schrift bleibt Sekundaertinte. Gescannt wird
+    der Punkt, gelesen das Wort. 8px ist das Bestandsmass fuer einen Farbpunkt
+    (Kalender-Ebenen, Feiertagsmarke der Agenda). Der Punkt steht seit 2026-08-19 als
+    `.priority-dot` in `list-row.css`, nicht mehr in `tasks.css`: dieselbe Stufe erscheint
+    auch am Aufgaben-Chip des Kalenders, und ein Page-CSS je Seite heisst, dass tasks.css
+    dort gar nicht geladen ist. Die zweite Fassung, die daraus entstand, war ein getoentes
+    Feld mit getoenter Schrift - dieselbe Aufgabe sprach je nach Modul zwei Sprachen
+    (gemessen lagen die vier Felder 6,61 und 6,77 auseinander, bei 11,3 fuer die
+    Diagrammserien). **Wer eine Skala in einem zweiten Modul zeigt, verschiebt ihr Bauteil
+    in ein geteiltes Stylesheet, statt es dort nachzubauen.**
+  - **Zuordnung** (nennt eine Identitaet): Vollton-FLAECHE mit `--color-ink-on-vivid` -
+    aber nur, wenn die genannte Identitaet nicht die des Raums ist, in dem das Etikett
+    steht. Sonst greift die Herkunfts-Regel und das Etikett bleibt NEUTRAL
+    (`--color-fill-well` plus Sekundaertinte). Nach dieser Haelfte sind acht Stellen
+    neutral geworden, die den Modulton in seinem eigenen Modul trugen: Haushalt-Badge im
+    Budget, Bedarfs-Badge und Schwangerschaftszeichen in der Gesundheit, Zaehlmarke im
+    Mehr-Blatt, Widget-Zaehler, Alters-Badge (es stand neben einem Avatar in der
+    MITGLIEDSfarbe), Uhrzeit im Gesundheits-Widget, offener Betrag im
+    Haushaltshilfe-Widget.
+
+  **Bedienelemente sind ausgenommen, und zwar mit Grund, nicht mit Namensliste:** fuer sie
+  gilt die Eine-Stimme-Regel und ihr eigener Guard. Ein aktiver Filter-Chip beantwortet
+  „wo bin ich", und dafuer ist der Modulton zustaendig.
+  **Pruefebene: Signatur + Regel** (`was keine Marke ist, nennt seinen Ton auch nicht
+  zweimal blass` und `zwei Stufen einer Reihe sehen nie unabsichtlich gleich aus`,
+  `test:frontend-audit`). Der erste ist die KOMPLEMENTMENGE des Marken-Guards und traegt
+  deshalb kein Namensmuster: alles, was nicht bemessen ist, keinen `cursor: pointer` hat
+  und die Farbe nirgends voll traegt. Der zweite vergleicht Geschwister-Modifier EINER
+  Basisklasse: malen zwei dasselbe, ohne sich eine Regel zu teilen, ist eine Stufe zu viel
+  benannt - teilen sie sich eine (`--disposed, --lost`), ist die Gleichheit ausgesprochen.
 
 ### Tertiary
 - **Semantik im Apple-Vokabular, AA-vertieft**: Success (Apple Green, 5.1:1), Warning
@@ -393,8 +644,10 @@ reduced-transparency und prefers-contrast auf 0).
   dem Lauf, in dem dort ein Diagramm entsteht. Serie 1 (Indigo, dE 7.5 zum Akzent) bleibt
   bewusst: sie heisst in der Kontofarben-Wahl "Violett", dort ist die Naehe die Zusage.
 - **Prioritaeten** (`--color-priority-low..urgent`): unveraendert aus dem Bestand, die
-  Helligkeits-Trennung (High ~1,8x Urgent) ist farbfehlsicht-verifiziert. Die Badge-Fuellung
-  ist immer eine 12-%-Toenung derselben Farbe.
+  Helligkeits-Trennung (High ~1,8x Urgent) ist farbfehlsicht-verifiziert. **Die
+  Badge-Fuellung ist seit 2026-08-18 entfallen** (Skalen-Regel, Zweig Rangmarke): der Ton
+  steht im 8px-Punkt, das Etikett traegt weder Fuellung noch Kante noch getoente Schrift.
+  Was er vorher dreimal blass sagte, sagt er jetzt einmal voll.
 
 ### Neutral
 - **Grouped Background** (`grouped-bg` #F5F3ED): der App-Grund - warmes Papier in Apples
@@ -482,6 +735,17 @@ eine ganze Inhaltsflaeche: die Notizkarte tat das bis Runde 3 mit einer zur Lauf
 gerechneten Textfarbe und war damit die einzige Stelle, an der die Lesbarkeit an einer
 ungemessenen Farbe hing (und im Dark-Theme ein Feld heller Pastellbloecke).
 
+**Die Identitaetsfarben-Regel** (2026-08-17, Etappe 4). Wo eine PERSON gemeint ist, spricht
+ihre Identitaetsfarbe - und app-weit dieselbe. Ihr Traeger ist die Avatar-Scheibe im VOLLTON;
+das ist keine Ausnahme von der User-Farben-Regel, sondern ihr Dot in seiner groessten Form,
+und die Beschriftung darauf rechnet `getReadableTextColor()` gegen den gewaehlten Ton statt
+gegen eine angenommene Flaeche. Anlass war das Geburtstags-Widget: es toente jede Scheibe mit
+dem Modulton, und dieselbe Person leuchtete in der Familien-Kachel und sass eine Karte weiter
+grau. **Ihre Grenze ist die Verknuepfung.** Ein Geburtstag ohne Familienmitglied
+(`family_user_color` NULL, im Dashboard-Payload per LEFT JOIN mitgeliefert) behaelt die
+neutrale Modul-Toenung. Eine gehashte Ersatzfarbe waere schlimmer als keine: sie spraeche die
+Farbsprache des Haushalts fuer Fremde.
+
 **Die Toenungsskala-Regel** (loest die frühere Ein-Toenungsrezept-Regel ab, Runde 9).
 Jede Toenung nimmt eine benannte Stufe aus `tokens.css` (Abschnitt 6b), keine schreibt eine
 Zahl. Die alte Fassung sagte „16 %, EIN Rezept, app-weit" und beschrieb damit 23 von 214
@@ -506,16 +770,48 @@ verdunkelt), Nutzerfarben als Text (dort gilt die User-Farben-Regel) und Animati
 `@keyframes`. Pruefebene: Signatur (`jede Toenung nimmt eine Stufe der Toenungsskala`,
 `test:frontend-audit`).
 
-**Die Waschung ist auch die Antwort auf „Farbe wird Flaeche, nicht Strich" (v2.6.0).** Zwei
-Stellen haben 2026-08-11 von einer Linie oder einer neutralen Flaeche auf `--tint-wash`
-gewechselt, und beide aus demselben Grund: die Toenung untergreift dort FREMDEN Inhalt. Der
-Widget-Kopf des Dashboards trug seine Modulzugehoerigkeit als 2px-Haarlinie an der Oberkante
-- im Light gerade noch sichtbar, im Dark praktisch nicht, sodass das Board dort als Wand
-gleich grauer Rechtecke las; er traegt sie jetzt als Kopfband (siehe „Das Absenderband").
-Und die angeheftete Notiz bekam ihre Notizfarbe zurueck, die das neutrale Well geschluckt
-hatte. `--tint-surface` waere in beiden Faellen falsch: das ist die Stufe eines Chips, der
-SELBST das getoente Objekt ist; auf einem ganzen Band traegt sie zu laut und nimmt dem
-Siegel daneben seine Ausweisrolle.
+**Die Waschung untergreift fremden Inhalt - aber sie kann im Dark keine FARBE tragen
+(Grenze nachgetragen 2026-08-17).** Zwei Stellen haben 2026-08-11 von einer Linie oder
+einer neutralen Flaeche auf `--tint-wash` gewechselt („Farbe wird Flaeche, nicht Strich",
+v2.6.0): der Widget-Kopf des Dashboards und die angeheftete Notiz, die ihre Notizfarbe
+zurueckbekam. Die Notiz traegt sie weiter - dort ist die Waschung ein ZUSTAND auf heller
+Flaeche und tut, was die Skala verspricht. Der Widget-Kopf dagegen wollte mit der Waschung
+FARBE sagen, und genau das kann sie im Dark nicht: die CIEDE2000/LCh-Zerlegung
+(dark-chroma.mjs) zeigt, dass die 8-%-Mischung dort fast nur AUFHELLT (Buntheit 4-8 gegen
+24-73 des Volltons). Das Absenderband ist deshalb 2026-08-17 dem Vollton-Siegel gewichen
+(siehe „Der Widget-Kopf"). Die Rollen-Grenze der Skala bleibt unveraendert:
+`--tint-surface` ist die Stufe eines Chips, der SELBST das getoente Objekt ist, und
+Farbaussagen gehoeren in Volltonelemente, nicht in Beimischung.
+
+**Die Tagesmarke-Regel (2026-08-19).** „Heute" ist in jedem Modul dieselbe Aussage, also
+traegt sie die STIMME. Wo eine TAGESZELLE den aktuellen Tag markiert, gehoert ihr die
+Vollton-Marke in `--color-accent` mit `--color-ink-on-vivid` darauf, und die Zelle bekommt
+weder Fuellung noch Rahmen - der Kanon, den der Kalender seit jeher fuehrt
+(`.month-day--today .month-day__number`, `.week-view__day-num--today`) und dem der
+Datepicker mit seinem Inset-Ring folgt. Kreis, wo eine Ziffer steht; Kapsel, wo ein Datum
+steht.
+
+Der Anlass war das Wochenboard der Kueche: es faerbte Wochentag UND Datum in
+`--module-accent` und war damit die dritte Fassung von „heute" neben den zwei des
+Kalenders - eine Marke, die ihre Identitaet als getoente SCHRIFT nennt statt im Vollton,
+und dafuer auch noch den Modulton im eigenen Modul nimmt, wo der Kopf die Herkunft
+laengst beantwortet. Das Nachziehen ueber die Bauart fand die zweite Fundstelle sofort:
+der Zyklus-Kalender ringte seinen heutigen Tag im Gesundheitston, und das ist im
+Zyklus-Gitter ausgerechnet der Ton, der den PHASEN am naechsten liegt (CIEDE2000 gegen
+`--cycle-period`: **17,23 light / 14,33 dark**; in der Stimme 31,50 / 25,97, und der
+engste Abstand des ganzen Gitters steigt damit von 17,23/14,33 auf 26,60/25,97). „Heute"
+liegt regelmaessig auf einem geloggten Tag - dann stehen beide Ringe an derselben Zelle.
+
+**Zwei Kategorien sind ausdruecklich NICHT gemeint, und beide unterscheiden sich nach der
+Bauart, nicht nach einer Ausnahmeliste.** Eine FRISTMELDUNG („heute faellig",
+`.due-date--today`, `.housekeeping-task--today`) sagt nicht „das ist der heutige Tag",
+sondern „das ist jetzt dran", und traegt die Warnfarbe. Und die GEBURTSTAGSZEILE behaelt
+ihren Modulton mit der Begruendung, die im Quelltext steht: die Zeile beantwortet „wann",
+und der eine Tag, an dem die Antwort HEUTE lautet, ist der Anlass des ganzen Moduls -
+gemessen 5,08:1 light / 7,35:1 dark. Beides sind Zeile, Chip oder Textspanne, keine
+Tageszelle. Pruefebene: Signatur (`eine Tagesmarke traegt die Stimme, nicht den Modulton`,
+`test:frontend-audit`) - der Guard sucht einen exakten Namensabschnitt `day` im Selektor,
+weil ein `includes('day')` `birthday` mitfaengt.
 
 ## Typography
 
@@ -634,6 +930,15 @@ Kanon-Bestandteil. Dekorative Kicker und Eyebrows ohne Informationswert bleiben 
 die generische Opt-in-Klasse dafuer ist mit dem Rollout entfallen, weil ihr Name zur
 Rueckkehr des Musters einlud.
 
+**Die Initialen-Schwelle-Regel** (2026-08-17, Etappe 3). Unter der Lesbarkeit gibt es keine
+Initialen, nur die Farbe. Ein Avatar zeigt seine Initialen - und der Stapel sein „+N" - erst
+ab 20px Scheibe und dann nie unter 11px, dem Wert von Caption 2 und damit der kleinsten
+Textrolle, die die App ueberhaupt kennt (Verhaeltnis <= 0.55 statt der freien Proportion).
+Darunter IST die Scheibe der Kanal: die Nutzerfarbe traegt per Identitaetsfarben-Regel
+ohnehin das Signal, der Name steht im `title`. Vorher stand hier eine 9px-Untergrenze, und
+die Kalender-Gitter riefen mit `size` 14-16 genau hinein (Sonde `undersized-ui-text`, 13
+Fundstellen). Ein 9px-Text sagt weniger als ein sauberer Punkt.
+
 ## Layout
 
 - **Grund-Raster:** 4px (`--space-1` = 4px bis `--space-16` = 64px). Content-Spalte max
@@ -682,6 +987,23 @@ Rueckkehr des Musters einlud.
   „Die Nachlauf-Regel".
 - **Icon-Stufen:** genau vier (12/16/20/24px, `--icon-sm..xl`); Lucide bleibt das Icon-Set,
   keine Glyphen-Fonts.
+- **Ein Modul fuehrt EIN Zeichen, in EINER Hand** (2026-08-17). Wo ein Modul sich zu erkennen
+  gibt - Leiste, Sidebar, „Mehr"-Blatt, Widget-Kopf, Kennzahl-Kachel, „Heute wichtig", Suche,
+  Wand -, zeichnet Yuvomis eigener monoliniger Satz (`public/nav-icons.js`); was er nicht
+  kennt, faellt auf Lucide zurueck. Aktions- und Zustandszeichen (Chevron, Plus, Uhrzeit-Slot
+  einer Mahlzeit) bleiben Lucide - sie beantworten nicht „welches Modul".
+  **Der Fehler war nicht ein falscher Glyph, sondern die dritte Tabelle:** die Zuordnung
+  Modul → Zeichen stand in `navItems()`, in `widgetIcon()` und noch einmal an jeder
+  `widgetHeader()`-Aufrufstelle. Sie sind auseinandergelaufen - Notizen war in der Leiste ein
+  Zettel (`sticky-note`) und im Widget-Kopf eine Stecknadel (`pin`), Haushaltshilfe ein Pinsel
+  und auf der Kachel Funkeln (`sparkles`). Jetzt gibt es `MODULE_ICON`, und die Koepfe
+  bekommen ihre WIDGET-ID statt eines Icon-Namens: die Abweichung ist nicht mehr schreibbar.
+- **Die Strichstaerke ist die Handschrift, nicht ein Zufall** (`--icon-stroke`, 1.35 gerenderte
+  px plus `vector-effect: non-scaling-stroke` auf Siegel- und Nav-Zeichen). Der eigene Satz
+  zeichnet mit 1.6 auf viewBox 24, Lucide mit 2; bei 20px bzw. 16px ergab beides zufaellig
+  1,333px - die Uebereinstimmung hing an den GROESSEN, nicht an einer Regel, und fiel, sobald
+  ein eigenes Zeichen bei 16px stand. CSS schlaegt das `stroke-width`-Attribut, deshalb gilt
+  der Wert fuer beide Haende.
 - **Motion:** Dauern kanonisch 80-400ms (`--duration-2xs..2xl`), immer in ms. `--ease-out`
   cubic-bezier(0.16,1,0.3,1) fuer Einblendungen; Feder mit Overshoot `--ease-glass`
   cubic-bezier(0.34,1.56,0.64,1) fuer Glas-Elemente; die Sidebar-Pille bekommt die sanftere
@@ -697,7 +1019,11 @@ Rueckkehr des Musters einlud.
 Hybrid aus zurueckhaltenden iOS-Schatten fuer opake Inhalte und Glas-Material fuer
 Chrome. Tiefe entsteht primaer ueber Material (Blur + Transluzenz + Specular-Kanten), nicht
 ueber dramatische Schatten. Dark Mode verstaerkt die Schatten deutlich (Glas braucht dort
-mehr Trennung vom dunklen Grund).
+mehr Trennung vom dunklen Grund) - und seit der Dark-Kur (2026-08-17) tragen auch die
+opaken Stufen sm/md/lg/xl dort den 1px-Weiss-Ring der Glas-Schatten (0.05-0.06): ein
+rgba(0,0,0)-Wurf auf der Kohle-Buehne ist gemessen unsichtbar, der Ring ist die Trennung,
+die der Schatten im Dark nicht leisten kann. Im Light bleibt der Ring den Glas-Schatten
+vorbehalten; xs bleibt in beiden Themes ohne Ring.
 
 ### Shadow Vocabulary
 - **shadow-xs** (`0 1px 2px rgba(0,0,0,0.08)`): kleinste Abhebung.
@@ -981,6 +1307,11 @@ Zielgroessen-Regel halten (**Ebene 3**, `die Groesse des Icon-Knopfs gehoert der
   getoente FLAECHE (`--tint-state` Grund, `--tint-hint` Kante, `--tint-ink` Tinte) - das
   ist die andere Haelfte der Regel „eine Behandlung pro Kontrolltyp" und ausdruecklich
   NICHT die Segment-Pille. Scrollende Chip-Reihen bekommen die Fade-Mask (siehe Layout).
+- **Innenabstand:** vertikal mindestens 4px (`--space-1`). Die Kalender-Aufgaben-Chips
+  standen mit 2px buendig an der Kante ihrer eigenen Toenung (Sonde `cramped-padding`, 7
+  Fundstellen); eine getoente Flaeche braucht Luft zu ihrem Rand, sonst liest sie sich als
+  abgeschnitten statt als Chip. Einzige Ausnahme ist das dichte Monatsraster, das seine
+  engere Fassung ueber einen `.month-day`-Override behaelt.
 
 ### Cards / Containers
 - **Corner Style:** 12px (`--radius-md`) fuer die Karte, 16px (`--radius-lg`) fuer den
@@ -1062,7 +1393,7 @@ statt `--radius-lg` und **gar keinen Schatten** - `border: 1px solid transparent
 nichts. Der Radius ist an seiner Verwendungsstelle begruendet (shopping.css: die Gruppe
 klippt mit ihrem `overflow: hidden` die Wischflaeche), der fehlende Schatten nirgends. Die
 Fuellung ist dagegen keine Abweichung: `--color-surface-work` hat in beiden Themes denselben
-Wert wie `--color-surface` (#FFFFFF / #262422).
+Wert wie `--color-surface` (#FFFFFF / #2B2825).
 
 **Das LESEMASS ist seit 2026-08-13 keine der Abweichungen mehr.** Es trug nur `.list-rows`,
 mit der ausgeschriebenen Begruendung, die Listen ausserhalb der Kueche seien breiter. Das war
@@ -1248,9 +1579,11 @@ nichts.
 
 **Die Ueberlappung IST das Zeichen, nicht die Nachbarschaft.** Zwei Kreise nebeneinander
 waeren zwei Angaben; erst der Schnitt macht daraus eine. Der Versatz betraegt ein Drittel des
-Avatars, und der Ring darum nimmt `--seal-base` - denselben Parameter, mit dem das Siegel
-schon seinen echten Untergrund kennt. Ohne ihn laufen zwei getoente Flaechen ineinander,
-sobald die Toene sich aehneln.
+Avatars, und der Ring darum nimmt `--seal-pair-ground` (Voreinstellung `--color-surface`) -
+die Flaeche, auf der das PAAR steht. Er hiess `--seal-base` und teilte sich den Namen mit dem
+Mischgrund des Siegels; das waren immer zwei Fragen, und mit dem Vollton ist von ihnen nur
+noch die des Rings uebrig. Ohne den Ring laufen zwei gesaettigte Flaechen ineinander, sobald
+die Toene sich aehneln - seit dem Vollton noetiger als vorher, nicht weniger.
 
 **Gebaut ist es an der Mischstelle „Heute wichtig"**, wo es das „von wem" der Aufgabe und des
 Termins traegt; Einkauf und Essen bekommen keines, weil sie keine Person haben. Gehalten von
@@ -1338,12 +1671,26 @@ Knopf IST.** Und es ist sicher, weil die Gefahrenrichtung stimmt: er liegt oben,
 landet also auf „Anlegen" und nicht auf „Loeschen" darunter. Laege es umgekehrt, waere die
 strenge Invariante ihren Preis wert.
 
-**Ein Nachlauf trifft beide Scrollport-Architekturen richtig, auf zwei Wegen** - geprueft, nicht
-angenommen. Wo `.app-content` selbst scrollt (Dashboard, Aufgaben, Belohnungen, Geburtstage,
-Dokumente …), reitet er am Inhaltsende und der Scrollport bleibt fensterhoch. Wo der Modul-Root
-`height: 100%` traegt (die acht mit innerem Scroller), verkuerzt er dessen Bezugshoehe - dort
-verhaelt sich alles exakt wie mit der Marge, also ohne Regress. Gemessen ueber 15 Routen: kein
-totes Band, und am Scroll-Ende nirgends ein Ziel unter dem Knopf.
+**Der Nachlauf gehoert an das, was WIRKLICH scrollt** (2026-08-20). Hier stand: „Ein Nachlauf
+trifft beide Scrollport-Architekturen richtig, auf zwei Wegen - geprueft, nicht angenommen …
+gemessen ueber 15 Routen: kein totes Band." Der erste Weg stimmt: wo `.app-content` selbst
+scrollt (Dashboard, Aufgaben, Belohnungen, Geburtstage, Dokumente …), reitet der Nachlauf am
+Inhaltsende und der Scrollport bleibt fensterhoch. Der zweite war falsch, und die Formulierung
+sagt auch, warum er durchging: „verkuerzt er dessen Bezugshoehe - dort verhaelt sich alles exakt
+wie mit der Marge, also **ohne Regress**". Gemessen wurde gegen den Vorzustand, nicht gegen die
+Zusage. Kein Regress heisst nicht richtig: bei den acht Modul-Roots mit `height: 100%` verkuerzt
+das Padding an `.app-content` den echten Scrollport bei jedem Scrollstand und laesst darunter
+einen Streifen stehen, der nichts traegt und nicht mitscrollt.
+
+Sichtbar wurde es erst, als die Sammelpille dazukam: sie bekam 2026-08-13 die richtige Fassung
+(Nachlauf am echten Scrollport), die alte an `.app-content` blieb daneben stehen, und die drei
+Module mit Pille zahlten sie sieben Tage lang doppelt - 76px am Zeiger, 80px am Finger, in jedem
+der drei gleich. Die Regel lautet deshalb: **der Nachlauf haengt an der Rolle `.page-scrollport`,
+die jede Seite mit eigenem Scrollport selbst vergibt** - nie an der Box, die den Scrollport
+enthaelt. Die drei fixierten Flaechen sind Summanden (`--fab-tail`, `--bulk-pill-tail`,
+`--install-prompt-tail`), eine Regel legt die Summe an. Ein Scrollport mit eigenem Bodenpolster
+meldet es als `--scrollport-pad` an, statt `padding-bottom` zu schreiben, sonst ersetzt der
+Nachlauf es.
 
 **Mobil aendert die Regel nichts, und das ist per Konstruktion so:** unter 1024px ist
 `--fab-safe-zone` 0, weil der Knopf in der Nav-Kapsel sitzt. Ein Nachlauf von 0 ist dasselbe
@@ -1352,7 +1699,12 @@ wie eine Marge von 0.
 Pruefebene: **Dokument** (`Sonde 18 - am Scroll-Ende liegt nichts Bedienbares unter dem FAB`,
 test-document-guards.js, beide Geraetewelten) plus **Struktur** (`der FAB weicht der Zeile,
 statt eine Gasse zu reservieren`, test-frontend-audit.js), der die Marge ausdruecklich
-verbietet. Sonde 18 ist gegen ihren Anlassfall gegengeprueft: ohne Reserve meldet sie
+verbietet. Seit 2026-08-20 dazu drei Guards ueber die Rolle: `wer seinen eigenen Scrollport
+mitbringt, markiert ihn` (Kriterium ist die Bauart des Modul-Roots, keine Modulliste),
+`die Scrollport-Rolle sitzt an einer Box mit Ueberlauf` (Gegenrichtung) und `die Pillenzone
+steht nur am markierten Scrollport` (Abwesenheit an `.app-content`). Der letzte ist die Lehre
+aus dem Vorgaenger, den er ersetzt: der forderte die falsche Bauart ausdruecklich ein und
+zementierte damit den Defekt, den er absichern sollte. Sonde 18 ist gegen ihren Anlassfall gegengeprueft: ohne Reserve meldet sie
 `contact-more-menu__trigger` (64 %) und `row-action--danger` (45 %). **Und sie hatte selbst
 zwei blinde Fassungen** - die erste suchte den Scroller an seinem Namen statt an seinem
 Overflow und meldete Zwischenstaende als Ende, die zweite zaehlte Ziele mit, die der Scrollport
@@ -1482,11 +1834,11 @@ eine Stelle, an der die Marke etwas kann, was keine Systemapp braucht: **Yuvomi 
 einzige Ort, an dem siebzehn Apps in einem Raum leben, und das Siegel weist jedes Ding als
 "aus Raum X" aus.**
 
-**Material:** ein kreisrunder, getoenter Chip mit gefuelltem Modul-Icon und der Sheen-
-Lichtkante der Bildmarke (drei transluzente Kreise) - Flaeche auf `--tint-surface` des
-Familientons, Icon im vollen Ton, Sheen als Gradient aus `--glass-sheen`. **KEIN
-backdrop-filter**: die Glas-ist-Chrome-Regel bleibt unberuehrt, und der Sheen-Stop kippt unter
-`prefers-reduced-transparency` und `prefers-contrast` mit seinem Token auf die flache Toenung.
+**Material:** eine kreisrunde VOLLTON-Scheibe mit Modul-Icon und der Sheen-Lichtkante der
+Bildmarke (drei transluzente Kreise) - Flaeche im Familienton, Tinte `--color-ink-on-vivid`,
+Sheen als Gradient aus `--glass-sheen`. **KEIN backdrop-filter**: die Glas-ist-Chrome-Regel
+bleibt unberuehrt, und der Sheen-Stop kippt unter `prefers-reduced-transparency` und
+`prefers-contrast` mit seinem Token auf die flache Scheibe.
 
 **Die Herkunfts-Regel (das Einsatzgesetz).** Ein Siegel zeigt die Herkunft eines Objekts, und
 Herkunft zeigt man nur, wo sie nicht selbstverstaendlich ist. Daraus folgen genau zwei Faelle:
@@ -1508,7 +1860,9 @@ verlangt von jeder eine der beiden Rollen; die Kopfrolle darf nur die Shell baue
 
 **Die Navigation traegt KEINES, und das ist dieselbe Regel, nicht ihre Ausnahme.** In der
 Tab-Bar und der Sidebar steht das Label unter dem Icon - die Herkunft ist dort
-selbstverstaendlich, ein Siegel waere Dekor. Die Leiste ist ausserdem der einzige Ort, der
+selbstverstaendlich, ein Siegel waere Dekor. Was sie traegt, ist der Ton auf dem nackten
+Zeichen (Legende, siehe „Colors") - das ist kein halbes Siegel, sondern der andere Kanal:
+keine Scheibe, keine Flaeche, nur die Farbe des Zeichens. Die Leiste ist ausserdem der einzige Ort, der
 nicht "woher" beantwortet, sondern "wo bin ich"; getoente Scheiben auf allen Eintraegen nehmen
 der aktiven Pille ihre Alleinstellung, und Suche, Hilfe und Abmelden bekaemen Scheiben ohne
 Modul. Das Mehr-Sheet traegt Siegel, weil es ein VERZEICHNIS von Raeumen ist - der
@@ -1518,17 +1872,28 @@ Unterschied bleibt nur lesbar, solange die Leiste keine traegt. (Entscheidung vo
 **Zwei Groessenrollen:** Listenzeile `--sm` (24px, Icon 16px) und Modulkopf (32/24px je nach
 Rang seines Titels, siehe Modulkopf).
 
-**Der Traeger entscheidet, welches Gesicht es zeigt** - derselbe Satz wie beim Well, und aus
-demselben Grund, naemlich einer Messung. Die Toenung ist auf Flaechen der Seiten-Polaritaet
-geeicht und traegt dort 1,19-1,33:1; ihr Grund ist deshalb ein Parameter (`--seal-base`, per
-Voreinstellung `--color-surface`), damit sie auf dem Kopfgrund gegen `--color-bg` mischt statt
-gegen Weiss - mit dem alten, festverdrahteten Rezept laege die Scheibe dort bei 1,06:1 und
-verschwaende, genau wie ein Well auf dem Grouped-Grund. Auf einer UMGEKEHRTEN Flaeche zeigt
-das Siegel sein Vollton-Gesicht (`--vivid`): der Toast ist die eine Flaeche der App, die in
-beiden Themes die Umkehrung der Seite ist (`--neutral-800` ist hell im Dark-Theme und dunkel
-im Light), dort liegt jede Toenung bei 1,03-1,10:1. Der Vollton mit `--color-ink-on-vivid` ist
+**Das Siegel hat EIN Gesicht, und es ist der Vollton** (2026-08-17). Hier standen zwei: eine
+16-%-Toenung fuer den Regelfall und `--vivid` fuer die eine umgekehrte Flaeche (den Toast),
+dazu ein Parameter `--seal-base` fuer den Grund, gegen den die Toenung mischt. Der Vollton hat
+die Regel gewonnen, statt neben ihr zu bestehen - erst der Widget-Kopf, dann die Kachelreihe,
+und beide mit derselben Begruendung.
+
+**Was die Toenung erledigt hat, ist eine Messung, und zwar zweimal dieselbe.** Im Dark zerlegt
+`dark-chroma.mjs` die Beimischung in Helligkeits- und Buntheitsanteil: sie hellt fast nur auf
+(Buntheit 4-8 von 24-73 des Volltons) - eine Waschung KANN im Dark keine Farbe tragen. Im Light
+war der Befund schaerfer und stand sichtbar im „Mehr"-Blatt: Notizen, Dokumente und Inventar
+teilen die Familie `records`, und ihr Scheibengrund war bei 16 % **bitweise derselbe**
+(#E1E4EA). Die Toenung loeschte genau den Unterschied, den sie zeigen soll. Der Vollton ist
 dieselbe Sprache, die die App fuer jede vivide Flaeche schon fuehrt (Primaerknopf, FAB,
-aktives Segment, Marken-Tile); gemessen 5,1-9,8:1 fuer den Glyph in beiden Themes.
+aktives Segment, Marken-Tile).
+
+**Gemessen ueber alle neun Familientoene, Glyph gegen Scheibe, an der unguenstigsten Stelle**
+(unter dem Sheen, wo 16 % Weiss den Ton aufhellen): Light 3,65-5,18:1, Dark 7,42-12,24:1 -
+ueberall ueber der 3:1-Grafikschwelle. Ohne Sheen liegt Light bei 5,04-7,17:1.
+**Pruefebene: Regel** (`dashboard „Heute wichtig" is one inset-grouped list`,
+`test:frontend-audit`) - der Guard verbietet die Rueckkehr von `--seal-base` UND von
+`--vivid`, und er liest ueber `eachRule`, damit ihn die Begruendung in den Kommentaren nicht
+selbst ausloest.
 
 **Das Ueberlappungszeichen** (Avatar ueberlappt Siegel, "wer ∩ was") ist das Familien-Zeichen
 aus der Drei-Kreise-Marke. Es erscheint nur, wenn es mehr als einen moeglichen Beteiligten
@@ -1544,33 +1909,47 @@ Medikamente), serverseitig uebersetzt ueber die Datensprache des Haushalts, clie
 die Sprache des Nutzers. Die beiden Karten liegen beidseits der Schichtgrenze und sind an die
 `entity_type` gebunden, die der Server wirklich schreibt (Guard-Ebene Signatur).
 
-### Das Absenderband (Signature Component)
-Der Kopf einer Dashboard-Karte traegt die Modulzugehoerigkeit als getoente FLAECHE, nicht als
-Strich: `--tint-wash` des Familientons gegen `--color-surface`, und die Trennlinie darunter
-erbt denselben Ton (`--tint-state` gegen `--color-border`), damit Band und Kante EIN Element
-sind statt einer getoenten Flaeche mit neutralem Abschluss.
+### Der Widget-Kopf: das Vollton-Siegel als Absender (Signature Component)
+Seit 2026-08-17 (Widget-Kopf-Kur, Etappe 2 der Modernisierung) ist der Kopf einer
+Dashboard-Karte eine TITELZEILE DIREKT AUF DER KARTENFLAECHE: davor das Markensiegel im
+Vollton (Ton = Flaeche, Tinte = `--color-ink-on-vivid`), Titel in
+Text-Primary, Zaehler als getoenter Badge, „Alle" als neutraler Textlink mit Ton erst im
+Hover. Kein Band, keine getoente Trennlinie, keine 2px-Oberkante: der Absender einer Karte
+ist GENAU EIN Element, und es traegt den Modulton zu 100 %. Die Kachelreihe
+(`metric-card--tile`) fuehrt dasselbe Siegel - zwei Siegel-Gesichter auf einem Board
+waeren zwei Wahrheiten.
 
-**Der Anlass war ein Kanal, der nur im Light existierte** - und das Band ist die ANTWORT
-darauf, nicht sein Ersatz. Die 2px-Haarlinie an der Kartenoberkante bleibt bestehen
-(`--tint-hint` des Widget-Tons gegen `--color-border`, auf JEDER Karte und in jeder
-Groessenklasse); sie war nur allein zu wenig, weil ein Farbsignal von zwei Pixeln im Dark
-Mode praktisch verschwand und das Board dort als Wand gleich grauer Rechtecke las. Ersetzt hat
-das Band die neutrale Kopf-Unterkante, nicht die Linie: Karte, Band und Kante tragen jetzt
-denselben Ton in drei Staerken (`--tint-hint` / `--tint-wash` / `--tint-state`).
+**Hier stand `module-seal--vivid`, und die Klasse gibt es nicht mehr.** In Etappe 2 war sie
+die Ausnahme neben der 16-%-Toenung; Etappe 3 desselben Tages hat den Vollton zur Regel
+gemacht, er steht seither in der `.module-seal`-Basisregel, und die Variante ist mitsamt
+`--seal-base` gestrichen (siehe „Das Markensiegel"). Der Kopf setzt hier also keine Klasse
+mehr, er setzt nur `--seal-accent`.
+
+**Hier stand von v2.6.0 bis 2026-08-17 das ABSENDERBAND** - ein vollbreites
+`--tint-wash`-Band mit getoenter Trennlinie plus der 2px-Haarlinie an der Oberkante, drei
+Farbaussagen in ~51px. Es ist an seiner eigenen Messlatte zurueckgebaut: es sollte den im
+Dark unsichtbaren Haarlinien-Kanal ersetzen, aber eine WASCHUNG kann im Dark keine Farbe
+tragen. Die Chroma-Zerlegung (CIEDE2000/LCh, `.impeccable/redesign-tools/dark-chroma.mjs`)
+zeigt: die 8-%-Mischung hellt fast nur auf (Buntheit 4-8 gegen 24-73 des Volltons; records
+VERLIERT auf der warmen Kohle sogar Buntheit). Das Band war damit im Light ein
+Pastellstreifen und im Dark ein Braunschleier - „klobige eingefaerbte Zeile" (Betreiber,
+Critique 2026-08-17) traf beide. Die Lehre ist allgemeiner als das Band: **wer im Dark Farbe
+sagen will, sagt sie im Vollton eines kleinen Elements, nicht in der Beimischung einer
+grossen Flaeche.**
 
 **Den Ton setzt die Karte, nicht die Seite.** Jede `.widget--*`-Klasse legt `--widget-accent`
-auf ihren Modulton; der Fallback ist die Stimme. Ein `--active-module-accent` an dieser Stelle
-loeste auf dem Dashboard den Akzent der UEBERSICHT auf, also bekamen alle Widgets dieselbe
-Farbe - ausgerechnet in dem Raster, in dem siebzehn Module nebeneinanderstehen.
+auf ihren Modulton (fuer Badge, Link-Hover und Fehlerkante); das Siegel selbst bekommt
+`--seal-accent` aus dem Slug seiner Route. Der Fallback ist die Stimme. Ein
+`--active-module-accent` an dieser Stelle loeste auf dem Dashboard den Akzent der UEBERSICHT
+auf, also bekaemen alle Widgets dieselbe Farbe - ausgerechnet in dem Raster, in dem siebzehn
+Module nebeneinanderstehen.
 
-**Das Siegel bekommt das Band als seinen eigenen Grund.** `--seal-base` wird im Kopf auf
-dieselbe Mischung gesetzt, auf der das Siegel steht; ohne das mischt seine Scheibe gegen
-`--color-surface` und liegt auf der Toenung bei 1,06:1 - dieselbe Falle, die der Modulkopf
-schon kennt („Der Traeger entscheidet, welches Gesicht es zeigt").
-
-**Es ist kein Akzentstreifen im Sinne des Banns.** Der gilt Zierstreifen an Toolbars, Tabs und
-Modulkoepfen - Schmuck, der nichts sagt. Hier ist die Toenung die ABSENDERANGABE der Karte,
-dieselbe Aufgabe, die das Siegel im Kopf ohnehin hat, nur als Grund statt als Zeichen.
+**`--seal-base` braucht der Kopf nicht mehr - und niemand sonst.** Die Mischgrund-Falle
+(„Der Traeger entscheidet, welches Gesicht es zeigt") gehoerte zum getoenten Gesicht auf dem
+Band-Grund; der Vollton kennt keine Mischung, sein Ton IST die Flaeche (AA an der
+Toast-Herkunft gemessen: Glyph auf Scheibe 5,1-9,8:1 in beiden Themes). Der Parameter ist
+mit ihr app-weit entfallen, ein Guard verbietet seine Rueckkehr; was den Namen weiterfuehrt,
+ist `--seal-pair-ground` am Ueberlappungszeichen, und das beantwortet eine andere Frage.
 
 ### Das Tagesprogramm (Signature Component)
 Das eine Blatt, das die Uebersicht anfuehrt: EIN Traeger auf `--color-surface` mit
@@ -1587,6 +1966,75 @@ Geraeten dieselbe.
 `--today-card-accent` schon, aus welchem Raum sie kommt - das Siegel links zeigt es -, und ein
 neutraler Hover warf diese Auskunft im Moment der Beruehrung weg. `--tint-state` (12 %) ist
 die Skalenstufe fuer genau das: Zustand auf einer ungetoenten Flaeche.
+
+### Das Wetter-Widget (Signature Component)
+
+**Das Wetter ist der einzige Inhalt der App, den niemand im Haushalt eingegeben hat** - er
+kommt von draussen und aendert sich von selbst. Deshalb ist es die einzige Kachel, die eine
+eigene Farbe und eine eigene Bewegung traegt. Bis 2026-08-17 stand seine Glyphe in
+`--module-dashboard`, also im Violett der Uebersicht: die Karte sagte damit, WO sie haengt -
+eine Auskunft, die auf einer Dashboard-Karte niemand braucht, weil sie schon aus der Seite
+folgt.
+
+**SECHS LAGEN ALS TON** (tokens.css 5b): klar, Nacht, bewoelkt, Regen, Schnee, Gewitter.
+Sie sind eine PARALLELE Domaenenfamilie, keine zehnte Familientonfamilie - das Vokabular
+der neun Familien gehoert den Modulen, und keine Lage teilt den Wert einer von ihnen. Die
+Lage wird aus dem ICON-NAMEN abgeleitet, nicht aus dem Beschreibungstext: der ist
+lokalisiert und in der OWM-Fassung frei formuliert, das Icon ist beim selben Provider immer
+derselbe Schluessel. Zwoelf Werte, gemessen gegen ihre drei realen Gruende je Theme,
+Zielwert **4.5:1 statt 3:1** - der Ton traegt in der Verlaufszeile auch die
+Hoechsttemperatur, und das ist Kleintext. Farbe ist nie alleiniger Traeger: daneben stehen
+die Glyphe der Lage und der ausgeschriebene `wmo.*`-Text.
+
+**DER LICHTHAUCH** haengt an der Glyphe, nicht an der Karte - eine Huelle um sie, weil ein
+SVG keine Pseudo-Elemente hat. Zwei Stufen, zwei Rollen: der Kern toent als Objekt
+(`--tint-surface`), das auslaufende Feld untergreift fremden Inhalt (`--tint-wash`). Der
+erste Anlauf hing an `.weather-widget__main` und rechnete sich von dessen Inline-Ende zur
+Glyphe zurueck; ab 860px Containerbreite bekommt der Kasten eine feste Basis und das Licht
+lag gemessen 108px neben seiner Sonne. **Wo ein Bezug eine Rechnung braucht, ist der
+Anker falsch gewaehlt.**
+
+**VIER GANGARTEN**, und jede sagt, was sie zeigt: `rays` dreht die Sonnenstrahlen um die
+stehende Scheibe (72s), `drift` laesst die Wolke ziehen, `fall` schickt Tropfen und Flocken
+versetzt nach unten, `flash` laesst das LICHT doppelt aufleuchten statt die Glyphe zucken
+(ein Blitz IM Zeichen liest bei 24px wie ein Darstellungsfehler). Die Gangart haengt am
+Icon, NICHT am Ton: `sun` und `cloud-sun` tragen denselben Bernstein und bewegen sich
+gegensaetzlich, weil bei `cloud-sun` die Wolke selbst ein `<path>` ist. Ziele sind
+Kindknoten der Lucide-SVGs; trifft eine Regel nach einem Update ins Leere, steht die Glyphe
+still - der schlechteste Ausgang ist kein Defekt.
+
+**DER AUSSCHALTER IST EINE BEDINGUNG, KEINE GEGENREGEL**, und das ist die uebertragbare
+Lehre dieser Runde. Der erste Anlauf folgte der Hausform
+(`@media (prefers-reduced-motion: reduce) { ... animation: none }`) und hat den Regen nicht
+angehalten: die Tropfenregel traegt ein `:not(:first-child)` und damit eine Klasse mehr
+Spezifitaet als die Gegenregel. Die Sonne stand still, der Regen fiel weiter, und beide
+standen im selben Block. Ein Spezifitaets-Wettruesten waere die zweite Falle gewesen - jede
+neue Gangart braeuchte ihre eigene Gegenzeile, und die vergisst man genau einmal. Die
+Bewegung steht deshalb NUR DANN im Stylesheet, wenn sie erwuenscht ist
+(`prefers-reduced-motion: no-preference`). Was bleibt, bleibt: Ton, Lichthauch und
+Spannenbalken sind Farbe und Form, keine Bewegung. Guard-Ebene: Signatur (jede Regel, die
+eine Wetterflaeche animiert, muss unter einer Bewegungs-Bedingung stehen) - er fand
+denselben Befund im Bestand, den Ladekringel des Aktualisieren-Knopfs, und der bleibt als
+BENANNTE Ausnahme: eine Aktivitaetsanzeige muss auch unter reduzierter Bewegung erkennbar
+sein, und die Zusicherung belegt, dass sie fluechtig ist.
+
+**DIE SPANNE DER WOCHE** macht aus der Verlaufszeile eine Auskunft. Unter jedem Wochentag
+standen zwei nackte Zahlen ohne Beziehung zueinander - welcher Tag der waermste ist, war
+eine Rechenaufgabe. Der Balken ist auf die Spanne der GANZEN Vorhersage normiert: Lage sagt,
+wo der Tag in der Woche liegt, Laenge, wie weit er schwankt, Farbe, wie warm es wird. Fuenf
+BENANNTE Temperaturbaender statt einer stufenlosen Rampe, und der Grund ist ein Guard: eine
+Interpolation haette ihren Mischwert als Zahl am Element gebraucht
+(`calc(var(--x) * 100%)`), und genau diese Bauart sieht der Toenungs-Guard nicht - sie waere
+die achtunddreissigste Prozentstufe gewesen, nur unsichtbar. Die Schwellen stehen in jeder
+Einheit ausgeschrieben statt umgerechnet: „unter null" ist im Fahrenheit-Haushalt 32 °F und
+nicht 31,999.
+
+**DREI FLAECHEN, ZWEI GANGARTEN.** Karte, Masthead-Zeile und Wand-Modus teilen Ton und
+Bewegung; die Kartenglyphe traegt Farbe allein, ihre fuenf Vorhersagezeichen bleiben
+sekundaer und die Auskunft uebernimmt der Balken. Auf der WAND ist es umgekehrt: dort traegt
+jeder der vier Tage seinen eigenen Ton, weil aus zwei Metern Farbe die schnellere Auskunft
+ist als Form. Nachts gibt die Wand beides ab - ein bernsteinfarbenes Sonnenzeichen waere im
+dunklen Flur der hellste Punkt im Raum.
 
 ### Anmeldeseite
 Die erste Seite der App ist Teil derselben Welt, keine Ausnahme. Die Buehne ist der reine
@@ -1617,14 +2065,27 @@ Kriterium der Regel eindeutig: er tut in jedem Modul dasselbe. Die 3:1-Messung o
 noch aus der Modulton-Zeit und bleibt die Begruendung der Untergrenze; sie haelt fuer den
 einen Akzent erst recht, weil das Violett dunkler ist als das gemessene Tasks-Gruen.
 
-### Monatsgrid-Event-Bars (Signature Component, Kalender)
-Flache Tint-Bars statt satter Farbfelder: Flaeche auf `--tint-surface` (Layer-Farbe auf
-`--color-surface-work`, Hover eine Sprosse hoeher auf `--tint-raised`), Tinte
-`color-mix(in srgb, var(--ev-color) 35%, var(--color-text-primary))`; gemessen 7.2-9.5:1
-ueber die Layer-Farben. Keine Borders, Icons oder Avatar-Stacks im Monat (das "wer" traegt
-das title-Attribut). "Heute" ist NUR ein gefuellter Akzent-Kreis auf der Ziffer;
+### Event-Bloecke im Kalender (Signature Component)
+**Im Monatsraster** flache Tint-Bars statt satter Farbfelder: Flaeche auf `--tint-surface`
+(Layer-Farbe auf `--color-surface-work`, Hover eine Sprosse hoeher auf `--tint-raised`),
+Tinte `color-mix(in srgb, var(--ev-color) 35%, var(--color-text-primary))`; gemessen
+7.2-9.5:1 ueber die Layer-Farben. Keine Borders, Icons oder Avatar-Stacks im Monat (das
+"wer" traegt das title-Attribut). "Heute" ist NUR ein gefuellter Akzent-Kreis auf der Ziffer;
 Nachbarmonatstage dimmen ueber Flaeche UND Ziffer (AA-fest), nie ueber blosse Opacity auf
 Text allein.
+
+**Die Vollton-Kanten-Regel** (2026-08-17, Etappe 3). Wo ein Block GROSS genug ist, ihn zu
+tragen, sagt eine Kante im Vollton, zu wem er gehoert - 3px an der Inline-Start-Seite, der
+Zeitleisten-Kanon der Messlatte (Apple Kalender, Fantastical). Der Tagesspalten-Block hatte
+sie als eigenes Element (`.day-event__spine`) laengst; Wochen- und Ganztages-Bloecke bekamen
+sie als `border-inline-start`, weil sie ohne sie im Dark entsaettigter Nebel waren: 16 %
+Fuellung plus eine 1px-Kante auf halber Deckung ist dieselbe Beimischungs-Falle, an der das
+Absenderband zerbrochen ist - **eine Waschung hellt auf, sie faerbt nicht.** Fuellung
+(`--tint-surface`) und Tinte (38 % im Wochen- und Tagesblock, 35 % im Ganztages-Balken und
+im Monat) bleiben bei ihren gemessenen Rezepten unveraendert; die Farbe wandert in die Kante,
+wo die User-Farben-Regel sie ausdruecklich zulaesst. Das Monatsraster bleibt kantenlos: bei
+20px Chiphoehe waere die Kante ein Viertel des Blocks und die Regel gegen sich selbst
+gerichtet.
 
 ### Der Wand-Modus (Signature Component)
 **Der WACHE Zustand des Dashboards - keine zweite Seite, sondern dieselbe Flaeche in anderer
@@ -1685,6 +2146,11 @@ Angabe braeuchte einen zweiten Timer, nur damit sie sich selbst aktuell haelt.
   bleibt stabil und wird nie doppelt geaendert.
 - **Do** jede neue Farb-Flaechen-Paarung gegen ihren REALEN Hintergrund auf AA messen
   (Pro-Hintergrund-Regel), in Light und Dark.
+- **Do** die Stimme fuer alles nehmen, was in jedem Modul dasselbe tut (Shell, FAB,
+  Primaer- und Sekundaerknopf, Umschalter, Fokusring, Suche, Overlays), und den Modulton
+  nur fuer das, was sagt, WO man ist (Siegel im Kopf, Leisten und Segmente im Modul, Chips,
+  Zeilen-Hover, Widget). Das Kriterium ist die Frage, die das Element beantwortet - „was tut
+  das hier" oder „wo bin ich" (Eine-Stimme-Regel).
 - **Do** eine Folge gleichartiger Zeilen in GENAU EINEN Traeger legen und ueber den
   `+`-Kombinator trennen (Zeilenlisten-Regel).
 - **Do** in einer Karte zwischen ZEILE (Haarlinie) und KACHEL (Inset-Well) waehlen; nur
@@ -1698,8 +2164,9 @@ Angabe braeuchte einen zweiten Timer, nur damit sie sich selbst aktuell haelt.
   prefers-contrast, fehlender backdrop-filter).
 - **Do** ein Markensiegel nur setzen, wo es eine Rolle hat: an einer Mischstelle benennt es
   eine fremde Herkunft, im eigenen Modul steht es genau einmal als Absender im Kopf
-  (Herkunfts-Regel). Und **Do** ihm seinen echten Grund mitgeben (`--seal-base`), statt die
-  Toenung gegen eine angenommene Flaeche zu mischen.
+  (Herkunfts-Regel). Und **Do** seinen Ton allein ueber `--seal-accent` setzen: die Scheibe
+  traegt ihn im Vollton und mischt gegen gar nichts, deshalb stellt sich die Frage nach dem
+  Grund nur noch fuer die Tinte darauf.
 - **Do** den Rang eines Blocks ueber Radius und Elevation setzen, nie ueber Material
   (Rang-Regel); der wichtigste Block einer Seite darf nicht der leiseste sein.
 - **Do** einer Karte mit Fusszeile den Koerper strecken und die Fusszeile verankern
@@ -1708,11 +2175,82 @@ Angabe braeuchte einen zweiten Timer, nur damit sie sich selbst aktuell haelt.
 - **Do** eine Spaltenzahl, die von der Breite eines BAUSTEINS abhaengt, per `@container`
   fragen - und den `container` am VORFAHREN deklarieren, nie am fragenden Element.
 - **Do** die Kennzahl einer Karte gestapelt setzen (kleines Label darueber, Zahl in Title 1
-  darunter, `tabular-nums`), nie als Zahl am rechten Ende einer Beschriftungszeile.
+  darunter, `tabular-nums`), nie als Zahl am rechten Ende einer Beschriftungszeile. Title 1
+  ist die Zusage, nicht die einzige Stufe: eine schmale KENNZAHLREIHE klemmt ihre Werte auf
+  Title 2 (unter 600px) und Title 3 (unter 400px), und Title 3 ist die Untergrenze - darunter
+  waere die Kennzahl so gross wie die Ueberschrift ueber ihr. Gefragt wird die REIHE, nicht
+  die Karte: wer eine Reihe aus `.metric-card` baut, deklariert
+  `container: metric-grid / inline-size` an ihr (`.metric-grid` und das Vitalraster der
+  Gesundheit tun genau das). Ein `container-type` an der KARTE selbst ist der Fehler dahinter -
+  `contain: inline-size` nimmt einem Grid-Item seine intrinsische Breite, und die Karten
+  fielen gemessen auf 18px zusammen.
+- **Do** einen Wert, der auch auf der kleinsten Stufe nicht passt, TEILEN statt weiter zu
+  verkleinern: die Kennzahl traegt eine Aussage, die Praezisierung gehoert in
+  `.metric-card__note`. „18.08.2026 · 08:30" war Datum UND Uhrzeit in einer Zahl und lief
+  38px ueber die Kartenkante; jetzt steht das Datum im Wert und die Uhrzeit in der Fussnote.
+- **Do** eine AUSWERTUNGSFLAECHE nach vier Zusagen bauen (die Grammatik, die der
+  Wetterbalken aus v2.21.0 gestiftet hat - sie war bis 2026-08-19 die einzige Flaechenfamilie
+  ohne Abschnitt hier, und das war kein Zufall, sondern die Ursache fuer fuenf Dialekte):
+  1. **Ein Verhaeltnis steht als ANTEIL am Element** (`--bar-scale`, `--span-from/--span-to`,
+     jeweils 0..1), nie als gerechnete Pixelhoehe im Markup. Der Wert ist DATEN, die Geometrie
+     ist DESIGN - das Balkenpaar der Haushaltshilfe trug `style="height:88px"` und skalierte
+     deshalb nicht mit seiner Karte.
+  2. **Ein Balken hat eine BAHN.** Ohne sie zeigt er nur sich selbst; mit ihr zeigt er seinen
+     Anteil. Die Bahn ist neutral (`--color-fill-well`), die Fuellung traegt die Farbe.
+  3. **Die Achse gehoert INS Diagramm**, nicht daneben: eine Beschriftung ausserhalb des SVG
+     verschiebt sich gegen ihre eigenen Gitterlinien, sobald das Diagramm skaliert.
+     `chartGridMarkup()` in health.js ist die Referenz - fuenf Linien mit Werteachse, EINE
+     geteilte Geometrie (`CHART`) fuer alle drei Charts des Moduls.
+  4. **Ein Diagramm ist nie der alleinige Traeger.** Die Zahl steht dabei; der Balken ist der
+     zweite Kanal, nicht der Ersatz.
+- **Do** jeder fixierten Shell-Flaeche ueber dem Scrollport einen NACHLAUF am Inhaltsende
+  geben, und zwar als Summand (`--install-prompt-tail`), nicht als weitere `:has()`-Fassung:
+  FAB, Sammelaktions-Pille und Install-Banner sind drei Flaechen und waeren als Kombinatorik
+  acht Regeln. Der Banner hatte bis 2026-08-19 gar keinen und verdeckte auf /rewards gemessen
+  97px der letzten Zeile, ohne Scrollweg dorthin. Wer den Summanden setzt, schreibt ihn als
+  `:root:has(...)` - `html:has(<typ>)` ist Spezifitaet (0,0,2) und verliert gegen das `:root`
+  der Basis.
 - **Do** den Primaerknopf eines Modulkopfs sein NOMEN zeigen lassen (`newLabel.*`:
   „Termin", „Geburtstag"); das Verb traegt das Plus-Zeichen, der ganze Satz bleibt im
   `aria-label`. Der kurze Text steht als `data-dock-label` am `.page-fab`, damit der
   Router ihn beim Andocken findet (Register-Regel).
+- **Do** die Zugehoerigkeit eines farbigen Blocks ueber eine VOLLTON-Kante tragen (3px an der
+  Inline-Start-Seite), sobald der Block sie tragen kann, und Fuellung wie Tinte bei ihren
+  gemessenen Rezepten lassen (Vollton-Kanten-Regel).
+- **Do** eine Person ueberall in ihrer Identitaetsfarbe zeigen, und zwar auf der
+  Vollton-Scheibe; wer keine hat (unverknuepfter Kontakt), bleibt NEUTRAL, statt eine
+  gehashte oder die Modul-Toenung zu bekommen (Identitaetsfarben-Regel). Der Modulton stand
+  hier bis 2026-08-18 als „neutral" - er ist es nicht, er ist eine leise Farbaussage, und
+  sie sagte „Geburtstage" auf einer Seite, die das schon beantwortet hat.
+  **Die PERSON schlaegt dabei ihre Kategorie:** eine Kontaktzeile mit
+  `family_user_id` traegt Bild und Farbe des Mitglieds, keine Kategoriescheibe - und ihre
+  Tinte kommt aus `getReadableTextColor`, weil eine Avatarfarbe frei gewaehlt und ihre
+  Helligkeit damit unbestimmt ist.
+- **Do** eine Marke, die eine Identitaet NENNT, ihre Farbe im VOLLTON tragen lassen:
+  kuratierter Ton als Flaeche (Klasse `vivid-mark`, Tinte `--color-ink-on-vivid`), freie
+  Nutzerfarbe als Kante, Ring oder Punkt daneben. Und **Do** neutral bleiben, wo nichts
+  genannt wird - ein Platzhalter braucht keine Herkunft (Vollton-Regel).
+- **Do** den heutigen Tag einer TAGESZELLE in der Stimme markieren, als Vollton-Marke am
+  Datum, waehrend die Zelle selbst leer bleibt (Tagesmarke-Regel) - Kreis um eine Ziffer,
+  Kapsel um ein Datum. Eine Fristmeldung („heute faellig") ist keine Tageszelle und
+  behaelt ihre Warnfarbe.
+- **Do** einer Zahl, die neben einer anderen Zahl steht, ihr Wort mitgeben („wird 37" neben
+  „13 Tage"); stand das Wort bisher nur unsichtbar im `title`, ist es sichtbar faellig -
+  Kopfrechnen ist keine Gestaltung.
+- **Do** eine Liste, die im Schmalen zur Liste wird, dort auch die Zeilen-Grammatik
+  sprechen lassen (Textspalte mit `min-width: 0`, unschrumpfbare Bedienzone, EINE Zeile).
+  Der Wochenplan der Kueche stapelte als einziger der vier Tabs - Titel, Aktionszeile,
+  Anlege-Streifen - und kostete damit 172px Slot fuer 16 Zeichen und 5830px Scroll fuer
+  eine Woche bei 454px sichtbarer Flaeche. Als Zeile: 73px und 3056px.
+- **Do** ein Etikett seinen Ton EINMAL und voll nennen lassen (Skalen-Regel): eine Meldung
+  in der Schrift, eine Rangmarke im 8px-Punkt neben neutraler Schrift, eine Zuordnung als
+  Vollton-Flaeche - und neutral (`--color-fill-well`), wenn die genannte Identitaet die des
+  Raums ist, in dem das Etikett steht.
+- **Do** den Glyph einer Kennzahlkarte die Farbe seines LABELS tragen lassen (`inherit`):
+  er ist das Piktogramm der Beschriftung neben ihm, und die Farbe der Karte gehoert ihrem
+  WERT (`trendValence()` in `utils/metric-card.js`). Neun Vitalkarten mit neun identischen
+  Modul-Glyphen sagten neunmal, in welchem Modul man steht - das ist die Wetter-Glyphe vor
+  v2.21.0, nur an einem geteilten Bauteil.
 
 ### Don't:
 - **Don't** einen zweiten Buttonradius einfuehren; die Kapsel steht in der `.btn`-Basisregel
@@ -1723,10 +2261,16 @@ Angabe braeuchte einen zweiten Timer, nur damit sie sich selbst aktuell haelt.
 - **Don't** einen zweiten Anlege-Weg neben einem sichtbaren stehen lassen; und wenn
   einer weichen muss, dann unter DERSELBEN Bedingung, unter der der andere erscheint -
   nie unter einer eigenen Zahl daneben.
+- **Don't** der Shell oder einem geteilten Bedienelement den Modulton geben - auch nicht
+  unter einem eigenen Klassennamen. Der Struktur-Guard liest SELEKTOR-Formen; wer
+  `.btn--secondary` unter eigenem Namen umfaerbt, steht in keiner davon. Genau dafuer gibt
+  es den zweiten Guard ueber die Klassen-Kopplung im Markup.
 - **Don't** Gradient-Text oder Akzent-Titel: Large Titles und Ueberschriften tragen immer
   Label-Farbe.
 - **Don't** chromatische Verlaeufe auf Inhalt legen; auch nicht auf der Anmeldebuehne und
-  nicht auf einem Widget.
+  nicht auf einem Widget. Ein weiches Lichtfeld HINTER einer Glyphe ist keins - es fuellt
+  keine Flaeche, laeuft vor dem Text aus und traegt die Ausschalter der Backdrop-Blobs
+  (siehe „Colors"). Wer es kopiert, kopiert auch die Messung.
 - **Don't** Akzentstreifen an Toolbars, Tabs oder Koepfen; die gehoerten zur abgeloesten Welt.
 - **Don't** dekorative Kicker/Eyebrows; eine Versal-Zeile ist nur als echte Information
   erlaubt (Apple-News-Muster, z. B. das Masthead-Datum).
@@ -1734,7 +2278,10 @@ Angabe braeuchte einen zweiten Timer, nur damit sie sich selbst aktuell haelt.
 - **Don't** einer Zeile in einer Liste eine Karte anziehen (Schatten, Radius,
   Surface-Fuellung) und nie `border-bottom` je Zeile.
 - **Don't** User-/Layer-Farben als Textfarbe verwenden; nur Border/Dot bzw. die gemessenen
-  16-%/35-%-Mix-Rezepte, und nie eine ganze Inhaltsflaeche.
+  16-%/35-%-Mix-Rezepte, und nie eine ganze Inhaltsflaeche (die Avatar-Scheibe ist der Dot
+  in seiner groessten Form, keine Flaeche - Identitaetsfarben-Regel).
+- **Don't** Initialen unter die kleinste Textrolle der App schrumpfen; ab 20px Scheibe
+  11px, darunter traegt die Farbe allein (Initialen-Schwelle-Regel).
 - **Don't** die Bildmarke anfassen (drei transluzente Kreise, Violett plus Sheen); sie ist
   als Marke gesetzt.
 - **Don't** Ueberschriften ueber 34px; die Display-Stufen 48/72px sind exklusiv fuer
@@ -1744,8 +2291,32 @@ Angabe braeuchte einen zweiten Timer, nur damit sie sich selbst aktuell haelt.
 - **Don't** Siegel in die Listen eines Moduls streuen oder der Tab-Bar/Sidebar geben; im
   eigenen Raum ist die Herkunft selbstverstaendlich, und die Leiste beantwortet "wo bin ich",
   nicht "woher".
+- **Don't** eine Stufe einer Skala als getoentes Feld bauen - schon gar nicht mit
+  getoenter Schrift und getoenter Kante darauf. Die vier Prioritaets-Etiketten nannten
+  ihren Ton dreimal blass, und zwischen den beiden obersten Stufen blieben davon 3,47
+  (light) uebrig. Und **Don't** zwei Stufen derselben Reihe dieselbe Regel schreiben, ohne
+  sie ihnen zu GEBEN: `--default` und `--soon` der Geburtstags-Chips waren bitweise gleich,
+  weil die Gleichheit in zwei Regeln stand statt in einer.
 - **Don't** eine Zugehoerigkeit ueber eine Haarlinie allein tragen lassen; was in einem Theme
-  ein Signal ist und im anderen keines, ist kein Kanal (Absenderband).
+  ein Signal ist und im anderen keines, ist kein Kanal. Und **Don't** sie ueber eine
+  Waschung tragen lassen: eine Beimischung hellt im Dark fast nur auf. Der Kanal fuer
+  Zugehoerigkeit ist das Vollton-Siegel (Widget-Kopf, 2026-08-17; davor Absenderband).
+- **Don't** dieselbe Identitaetsfarbe zweimal blass nennen - getoente Flaeche UND blasser
+  Glyph darauf. Das ist die zurueckgenommene Fassung des Siegels unter anderem Namen, und
+  sie hat elf Mal ueberlebt, weil der Guard von damals die Klasse nannte statt der Regel.
+- **Don't** eine Regel dieser Art nur dort anwenden, wo sie aufgefallen ist. Die
+  Vollton-Kante erreichte zwei von vier Kalender-Ansichten, und das Vollton-Siegel eine von
+  zwoelf Marken - beide Male war die Etappe „fertig", waehrend dasselbe Objekt zwei
+  Sprachen sprach. Wer eine Regel setzt, sucht ihre Geschwister ueber die BAUART. Und
+  **Don't** dabei eine Bauart ueber `includes()` suchen: „jede Klasse mit `day` darin"
+  faengt `birthday` mit, und die Geburtstagszeile ist der dokumentierte Gegenfall. Der
+  Vergleich laeuft ueber NAMENSABSCHNITTE.
+- **Don't** eine Regel in einen Media-Block schreiben, der VOR den Bauteilen steht, die sie
+  ueberschreiben soll. Bei gleicher Spezifitaet gewinnt die spaetere Regel: `display: none`
+  und `flex-direction: row` im 640px-Block von meals.css verloren gegen die
+  Komponentendefinitionen 200 Zeilen darunter, und jede einzelne Regel sah dabei richtig
+  aus. Aufgefallen ist es nur an der Messung - das Wochengitter war danach 358px HOEHER
+  statt niedriger. Wer einen schmalen Zustand baut, stellt ihn hinter sein Bauteil.
 - **Don't** einen Zustand ueber `opacity` auf dem eigenen Inhalt zeigen; eine Kachel, die
   ihren Text schlechter lesbar macht, um Anfassbarkeit zu signalisieren, steigt stattdessen
   eine Sprosse der Toenungsskala.

@@ -303,14 +303,21 @@
   color: var(--color-text-secondary);
 }
 
-/* Initialen sind Text, die Avatarfarbe ist eine Nutzerfarbe: die Fläche trägt
- * das gemessene 16-%-Rezept, die Tinte ein TOKEN.
- * NACHGEMESSEN (Runde 3): der 70-%-Ink-Mix der Akzent-auf-Tönung-Regel gilt
- * für kuratierte Modultöne, nicht für frei gewählte Nutzerfarben. Er bricht an
- * den Enden der Helligkeitsachse - weiss/light 1.92:1, schwarz/dark 1.97:1,
- * und sogar der graue Fallback #8E8E93 landet bei 4.47:1 unter AA. Der
- * Primärtext hält auf derselben Fläche 11.7-17.0:1 (light) und 9.3-15.9:1
- * (dark), über die ganze Palette und über Extremfarben hinweg. */
+/* DIE SCHEIBE IST DER PUNKT IN SEINER GRÖSSTEN FORM - ALSO VOLLTON.
+ *
+ * Hier stand das gemessene 16-%-Rezept mit Primärtext darauf, und die
+ * Begründung dafür war eine Kontrastrechnung: der 70-%-Ink-Mix bricht an den
+ * Enden der Helligkeitsachse (weiss/light 1.92:1, schwarz/dark 1.97:1). Die
+ * Rechnung stimmt bis heute - sie beantwortet nur eine Frage, die sich nicht
+ * mehr stellt. Auf dieser 16px-Scheibe steht seit der Initialen-Schwelle-Regel
+ * gar kein Text mehr (notes.js), und die Identitätsfarben-Regel benennt die
+ * Scheibe ausdrücklich als „den Dot in seiner grössten Form, keine Fläche".
+ * Eine Waschung war hier die letzte Nutzerfarbe der App, die ihre Identität
+ * blass nannte.
+ *
+ * Wo Text auf einer Nutzerfarbe nötig IST, löst das inzwischen
+ * `getReadableTextColor` - fünf Bauteile fahren so (user-multi-select,
+ * seal-pair, contacts, rewards, Dashboard). */
 .note-card__avatar {
   width: 16px;
   height: 16px;
@@ -318,10 +325,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: var(--text-xs);
-  font-weight: var(--font-weight-bold);
-  background: color-mix(in srgb, var(--avatar-color, var(--color-accent)) var(--tint-surface), var(--color-surface));
-  color: var(--color-text-primary);
+  background: var(--avatar-color, var(--color-accent));
   flex-shrink: 0;
   overflow: hidden;
 }

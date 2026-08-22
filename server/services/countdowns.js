@@ -1,0 +1,319 @@
+/**
+ * Modul: Countdowns (#647)
+ * Zweck: Die als Countdown markierten Termine und Aufgaben zu EINER nach
+ *        Nähe sortierten Liste zusammenführen - die Datenseite des
+ *        Übersichts-Widgets.
+ * Abhängigkeiten: server/services/recurrence.js, server/services/visibility.js
+ *
+ * WARUM ZWEI QUELLEN UND NICHT EINE TABELLE. Der Thread zu #647 ist genau an
+ * dieser Frage entlanggegangen und bei zwei Quellen gelandet: @Kyrodan zählt bis
+ * zu Dingen, die er ohnehin als Termin führt (Urlaub, „Disney+ verlängern"),
+ * @jamespurnama1 bis zu Dingen, die keine Termine sind (Führerschein,
+ * Luftfilter) und deren Rücksetzung auf eine DAUER hängt, nicht auf ein Datum -
+ * also auf `recurrence_from_completion` (#658), das die Aufgaben schon können.
+ * Ein drittes Objekt hätte für beide eine zweite Schreibweise derselben
+ * Fälligkeit bedeutet. Das Zusammenführen kostet dafür diese Datei.
+ *
+ * WAS VORBEI IST, BLEIBT EINE NACHFRIST LANG STEHEN. Hier stand das Gegenteil:
+ * ein Countdown, dessen Tag vorbei war, fiel sofort heraus. Die Begründung war,
+ * dass „überfällig" für Aufgaben schon an drei Stellen steht und ein vierter Ort
+ * eine zweite Wahrheit wäre.
+ *
+ * Sie hielt nicht stand (Critique 2026-08-17). Für TERMINE gibt es „überfällig"
+ * nirgends, und der Anlassfall des ganzen Threads ist ein Ablaufdatum:
+ * Führerschein, Versicherung, Vertrag. Ein Countdown, der genau beim Aufprall
+ * aufhört zu zählen, lässt den Nutzer im einen Moment allein, für den er ihn
+ * gesetzt hat - am Vortag steht „Morgen", am Tag danach steht nichts mehr, und
+ * niemand sagt ihm, dass er es verpasst hat.
+ *
+ * Die Nachfrist gilt für BEIDE Quellen, obwohl das Aufgaben-Argument von oben
+ * dort weiter gilt. Zwei Regeln in einer Kachel wären teurer als die
+ * Wiederholung: diese Liste enthält nur ausdrücklich Markiertes, also eine
+ * kleine kuratierte Menge, und dort ist „seit 3 Tagen abgelaufen" keine vierte
+ * Überfälligkeits-Liste, sondern das Ende genau dieses einen Countdowns.
+ *
+ * Heute zählt mit: „heute läuft der Führerschein ab" ist die wichtigste Anzeige,
+ * die dieses Widget je hat.
+ */
+
+import { nextOccurrenceAfter } from './recurrence.js';
+import { loadEventExceptions } from './calendar-events.js';
+import { visibilityWhere } from './visibility.js';
+import { serverTimeZone, utcToWall } from '../utils/timezone.js';
+
+// So viele Countdowns liefert der Server. Die Kachel entscheidet wie überall
+// selbst, wie viele davon sie zeigt (`listRowCap` in pages/dashboard.js) - der
+// Vorrat ist für die größte Fassung bemessen, wie bei den Geburtstagen.
+const DEFAULT_LIMIT = 5;
+
+/**
+ * So viele Tage bleibt ein abgelaufener Countdown stehen, bevor er still
+ * herausfällt.
+ *
+ * Sieben, weil die Nachfrist eine Woche Alltag abdecken soll: wer freitags nicht
+ * hinsieht, findet den verpassten Stichtag am Montag noch vor. Länger wäre keine
+ * Nachfrist mehr, sondern eine zweite Aufgabenliste - und diese Kachel ist
+ * ausdrücklich keine.
+ */
+const OVERDUE_GRACE_DAYS = 7;
+
+// Sicherheitsgrenze beim Aufholen einer Serie über ausgenommene Vorkommen
+// (EXDATE, #489). Eine Serie, die mehr als das an aufeinanderfolgenden
+// Ausnahmen trägt, hat kein nächstes Vorkommen, das dieses Widget zeigen müsste.
+const MAX_EXCEPTION_SKIPS = 50;
+
+/**
+ * Ganze Tage zwischen zwei Datumsschlüsseln (YYYY-MM-DD).
+ *
+ * Über Date.UTC, nicht über lokale Date-Objekte: die Differenz zweier lokaler
+ * Mitternachten ist an einer Zeitumstellung 23 bzw. 25 Stunden lang und ergibt
+ * geteilt durch 86400000 nicht 1. Dieselbe Rechnung wie in
+ * services/birthdays.js und public/utils/countdown.js.
+ */
+export function daysBetween(fromKey, toKey) {
+  const from = parseKey(fromKey);
+  const to = parseKey(toKey);
+  if (from === null || to === null) return null;
+  return Math.round((to - from) / 86400000);
+}
+
+function parseKey(key) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(key ?? '').slice(0, 10));
+  if (!match) return null;
+  return Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+}
+
+/** `dateKey` um `days` Tage verschoben, wieder als YYYY-MM-DD. */
+function shiftKey(dateKey, days) {
+  const ms = parseKey(dateKey);
+  if (ms === null) return null;
+  return new Date(ms + days * 86400000).toISOString().slice(0, 10);
+}
+
+/**
+ * Der Kalendertag, an dem ein Termin beginnt - in der Zone, in der auch
+ * `todayKey` gebildet wird.
+ *
+ * DER UNTERSCHIED ZWISCHEN BEIDEN ZWEIGEN IST EIN GANZER TAG. Ein ganztägiger
+ * Termin trägt sein Datum ohne Zeitanteil; da gibt es nichts umzurechnen, und
+ * wer es trotzdem täte, verschöbe ihn. Ein Termin MIT Uhrzeit steht dagegen als
+ * UTC in der Datenbank: „21.09. um 01:00" mitteleuropäischer Sommerzeit ist dort
+ * der 20.09. um 23:00Z, und der rohe Datumsanteil hätte den Countdown genau um
+ * die Differenz zwischen zwei Zahlen daneben liegen lassen, die beide „das
+ * Datum" heissen. Gerechnet wird gegen dieselbe Zone, aus der die Route ihren
+ * `todayKey` bildet - ein Vergleich zweier Kalendertage taugt nur, wenn beide
+ * aus demselben Kalender stammen.
+ */
+function eventStartDateKey(event) {
+  const raw = String(event.start_datetime ?? '');
+  const key = event.all_day || raw.length <= 10
+    ? raw.slice(0, 10)
+    : (utcToWall(raw, serverTimeZone())?.date ?? raw.slice(0, 10));
+  return /^\d{4}-\d{2}-\d{2}$/.test(key) ? key : null;
+}
+
+/**
+ * Das nächste Vorkommen eines Termins ab (einschliesslich) `todayKey`.
+ *
+ * Ein einmaliger Termin ist sein eigenes Vorkommen; liegt er hinter uns, bleibt
+ * er die Nachfrist lang stehen (`graceDays`) und fällt danach heraus. Eine Serie
+ * wird aufgeholt; ausgenommene Instanzen (EXDATE) werden übersprungen, sonst
+ * zeigte der Countdown auf einen Tag, an dem nichts stattfindet.
+ *
+ * DIE NACHFRIST GILT NUR FÜR EINMALIGES, und das ist keine Vereinfachung,
+ * sondern der Unterschied selbst: eine jährliche Verlängerung ist nie
+ * „abgelaufen", sie hat ein nächstes Mal. Wer ihr die Nachfrist gäbe, zeigte
+ * „seit 3 Tagen abgelaufen" für einen Termin, der in 362 Tagen wieder ansteht.
+ *
+ * @returns {string|null} YYYY-MM-DD oder null
+ */
+export function nextEventDate(event, todayKey, exceptions = null, { graceDays = 0 } = {}) {
+  const startKey = eventStartDateKey(event);
+  if (!startKey) return null;
+  if (!event.recurrence_rule) {
+    const floor = graceDays > 0 ? shiftKey(todayKey, -graceDays) : todayKey;
+    return floor && startKey >= floor ? startKey : null;
+  }
+
+  let candidate = startKey >= todayKey
+    ? startKey
+    : nextOccurrenceAfter(startKey, event.recurrence_rule, todayKey);
+
+  let skips = 0;
+  while (candidate && exceptions?.has(candidate) && skips++ < MAX_EXCEPTION_SKIPS) {
+    candidate = nextOccurrenceAfter(candidate, event.recurrence_rule, candidate);
+  }
+  // `nextOccurrenceAfter` hat eine eigene Schleifengrenze und kann bei einer
+  // sehr alten Serie mit sehr kurzem Intervall aufgeben, bevor sie die Gegenwart
+  // erreicht. Ein Datum in der Vergangenheit ist dann kein Countdown, sondern
+  // ein falscher - lieber nichts zeigen.
+  if (!candidate || candidate < todayKey) return null;
+  return candidate;
+}
+
+/**
+ * Ist dieses Modul haushaltweit abgeschaltet?
+ *
+ * Gelesen wie der Budget-Modus nebenan (`resolveBudgetMode`) - direkt aus
+ * `sync_config`, defensiv gegen fehlenden, kaputten oder nicht-Array-Wert:
+ * „nichts abgeschaltet" ist die einzige sichere Auslegung eines unlesbaren
+ * Werts, denn die andere Richtung würde ein Modul stumm ausblenden.
+ */
+function disabledModules(d) {
+  const row = d.prepare("SELECT value FROM sync_config WHERE key = 'disabled_modules'").get();
+  if (!row?.value) return new Set();
+  try {
+    const parsed = JSON.parse(row.value);
+    return new Set(Array.isArray(parsed) ? parsed.filter((m) => typeof m === 'string') : []);
+  } catch {
+    return new Set();
+  }
+}
+
+/**
+ * Alle für `userId` sichtbaren Countdowns, nach Nähe sortiert.
+ *
+ * @param {object} d            Offene DB-Verbindung
+ * @param {object} opts
+ * @param {number} opts.userId  Betrachter (Sichtbarkeitsfilter)
+ * @param {string} opts.todayKey YYYY-MM-DD in der LOKALEN Zeit des Servers
+ * @param {Set<string>|null} [opts.hiddenModules] Module, die dem BETRACHTER
+ *        entzogen sind (`access_permissions`, #467) - eine andere Achse als die
+ *        haushaltweite Abschaltung unten, die dieselbe Antwort verdient.
+ * @param {number} [opts.limit]
+ * @returns {{items: Array<{source: 'event'|'task', id: number, title: string,
+ *                  date: string, days_until: number, icon: string|null,
+ *                  color: string|null, recurring: boolean}>, total: number}}
+ */
+export function getCountdowns(d, {
+  userId = null, todayKey, hiddenModules = null, limit = DEFAULT_LIMIT,
+} = {}) {
+  /* EIN ABGESCHALTETES MODUL LIEFERT HIER GAR NICHTS MEHR (Review zu PR #793).
+   *
+   * Bis hierher fragte der Server beide Quellen ab, deckelte auf fünf und
+   * überliess das Aussortieren dem Browser. Das ging bei jeder anderen Kachel
+   * gut, weil dort die KACHEL einem Modul gehört und mit ihm verschwindet -
+   * diese gehört zweien, und ihre blosse Existenz hängt an der gefilterten
+   * Menge (`countdownAvailable` in pages/dashboard.js).
+   *
+   * Der Fall: Kalender abgeschaltet, die fünf nächsten Countdowns sind Termine,
+   * eine markierte Aufgabe steht dahinter. Der Server schickte die fünf
+   * Termine, der Browser warf alle fünf weg, und die Kachel verschwand samt
+   * ihrem Eintrag in der Anpassen-Ablage - wegen Einträgen, die der Haushalt
+   * gar nicht sehen darf. Die Aufgabe war nie unterwegs.
+   *
+   * Deshalb hier und nicht dort: Filter, Sortierung, Schnitt und Gesamtzahl
+   * müssen dieselbe Menge meinen. Ein nachgelagerter Filter macht aus `total`
+   * wieder die Sorte Zahl, die nur bis zu ihrer Obergrenze stimmt. Der
+   * Browser-Filter bleibt trotzdem stehen: er fängt das Umschalten eines
+   * Moduls ohne neuen Ladevorgang ab.
+   *
+   * ZWEI ACHSEN, EIN SCHNITT. `disabled_modules` schaltet ein Modul für den
+   * GANZEN Haushalt ab; `access_permissions` entzieht es einem einzelnen
+   * Mitglied (#467). Für diese Liste laufen beide auf dieselbe Frage hinaus -
+   * darf dieser Betrachter diese Zeile sehen? -, und deshalb landen sie in
+   * einem Set und nicht in zwei nacheinander angewandten Filtern. Der
+   * Unterschied wäre sonst wieder `total`: zwei Schnitte, zwei Wahrheiten. */
+  const hidden = new Set([...disabledModules(d), ...(hiddenModules ?? [])]);
+  const items = [
+    ...(hidden.has('calendar') ? [] : eventCountdowns(d, userId, todayKey)),
+    ...(hidden.has('tasks') ? [] : taskCountdowns(d, userId, todayKey)),
+  ];
+
+  const sorted = items
+    // Nächstes zuerst - überfällige also ganz oben, weil ihre Tageszahl negativ
+    // ist. Bei gleichem Tag alphabetisch, damit die Reihenfolge zwischen zwei
+    // Aufrufen nicht wackelt.
+    .sort((a, b) => a.days_until - b.days_until
+      || a.title.localeCompare(b.title)
+      || a.source.localeCompare(b.source));
+
+  /* DIE GESAMTZAHL WANDERT MIT, damit der Schnitt sich nicht selbst verschweigt.
+   * Der Server deckelte bei fünf und sagte es niemandem: bei sechs markierten
+   * Einträgen war der sechste unsichtbar UND unauffindbar, und die Kachel sah
+   * dabei vollständig aus. Eine Zahl, die genau bis zu ihrer Obergrenze stimmt,
+   * ist die gefährlichste Sorte - dieselbe Lehre wie bei `openTaskCount` und
+   * `pinnedNotesCount` in routes/dashboard.js.
+   *
+   * Als Paar zurückgegeben und nicht als Feld am Array: ein Array mit einer
+   * angehefteten Eigenschaft überlebt kein `JSON.stringify`. */
+  return { items: sorted.slice(0, limit), total: sorted.length };
+}
+
+function eventCountdowns(d, userId, todayKey) {
+  const rows = d.prepare(`
+    SELECT e.id, e.title, e.start_datetime, e.recurrence_rule, e.icon, e.color, e.all_day
+    FROM calendar_events e
+    WHERE e.countdown = 1
+      AND ${visibilityWhere('e', 'event_assignments', 'event_id')}
+  `).all(userId, userId);
+
+  const exceptionsByEvent = loadEventExceptions(
+    d,
+    rows.filter((e) => e.recurrence_rule).map((e) => e.id),
+  );
+
+  const out = [];
+  for (const row of rows) {
+    const date = nextEventDate(row, todayKey, exceptionsByEvent.get(row.id) ?? null, {
+      graceDays: OVERDUE_GRACE_DAYS,
+    });
+    if (!date) continue;
+    const days = daysBetween(todayKey, date);
+    // Negativ ist jetzt erlaubt - `nextEventDate` hat die Nachfrist schon
+    // durchgesetzt, und ein zweiter Riegel hier hätte sie stillschweigend
+    // wieder aufgehoben.
+    if (days === null || days < -OVERDUE_GRACE_DAYS) continue;
+    out.push({
+      source: 'event',
+      id: row.id,
+      title: row.title,
+      date,
+      days_until: days,
+      icon: row.icon || 'calendar',
+      color: row.color || null,
+      recurring: Boolean(row.recurrence_rule),
+    });
+  }
+  return out;
+}
+
+function taskCountdowns(d, userId, todayKey) {
+  // Eine erledigte oder abgelegte Aufgabe zählt nicht mehr herunter: bei einer
+  // wiederkehrenden hat das Abhaken die NÄCHSTE Instanz schon erzeugt (die dann
+  // ihrerseits hier steht), und eine abgelegte ist aus dem Lauf genommen -
+  // dieselbe Regel wie in „Heute auf einen Blick" (#688).
+  //
+  // Die Untergrenze ist die Nachfrist, nicht heute: eine markierte Aufgabe, die
+  // gestern fällig war, ist genau der Moment, für den jemand sie markiert hat.
+  // Wiederkehrende sind ausgenommen - für sie hat das Abhaken ein nächstes Mal,
+  // sie laufen nicht ab.
+  const floor = shiftKey(todayKey, -OVERDUE_GRACE_DAYS) ?? todayKey;
+  const rows = d.prepare(`
+    SELECT t.id, t.title, t.due_date, t.is_recurring, t.recurrence_from_completion
+    FROM tasks t
+    WHERE t.countdown = 1
+      AND t.status != 'done'
+      AND t.archived_at IS NULL
+      AND t.due_date IS NOT NULL
+      AND t.due_date >= CASE WHEN t.is_recurring = 1 THEN @today ELSE @floor END
+      AND ${visibilityWhere('t', 'task_assignments', 'task_id', '@me')}
+  `).all({ today: todayKey, floor, me: userId });
+
+  const out = [];
+  for (const row of rows) {
+    const days = daysBetween(todayKey, row.due_date);
+    if (days === null || days < -OVERDUE_GRACE_DAYS) continue;
+    out.push({
+      source: 'task',
+      id: row.id,
+      title: row.title,
+      date: row.due_date,
+      days_until: days,
+      icon: 'check-square',
+      color: null,
+      recurring: Boolean(row.is_recurring),
+    });
+  }
+  return out;
+}

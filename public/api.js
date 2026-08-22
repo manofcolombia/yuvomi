@@ -7,6 +7,7 @@
 import { clearApiCache } from '/sw-register.js';
 import { setPermissions, clearPermissions } from '/permissions.js';
 import { setHouseholdSize, clearHouseholdSize } from '/utils/household.js';
+import { forgetLayoutHint } from '/utils/dashboard-layout-hint.js';
 
 const API_BASE = '/api/v1';
 
@@ -184,6 +185,10 @@ const auth = {
       // seinem finally trotzdem zu /login, daher darf hier kein offline gecachter
       // Stand des vorigen Nutzers am selben Gerät zurückbleiben.
       clearApiCache();
+      // Aus demselben Grund der Layout-Hinweis der Übersicht: seit die
+      // Anordnung jeder Person gehört (#585), sagt er am geteilten Tablett
+      // sonst das Raster des vorigen Nutzers voraus.
+      forgetLayoutHint();
     }
   },
   me: async () => {

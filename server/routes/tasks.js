@@ -16,6 +16,9 @@ import {
 } from '../services/caldav-todo-outbound.js';
 import { uniqueKey } from '../utils/category-slug.js';
 import { parseSyncTargetValue } from '../../public/utils/sync-target.js';
+import { mentionedUserIds } from '../../public/utils/mentions.js';
+import { resolvePermissions } from '../permissions.js';
+import { pushService } from '../services/push.js';
 import { serverTimeZone, utcToWall } from '../utils/timezone.js';
 import {
   allTags, applyTagChanges, loadTags, loadTagsFor, normalizeTags,
@@ -762,6 +765,13 @@ router.get('/:id', (req, res) => {
     addAssignedUsers(task);
     task.subtasks = loadSubtasks(task.id, me);
     attachDocumentCounts([task], me);
+    // Die verknüpften Dokumente beim Namen, nicht nur gezählt (#733). Die
+    // Detailansicht zeigte hier seit jeher eine Zeile „Dokumente" an, las dafür
+    // aber ein Feld, das die API nie gefüllt hat - die Zeile war deshalb immer
+    // leer, egal wie viele Dokumente an der Aufgabe hingen. Die Liste kommt aus
+    // derselben Funktion wie GET /:id/documents, also mit derselben
+    // Sichtbarkeitsprüfung.
+    task.documents = loadTaskDocuments(task.id, me);
     attachTags([task]);
     res.json({ data: task });
   } catch (err) {
@@ -794,6 +804,7 @@ router.post('/', (req, res) => {
       is_recurring    = 0,
       recurrence_rule = null,
       recurrence_from_completion = 0,
+      countdown       = 0,
     } = req.body;
     // Ohne expliziten Wert greift der Haushalt-Standard (#578) — aber nur für
     // Hauptaufgaben: Subtasks sind Checklisten-Punkte der Elternaufgabe und
@@ -832,12 +843,13 @@ router.post('/', (req, res) => {
         INSERT INTO tasks
           (title, description, category, priority, start_date, due_date, due_time,
            assigned_to, created_by, parent_task_id, is_recurring, recurrence_rule,
-           recurrence_from_completion, points, visibility)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           recurrence_from_completion, points, visibility, countdown)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         title.trim(), description, category, priority,
         start_date, due_date, due_time, firstUid, req.authUserId || req.session.userId, parent_task_id,
-        is_recurring ? 1 : 0, recurrence_rule, recurrence_from_completion ? 1 : 0, points, visibility
+        is_recurring ? 1 : 0, recurrence_rule, recurrence_from_completion ? 1 : 0, points, visibility,
+        countdown ? 1 : 0
       );
       setAssignments(db.get(), result.lastInsertRowid, userIds);
       if (req.body.tags !== undefined) setTags(db.get(), result.lastInsertRowid, req.body.tags);
@@ -897,6 +909,10 @@ router.put('/:id', (req, res) => {
       is_recurring    = task.is_recurring,
       recurrence_rule = task.recurrence_rule,
       recurrence_from_completion = task.recurrence_from_completion,
+      // Nicht mitgeschickt heisst „nicht angefasst" (#647): ein PATCH aus einer
+      // Liste oder ein Modul, das das Feld nicht kennt, darf eine gesetzte
+      // Markierung nicht stillschweigend löschen.
+      countdown       = task.countdown,
     } = req.body;
     const points = req.body.points !== undefined ? clampPoints(req.body.points) : task.points;
     const visibility = req.body.visibility !== undefined
@@ -945,12 +961,12 @@ router.put('/:id', (req, res) => {
           title = ?, description = ?, category = ?, priority = ?,
           status = ?, start_date = ?, due_date = ?, due_time = ?, assigned_to = ?,
           is_recurring = ?, recurrence_rule = ?, recurrence_from_completion = ?,
-          points = ?, visibility = ?
+          points = ?, visibility = ?, countdown = ?
         WHERE id = ?
       `).run(title.trim(), description, category, priority,
              status, start_date, due_date, due_time, firstUid,
              is_recurring ? 1 : 0, recurrence_rule, recurrence_from_completion ? 1 : 0,
-             points, visibility, req.params.id);
+             points, visibility, countdown ? 1 : 0, req.params.id);
       setAssignments(db.get(), task.id, userIds);
       if (req.body.tags !== undefined) setTags(db.get(), task.id, req.body.tags);
       if (syncTarget !== undefined) {
@@ -1158,8 +1174,8 @@ function spawnRecurrenceFollowup(task) {
     const newTask = db.get().prepare(`
       INSERT INTO tasks (title, description, category, priority, status,
         start_date, due_date, due_time, assigned_to, created_by, is_recurring, recurrence_rule,
-        points, visibility, recurrence_from_completion, recurrence_origin_id)
-      VALUES (?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
+        points, visibility, recurrence_from_completion, countdown, recurrence_origin_id)
+      VALUES (?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)
     `).run(
       task.title, task.description, task.category, task.priority,
       shiftedStartDate(task.start_date, task.due_date, nextDate),
@@ -1169,6 +1185,12 @@ function spawnRecurrenceFollowup(task) {
       // Fälligkeitsrechnung zurück - lautlos, weil die Folgeinstanz sonst
       // vollständig aussieht (wie bei den Tags oben).
       task.recurrence_from_completion ? 1 : 0,
+      // Und aus demselben Grund die Countdown-Markierung (#647). Sie ist bei
+      // dieser Sorte Aufgabe sogar der Anlass: „immer wieder N Jahre" (Führer-
+      // schein) oder „N Tage ab Reinigung" (Luftfilter) ist eine Serie, die ab
+      // Erledigung rechnet - der Countdown, der genau davon lebt, dürfte beim
+      // ersten Zurücksetzen nicht verschwinden.
+      task.countdown ? 1 : 0,
       task.id
     );
     setAssignments(db.get(), newTask.lastInsertRowid, existingAssignments);
@@ -1402,6 +1424,191 @@ router.put('/:id/documents', (req, res) => {
     res.json({ data: loadTaskDocuments(task.id, me) });
   } catch (err) {
     log.error('PUT /:id/documents error:', err);
+    res.status(500).json({ error: 'Internal server error.', code: 500 });
+  }
+});
+
+// --------------------------------------------------------
+// Kommentare an Aufgaben (#734)
+//
+// Über eine Aufgabe wird geredet - bisher woanders, weshalb die Absprache dazu
+// nirgends neben der Sache stand, um die es ging. Wer die Aufgabe sieht, darf
+// mitreden; ändern und entfernen darf nur, wer geschrieben hat (Admins dürfen
+// entfernen, weil sonst niemand einen Beitrag moderieren könnte).
+//
+// Erwähnungen (@Name) werden aus dem TEXT gelesen und nicht aus einem zweiten
+// Feld: sonst wären das Hervorgehobene und das Benachrichtigte zwei Wahrheiten,
+// die auseinanderlaufen, sobald jemand den Namen tippt statt ihn zu wählen.
+// --------------------------------------------------------
+
+/** Kommentare einer Aufgabe, ältester zuerst - eine Unterhaltung liest sich vorwärts. */
+function loadTaskComments(taskId) {
+  return db.get().prepare(`
+    SELECT c.id, c.task_id, c.user_id, c.comment, c.created_at, c.updated_at,
+           u.display_name AS author_name, u.avatar_color AS author_color
+    FROM task_comments c
+    LEFT JOIN users u ON u.id = c.user_id
+    WHERE c.task_id = ?
+    ORDER BY c.id ASC
+  `).all(taskId);
+}
+
+/**
+ * Erwähnte Personen benachrichtigen - nach der Antwort, ohne sie aufzuhalten.
+ *
+ * Benachrichtigt wird nur, wer die Aufgabe auch sehen darf: eine Erwähnung ist
+ * kein Weg, jemandem den Titel einer privaten Aufgabe zuzustellen. Sich selbst
+ * zu erwähnen löst nichts aus.
+ */
+function notifyMentions(task, comment, authorId, previousComment = '') {
+  // DIESELBE Personenliste, die `meta/options` an den Browser gibt: dort sind
+  // Haushaltshilfen ausgenommen, und der Client hebt deshalb nur diese Namen
+  // hervor. Ohne den Ausschluss haette der Server jemanden benachrichtigt, den
+  // die Ansicht gar nicht als erwaehnt markiert - mit dem Titel der Aufgabe und
+  // dem Kommentartext in der Meldung.
+  const users = db.get().prepare(`
+    SELECT id, display_name FROM users u
+    WHERE NOT EXISTS (SELECT 1 FROM housekeeping_workers hw WHERE hw.user_id = u.id)
+  `).all();
+  // Beim Nachbessern zaehlen nur die NEU dazugekommenen Namen: wer schon in der
+  // ersten Fassung stand, ist benachrichtigt und bekaeme sonst bei jedem Tippfehler
+  // dieselbe Meldung noch einmal.
+  const schon = previousComment ? mentionedUserIds(previousComment, users) : [];
+  const ids = mentionedUserIds(comment, users)
+    .filter((id) => id !== authorId && !schon.includes(id));
+  if (!ids.length) return;
+
+  const author = users.find((u) => u.id === authorId)?.display_name || '';
+  for (const id of ids) {
+    if (!findVisibleTask(task.id, id)) continue;
+    // Die Sichtbarkeit der Zeile ist nicht die einzige Huerde: wem das
+    // Aufgaben-Modul entzogen ist, der kommt an die Aufgabe gar nicht heran -
+    // und bekaeme mit dem Push trotzdem ihren Titel und den Kommentaranfang
+    // zugestellt. Dieselbe Frage, die die /api/v1-Middleware beim Lesen stellt.
+    const target = db.get().prepare('SELECT id, role, family_role FROM users WHERE id = ?').get(id);
+    if (!target) continue;
+    const perms = resolvePermissions(db.get(), target);
+    if (!perms.admin && perms.modules?.tasks === 'none') continue;
+    pushService.sendPushToUser(id, {
+      title: task.title,
+      body: `${author}: ${comment}`.slice(0, 300),
+      url: `/tasks?open=${task.id}`,
+      tag: `task-comment-${task.id}`,
+    }).catch((err) => log.warn('Erwähnungs-Push fehlgeschlagen:', err?.message || err));
+  }
+}
+
+/** Ein Kommentar samt Aufgabe, wenn die Person ihn ändern bzw. entfernen darf. */
+function commentForWrite(req, { allowAdmin = false } = {}) {
+  const me = req.authUserId || req.session.userId;
+  const found = findVisibleTask(req.params.id, me);
+  if (!found) return { error: 404 };
+  // Mit Titel, weil eine Erwaehnung beim Nachbessern dieselbe Meldung schickt
+  // wie beim Schreiben - und die nennt die Aufgabe.
+  const task = db.get().prepare('SELECT id, title FROM tasks WHERE id = ?').get(found.id);
+
+  const row = db.get().prepare('SELECT * FROM task_comments WHERE id = ? AND task_id = ?')
+    .get(req.params.commentId, task.id);
+  if (!row) return { error: 404 };
+
+  const mayWrite = row.user_id === me || (allowAdmin && req.authRole === 'admin');
+  if (!mayWrite) return { error: 403 };
+  return { task, row, me };
+}
+
+// GET /api/v1/tasks/:id/comments → { data: Comment[] }
+router.get('/:id/comments', (req, res) => {
+  try {
+    const me = req.authUserId || req.session.userId;
+    const task = findVisibleTask(req.params.id, me);
+    if (!task) return res.status(404).json({ error: 'Task not found.', code: 404 });
+    res.json({ data: loadTaskComments(task.id) });
+  } catch (err) {
+    log.error('GET /:id/comments error:', err);
+    res.status(500).json({ error: 'Internal server error.', code: 500 });
+  }
+});
+
+// POST /api/v1/tasks/:id/comments  Body: { comment }
+router.post('/:id/comments', (req, res) => {
+  try {
+    const me = req.authUserId || req.session.userId;
+    const task = db.get().prepare(`
+      SELECT t.id, t.title FROM tasks t
+      WHERE t.id = ? AND ${visibilityWhere('t', 'task_assignments', 'task_id')}
+    `).get(req.params.id, me, me);
+    if (!task) return res.status(404).json({ error: 'Task not found.', code: 404 });
+
+    // `v.str` trimmt und weist einen Kommentar aus lauter Leerzeichen ab.
+    const comment = v.str(req.body.comment, 'comment', { max: v.MAX_TEXT, required: true });
+    if (comment.error) return res.status(400).json({ error: comment.error, code: 400 });
+
+    const result = db.get().prepare(
+      'INSERT INTO task_comments (task_id, user_id, comment) VALUES (?, ?, ?)'
+    ).run(task.id, me, comment.value);
+
+    const row = db.get().prepare(`
+      SELECT c.id, c.task_id, c.user_id, c.comment, c.created_at, c.updated_at,
+             u.display_name AS author_name, u.avatar_color AS author_color
+      FROM task_comments c LEFT JOIN users u ON u.id = c.user_id WHERE c.id = ?
+    `).get(result.lastInsertRowid);
+
+    res.status(201).json({ data: row });
+    notifyMentions(task, row.comment, me);
+  } catch (err) {
+    log.error('POST /:id/comments error:', err);
+    res.status(500).json({ error: 'Internal server error.', code: 500 });
+  }
+});
+
+// PATCH /api/v1/tasks/:id/comments/:commentId  Body: { comment }
+router.patch('/:id/comments/:commentId', (req, res) => {
+  try {
+    const found = commentForWrite(req);
+    if (found.error) {
+      return res.status(found.error).json({
+        error: found.error === 403 ? 'Not authorized.' : 'Comment not found.', code: found.error,
+      });
+    }
+
+    const comment = v.str(req.body.comment, 'comment', { max: v.MAX_TEXT, required: true });
+    if (comment.error) return res.status(400).json({ error: comment.error, code: 400 });
+
+    db.get().prepare(`
+      UPDATE task_comments
+         SET comment = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+       WHERE id = ?
+    `).run(comment.value, found.row.id);
+
+    const row = db.get().prepare(`
+      SELECT c.id, c.task_id, c.user_id, c.comment, c.created_at, c.updated_at,
+             u.display_name AS author_name, u.avatar_color AS author_color
+      FROM task_comments c LEFT JOIN users u ON u.id = c.user_id WHERE c.id = ?
+    `).get(found.row.id);
+    res.json({ data: row });
+    // Wer beim Korrigieren jemanden dazuholt, meint ihn genauso wie beim
+    // Schreiben - ohne diesen Aufruf staende der Name farbig da und niemand
+    // erfuehre davon.
+    notifyMentions(found.task, row.comment, found.me, found.row.comment);
+  } catch (err) {
+    log.error('PATCH /:id/comments/:commentId error:', err);
+    res.status(500).json({ error: 'Internal server error.', code: 500 });
+  }
+});
+
+// DELETE /api/v1/tasks/:id/comments/:commentId
+router.delete('/:id/comments/:commentId', (req, res) => {
+  try {
+    const found = commentForWrite(req, { allowAdmin: true });
+    if (found.error) {
+      return res.status(found.error).json({
+        error: found.error === 403 ? 'Not authorized.' : 'Comment not found.', code: found.error,
+      });
+    }
+    db.get().prepare('DELETE FROM task_comments WHERE id = ?').run(found.row.id);
+    res.json({ data: { id: found.row.id } });
+  } catch (err) {
+    log.error('DELETE /:id/comments/:commentId error:', err);
     res.status(500).json({ error: 'Internal server error.', code: 500 });
   }
 });

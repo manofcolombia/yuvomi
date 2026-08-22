@@ -214,9 +214,15 @@ router.patch('/catalog/:id', requireAdmin, (req, res) => {
       if (!Number.isFinite(cost) || cost < 1 || cost > MAX_COST)
         return res.status(400).json({ error: 'cost must be a positive number.', code: 400 });
     }
-    const icon = req.body?.icon !== undefined ? (String(req.body.icon).trim().slice(0, 8) || null) : existing.icon;
-    const description = req.body?.description !== undefined
-      ? (String(req.body.description).trim() || null) : existing.description;
+    // `undefined` (Feld fehlt) heisst "unveraendert lassen", `null` (Feld leer
+    // abgeschickt) heisst "leeren". Beides ueber `!= null` zusammenzufassen
+    // machte das Leeren unmoeglich, beides ueber `!== undefined` schickte das
+    // gesendete `null` durch `String()` - und speicherte den Text "null" als
+    // Icon. Deshalb bleiben die drei Faelle hier ausdruecklich getrennt.
+    const icon = req.body?.icon === undefined ? existing.icon
+      : (req.body.icon === null ? null : String(req.body.icon).trim().slice(0, 8) || null);
+    const description = req.body?.description === undefined ? existing.description
+      : (req.body.description === null ? null : String(req.body.description).trim() || null);
     const sort_order = req.body?.sort_order !== undefined && Number.isFinite(toInt(req.body.sort_order))
       ? toInt(req.body.sort_order) : existing.sort_order;
     const is_active = req.body?.is_active !== undefined

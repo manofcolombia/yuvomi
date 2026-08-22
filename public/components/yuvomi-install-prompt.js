@@ -348,12 +348,41 @@ class YuvomiInstallPrompt extends HTMLElement {
     this._shadow.appendChild(style);
     this._shadow.appendChild(banner);
 
+    // DER BANNER MELDET SEINE HOEHE AN DIE SHELL.
+    //
+    // Er liegt fixiert auf der Toast-Ebene und verdeckte damit das Ende jeder
+    // Seite: auf /rewards lagen 89px der letzten Punktestandszeile dauerhaft
+    // unter ihm, ohne dass man weiterscrollen konnte. Die Nachlauf-Regeln in
+    // layout.css rechnen den Wert in `padding-block-end` von `.app-content`
+    // ein; ohne Banner steht die Variable auf 0.
+    //
+    // GEMESSEN, NICHT GERECHNET: die Hoehe haengt am Text, und der bricht in
+    // 24 Sprachen unterschiedlich um. Eine Formel aus Icon plus Polsterung
+    // waere in genau den Sprachen falsch, in denen der Titel zweizeilig wird.
+    this._sizeObserver?.disconnect();
+    this._sizeObserver = new ResizeObserver(([entry]) => {
+      const height = entry?.borderBoxSize?.[0]?.blockSize ?? entry?.contentRect?.height ?? 0;
+      document.documentElement.style.setProperty('--install-prompt-height', `${Math.ceil(height)}px`);
+    });
+    this._sizeObserver.observe(banner);
+
     // Slide-in Animation nach nächstem Frame
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         banner.classList.add('banner--visible');
       });
     });
+  }
+
+  /**
+   * Die gemeldete Hoehe geht mit dem Banner. Sie steht am `html`-Element und
+   * ueberlebte sonst jedes Entfernen - der Nachlauf am Seitenende bliebe als
+   * Loch stehen, obwohl nichts mehr darueber liegt.
+   */
+  disconnectedCallback() {
+    this._sizeObserver?.disconnect();
+    this._sizeObserver = null;
+    document.documentElement.style.removeProperty('--install-prompt-height');
   }
 
   /** iOS Teilen-Icon (Box mit Pfeil nach oben) */

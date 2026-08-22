@@ -11,37 +11,40 @@
   <TemplateURL>https://raw.githubusercontent.com/ulsklyc/yuvomi/main/templates/yuvomi.xml</TemplateURL>
   <Icon>https://raw.githubusercontent.com/ulsklyc/yuvomi/main/icon.svg</Icon>
 
-  <Overview>Yuvomi is a private, self-hosted family planner — one calm home for everything your household needs to stay organized. No cloud accounts, no subscriptions, no tracking: your data lives on your server and nowhere else.
+  <Overview>Yuvomi is a private, self-hosted family planner - one calm home for everything your household needs to stay organized. No cloud accounts, no subscriptions, no tracking: your data lives on your server and nowhere else.
 
-Independent modules — turn on what fits, ignore the rest:
+Independent modules - turn on what fits, ignore the rest:
 
-- Dashboard — today's tasks, events, meals and reminders at a glance
-- Tasks — shared to-dos with priorities, due dates and assignees
-- Shopping — collaborative grocery lists, auto-sorted by category
-- Meals &amp; Recipes — weekly meal planner with a built-in recipe book
-- Pantry — what's actually in the house, with storage places and best-before alerts
-- Calendar — family calendar with recurring events and reminders
-- Budget — shared expenses, split costs and a spending overview
-- Housekeeping — chores, supplies and staff/session tracking
-- Documents — store and find important household files
-- Notes, Contacts &amp; Birthdays — everything else in one tidy place
+- Dashboard - today's tasks, events, meals and reminders at a glance
+- Tasks - shared to-dos with priorities, due dates and assignees
+- Shopping - collaborative grocery lists, auto-sorted by category
+- Meals &amp; Recipes - weekly meal planner with a built-in recipe book
+- Pantry - what's actually in the house, with storage places and best-before alerts
+- Calendar - family calendar with recurring events and reminders
+- Budget - income, expenses, accounts, subscriptions and loans, with shared costs split automatically
+- Health - vitals, medications, lab results and activity, per household member
+- Rewards - points on chores, a parent-approved catalogue and an auditable ledger
+- Inventory - what you own, with warranties and deadlines (off by default)
+- Housekeeping - chores, supplies and staff/session tracking
+- Documents - store and find important household files
+- Notes, Contacts &amp; Birthdays - everything else in one tidy place
 
 Why Yuvomi:
 
-- Mobile-first PWA — install it on any phone, works offline
+- Mobile-first PWA - install it on any phone, works offline
 - Light &amp; dark mode, fast and polished (no bloated frameworks, no build step)
-- Optional sync — CalDAV / CardDAV, Apple and Google Calendar
+- Optional sync - CalDAV / CardDAV, Apple and Google Calendar
 - OIDC single sign-on for households that already run an identity provider
 - Encrypted-at-rest storage (SQLCipher) with automated, scheduled backups
 - Multi-language, fully self-contained and MIT-licensed
 
-— Setup —
+- Setup -
 
 REQUIRED: Set a long random SESSION_SECRET.
-RECOMMENDED: Set a strong DB_ENCRYPTION_KEY to encrypt the database at rest — without it the database and any synced calendar/contact credentials are stored unencrypted.
+RECOMMENDED: Set a strong DB_ENCRYPTION_KEY to encrypt the database at rest - without it the database and any synced calendar/contact credentials are stored unencrypted.
 Generate either secret with: openssl rand -base64 48
 
-After the container starts, open the WebUI — the first visit guides you through creating your admin account. (Headless setups can alternatively run node setup.js in the container console.) Then log in — pick the modules you want and invite your family.</Overview>
+After the container starts, open the WebUI - the first visit guides you through creating your admin account. (Headless setups can alternatively run node setup.js in the container console.) Then log in - pick the modules you want and invite your family.</Overview>
 
   <!-- Either Support or Project is required -->
   <Support>https://github.com/ulsklyc/yuvomi/issues</Support>
@@ -75,7 +78,7 @@ After the container starts, open the WebUI — the first visit guides you throug
   <Config Name="DB_ENCRYPTION_KEY" Target="DB_ENCRYPTION_KEY" Default="" Mode="" Description="RECOMMENDED. Strong key to encrypt the database at rest (SQLCipher). Leave empty for unencrypted SQLite. Cannot be changed later without re-encrypting. Generate with: openssl rand -base64 48" Type="Variable" Display="always" Required="false" Mask="true"/>
 
   <!-- Timezone -->
-  <Config Name="Timezone" Target="TZ" Default="Europe/Berlin" Mode="" Description="Container timezone, e.g. Europe/Berlin. Affects scheduled backups, reminders, and is the fallback zone for events pushed to Google Calendar." Type="Variable" Display="always" Required="false" Mask="false">Europe/Berlin</Config>
+  <Config Name="Timezone" Target="TZ" Default="Europe/Berlin" Mode="" Description="Container timezone, e.g. Europe/Berlin. Affects scheduled backups, reminders, the times in the exported calendar feed, and is the fallback zone for events pushed to Google Calendar." Type="Variable" Display="always" Required="false" Mask="false">Europe/Berlin</Config>
 
   <!-- HTTPS / cookie security -->
   <Config Name="SESSION_SECURE" Target="SESSION_SECURE" Default="false" Mode="" Description="Set to true only when serving Yuvomi over HTTPS behind a reverse proxy. Keep false for direct HTTP access on the LAN." Type="Variable" Display="advanced" Required="false" Mask="false">false</Config>
@@ -87,12 +90,12 @@ After the container starts, open the WebUI — the first visit guides you throug
   <!-- Backup path (advanced; must match the /backups mount above) -->
   <Config Name="BACKUP_DIR" Target="BACKUP_DIR" Default="/backups" Mode="" Description="Directory inside the container where backup files are written. Must match the Backups path mapping above, otherwise backups fail with a permission error." Type="Variable" Display="advanced" Required="false" Mask="false">/backups</Config>
 
-  <!-- Weather (optional) — Open-Meteo (recommended, free, no API key) -->
+  <!-- Weather (optional) - Open-Meteo (recommended, free, no API key) -->
   <Config Name="WEATHER_LAT" Target="WEATHER_LAT" Default="" Mode="" Description="Optional. Latitude for the Open-Meteo weather widget (no API key required). Find coordinates on openstreetmap.org or Google Maps, e.g. 52.52." Type="Variable" Display="advanced" Required="false" Mask="false"/>
   <Config Name="WEATHER_LON" Target="WEATHER_LON" Default="" Mode="" Description="Optional. Longitude for the Open-Meteo weather widget, e.g. 13.41." Type="Variable" Display="advanced" Required="false" Mask="false"/>
   <Config Name="WEATHER_CITY" Target="WEATHER_CITY" Default="" Mode="" Description="Optional. Display name shown on the weather widget, e.g. Berlin." Type="Variable" Display="advanced" Required="false" Mask="false"/>
   <Config Name="WEATHER_UNITS" Target="WEATHER_UNITS" Default="metric" Mode="" Description="Optional. Unit system for temperatures: metric (°C) or imperial (°F)." Type="Variable" Display="advanced" Required="false" Mask="false">metric</Config>
-  <!-- Weather (optional) — OpenWeatherMap (legacy; only if you already use it) -->
+  <!-- Weather (optional) - OpenWeatherMap (legacy; only if you already use it) -->
   <Config Name="OPENWEATHER_API_KEY" Target="OPENWEATHER_API_KEY" Default="" Mode="" Description="Optional (legacy). OpenWeatherMap API key to enable the weather widget. Prefer the keyless Open-Meteo variables above." Type="Variable" Display="advanced" Required="false" Mask="true"/>
   <Config Name="OPENWEATHER_CITY" Target="OPENWEATHER_CITY" Default="" Mode="" Description="Optional (legacy). City for the OpenWeatherMap weather widget, e.g. Berlin." Type="Variable" Display="advanced" Required="false" Mask="false"/>
   <Config Name="OPENWEATHER_UNITS" Target="OPENWEATHER_UNITS" Default="metric" Mode="" Description="Optional (legacy). Unit system for temperatures: metric (°C) or imperial (°F)." Type="Variable" Display="advanced" Required="false" Mask="false">metric</Config>
@@ -106,7 +109,12 @@ After the container starts, open the WebUI — the first visit guides you throug
   <Config Name="GOOGLE_DRIVE_CLIENT_SECRET" Target="GOOGLE_DRIVE_CLIENT_SECRET" Default="" Mode="" Description="Optional Google Drive OAuth client secret override." Type="Variable" Display="advanced" Required="false" Mask="true"/>
   <Config Name="GOOGLE_DRIVE_REDIRECT_URI" Target="GOOGLE_DRIVE_REDIRECT_URI" Default="" Mode="" Description="Google Drive Documents callback URL, e.g. https://your-domain.com/api/v1/documents/storage/google-drive/callback" Type="Variable" Display="advanced" Required="false" Mask="false"/>
 
-  <!-- OIDC / SSO (optional — all four values required to enable SSO) -->
+  <!-- Outlook calendar push via Microsoft Graph (optional - all three values required to enable it) -->
+  <Config Name="MS_CLIENT_ID" Target="MS_CLIENT_ID" Default="" Mode="" Description="Optional. Entra ID application (client) ID for the one-way Outlook calendar push via Microsoft Graph." Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="MS_CLIENT_SECRET" Target="MS_CLIENT_SECRET" Default="" Mode="" Description="Optional. Entra ID client secret for the Outlook calendar push." Type="Variable" Display="advanced" Required="false" Mask="true"/>
+  <Config Name="MS_REDIRECT_URI" Target="MS_REDIRECT_URI" Default="" Mode="" Description="Optional. OAuth callback URL, e.g. https://your-domain.com/api/v1/calendar/outlook/callback" Type="Variable" Display="advanced" Required="false" Mask="false"/>
+
+  <!-- OIDC / SSO (optional - all four values required to enable SSO) -->
   <Config Name="OIDC_ISSUER" Target="OIDC_ISSUER" Default="" Mode="" Description="Optional. OIDC issuer URL, e.g. https://authentik.example.com/application/o/yuvomi/" Type="Variable" Display="advanced" Required="false" Mask="false"/>
   <Config Name="OIDC_CLIENT_ID" Target="OIDC_CLIENT_ID" Default="" Mode="" Description="Optional. OIDC client ID from your identity provider." Type="Variable" Display="advanced" Required="false" Mask="false"/>
   <Config Name="OIDC_CLIENT_SECRET" Target="OIDC_CLIENT_SECRET" Default="" Mode="" Description="Optional. OIDC client secret from your identity provider." Type="Variable" Display="advanced" Required="false" Mask="true"/>
@@ -120,13 +128,14 @@ After the container starts, open the WebUI — the first visit guides you throug
 
   <!-- Calendar sync interval -->
   <Config Name="SYNC_INTERVAL_MINUTES" Target="SYNC_INTERVAL_MINUTES" Default="15" Mode="" Description="Interval in minutes for calendar and contact sync (Google, Apple, CalDAV, CardDAV). Default: 15." Type="Variable" Display="advanced" Required="false" Mask="false">15</Config>
+  <Config Name="MAX_UPLOAD_MB" Target="MAX_UPLOAD_MB" Default="5" Mode="" Description="Maximum size of a single upload in megabytes (documents, calendar attachments, receipts). Default: 5, supported range 1-100. The request body is buffered in memory, so a very large value can take the container down on a small machine." Type="Variable" Display="advanced" Required="false" Mask="false">5</Config>
 
   <!-- Backups (optional) -->
   <Config Name="BACKUP_ENABLED" Target="BACKUP_ENABLED" Default="true" Mode="" Description="Optional. Enable automated database backups (default: true)." Type="Variable" Display="advanced" Required="false" Mask="false">true</Config>
   <Config Name="BACKUP_SCHEDULE" Target="BACKUP_SCHEDULE" Default="0 2 * * *" Mode="" Description="Optional. Cron schedule for automated backups (default: 2 AM daily)." Type="Variable" Display="advanced" Required="false" Mask="false">0 2 * * *</Config>
   <Config Name="BACKUP_KEEP" Target="BACKUP_KEEP" Default="7" Mode="" Description="Optional. Number of backups to retain (default: 7)." Type="Variable" Display="advanced" Required="false" Mask="false">7</Config>
 
-  <!-- WebDAV backup target (optional) — upload each backup to Nextcloud, ownCloud, Hetzner Storage Box, etc. -->
+  <!-- WebDAV backup target (optional) - upload each backup to Nextcloud, ownCloud, Hetzner Storage Box, etc. -->
   <Config Name="WEBDAV_BACKUP_ENABLED" Target="WEBDAV_BACKUP_ENABLED" Default="" Mode="" Description="Optional. Set to true to enable automatic upload of backups to a WebDAV server after each local backup." Type="Variable" Display="advanced" Required="false" Mask="false"/>
   <Config Name="WEBDAV_BACKUP_URL" Target="WEBDAV_BACKUP_URL" Default="" Mode="" Description="Optional. WebDAV server URL, e.g. https://cloud.example.com/remote.php/dav/files/username/" Type="Variable" Display="advanced" Required="false" Mask="false"/>
   <Config Name="WEBDAV_BACKUP_USERNAME" Target="WEBDAV_BACKUP_USERNAME" Default="" Mode="" Description="Optional. WebDAV username for authentication." Type="Variable" Display="advanced" Required="false" Mask="false"/>
@@ -134,11 +143,11 @@ After the container starts, open the WebUI — the first visit guides you throug
   <Config Name="WEBDAV_BACKUP_PATH" Target="WEBDAV_BACKUP_PATH" Default="/yuvomi/backups/" Mode="" Description="Optional. Remote directory path where backup files are stored (default: /yuvomi/backups/)." Type="Variable" Display="advanced" Required="false" Mask="false">/yuvomi/backups/</Config>
   <Config Name="WEBDAV_BACKUP_KEEP" Target="WEBDAV_BACKUP_KEEP" Default="7" Mode="" Description="Optional. Number of remote backup files to keep (default: 7)." Type="Variable" Display="advanced" Required="false" Mask="false">7</Config>
 
-  <!-- Local folder document storage (optional) — writes new uploads to the mounted /documents folder. -->
+  <!-- Local folder document storage (optional) - writes new uploads to the mounted /documents folder. -->
   <Config Name="DOCUMENT_STORAGE_LOCAL_ENABLED" Target="DOCUMENT_STORAGE_LOCAL_ENABLED" Default="false" Mode="" Description="Optional. Store newly uploaded document files in the mounted /documents host folder instead of the database. Existing files are not migrated." Type="Variable" Display="advanced" Required="false" Mask="false">false</Config>
   <Config Name="DOCUMENT_STORAGE_LOCAL_PATH" Target="DOCUMENT_STORAGE_LOCAL_PATH" Default="/documents" Mode="" Description="Optional. Container path for local document files. Keep default unless you mounted the documents folder elsewhere." Type="Variable" Display="advanced" Required="false" Mask="false">/documents</Config>
 
-  <!-- WebDAV document storage (optional) — non-empty values override the matching database settings. -->
+  <!-- WebDAV document storage (optional) - non-empty values override the matching database settings. -->
   <Config Name="DOCUMENT_STORAGE_WEBDAV_ENABLED" Target="DOCUMENT_STORAGE_WEBDAV_ENABLED" Default="false" Mode="" Description="Optional. Store newly uploaded document files on WebDAV. Existing files are not migrated." Type="Variable" Display="advanced" Required="false" Mask="false">false</Config>
   <Config Name="DOCUMENT_STORAGE_WEBDAV_URL" Target="DOCUMENT_STORAGE_WEBDAV_URL" Default="" Mode="" Description="Optional. WebDAV server URL for document storage, e.g. https://cloud.example.com/remote.php/dav/files/username/" Type="Variable" Display="advanced" Required="false" Mask="false"/>
   <Config Name="DOCUMENT_STORAGE_WEBDAV_USERNAME" Target="DOCUMENT_STORAGE_WEBDAV_USERNAME" Default="" Mode="" Description="Optional. WebDAV username for document storage." Type="Variable" Display="advanced" Required="false" Mask="false"/>
@@ -148,7 +157,7 @@ After the container starts, open the WebUI — the first visit guides you throug
   <Config Name="ICS_SUBSCRIPTION_ALLOW_PRIVATE_NETWORK" Target="ICS_SUBSCRIPTION_ALLOW_PRIVATE_NETWORK" Default="false" Mode="" Description="Optional. Set to true to allow ICS calendar subscriptions on http:// and local/private network addresses (e.g. a Sonarr/Radarr/Home Assistant feed in the same LAN). Lifts SSRF protection for ICS subscriptions. Only enable in controlled environments." Type="Variable" Display="advanced" Required="false" Mask="false">false</Config>
   <Config Name="RECIPE_PROVIDER_ALLOW_PRIVATE_NETWORK" Target="RECIPE_PROVIDER_ALLOW_PRIVATE_NETWORK" Default="false" Mode="" Description="Optional. Set to true to allow recipe provider (Mealie/Tandoor) mirrors on http:// and local/private network addresses (e.g. self-hosted in the same Docker network). Lifts SSRF protection for recipe provider sync. Only enable in controlled environments." Type="Variable" Display="advanced" Required="false" Mask="false">false</Config>
 
-  <!-- Email / SMTP (optional) — enables the self-service "Forgot password" flow. Can also be set in Settings → Administration → Email; non-empty values here override the database. -->
+  <!-- Email / SMTP (optional) - enables the self-service "Forgot password" flow. Can also be set in Settings → Administration → Email; non-empty values here override the database. -->
   <Config Name="EMAIL_SMTP_HOST" Target="EMAIL_SMTP_HOST" Default="" Mode="" Description="Optional. SMTP server hostname for outgoing email (password-reset links)." Type="Variable" Display="advanced" Required="false" Mask="false"/>
   <Config Name="EMAIL_SMTP_PORT" Target="EMAIL_SMTP_PORT" Default="587" Mode="" Description="Optional. SMTP server port (default: 587)." Type="Variable" Display="advanced" Required="false" Mask="false">587</Config>
   <Config Name="EMAIL_SMTP_SECURE" Target="EMAIL_SMTP_SECURE" Default="starttls" Mode="" Description="Optional. SMTP connection security: ssl, starttls, or none (default: starttls)." Type="Variable" Display="advanced" Required="false" Mask="false">starttls</Config>
@@ -158,7 +167,7 @@ After the container starts, open the WebUI — the first visit guides you throug
   <Config Name="EMAIL_FROM_NAME" Target="EMAIL_FROM_NAME" Default="Yuvomi" Mode="" Description="Optional. Sender display name for outgoing mail (default: Yuvomi)." Type="Variable" Display="advanced" Required="false" Mask="false">Yuvomi</Config>
   <Config Name="BASE_URL" Target="BASE_URL" Default="" Mode="" Description="Optional but required for password-reset emails to be sent. Absolute origin used to build reset links, e.g. https://yuvomi.example.com. The request Host header is never trusted as a fallback, to prevent reset-link poisoning." Type="Variable" Display="advanced" Required="false" Mask="false"/>
 
-  <!-- Web Push (optional) — browser/PWA notifications. Keys are generated on first use and stored in the database; set them only to pin a fixed pair across redeployments. Requires HTTPS. -->
+  <!-- Web Push (optional) - browser/PWA notifications. Keys are generated on first use and stored in the database; set them only to pin a fixed pair across redeployments. Requires HTTPS. -->
   <Config Name="VAPID_SUBJECT" Target="VAPID_SUBJECT" Default="" Mode="" Description="Optional. Contact URI sent to push services, either a mailto: address or an https: origin, e.g. mailto:admin@example.com. Must be reachable from the internet: Apple rejects a localhost or .local subject with 403 BadJwtToken, which disables push on iPhone/iPad while Android keeps working. Falls back to the SMTP sender address, then BASE_URL, then a placeholder." Type="Variable" Display="advanced" Required="false" Mask="false"/>
   <Config Name="VAPID_PUBLIC_KEY" Target="VAPID_PUBLIC_KEY" Default="" Mode="" Description="Optional. VAPID public key. Auto-generated on first use and stored in the database when left empty. Set together with the private key to keep existing device subscriptions valid across a redeployment. Generate with: npx web-push generate-vapid-keys" Type="Variable" Display="advanced" Required="false" Mask="false"/>
   <Config Name="VAPID_PRIVATE_KEY" Target="VAPID_PRIVATE_KEY" Default="" Mode="" Description="Optional. VAPID private key. Must be set together with the public key." Type="Variable" Display="advanced" Required="false" Mask="true"/>

@@ -4,6 +4,28 @@ on:
   push:
     branches: [main]
     tags: ['v*']
+    # A documentation-only push used to build the full multi-arch image (QEMU,
+    # amd64 + arm64, two registries) for files that never reach the image.
+    #
+    # THE RELEASE PATH IS NOT AFFECTED, and that holds for two independent
+    # reasons - one of them would do, but this filter sits next to a `tags:`
+    # entry and the next reader deserves better than "probably fine":
+    #   1. GitHub does not evaluate path filters for TAG pushes. `v*` therefore
+    #      always runs, and the versioned images plus `latest` come from exactly
+    #      that run.
+    #   2. Even the branch run survives: a `chore: release vX.Y.Z` commit always
+    #      touches package.json, package-lock.json and public/sw.js, so it is
+    #      never docs-only and never matches this filter.
+    #
+    # Ignoring docs/ costs the image nothing either way - .dockerignore drops it
+    # from the build context, and no Markdown is read at runtime (the in-app
+    # changelog proxies the GitHub releases API, it does not read CHANGELOG.md).
+    #
+    # .github/ is deliberately NOT ignored: editing this workflow should still
+    # produce a build that proves it works.
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
   workflow_dispatch:
 
 permissions:

@@ -54,6 +54,7 @@ const WIDGET_LABEL_KEYS = {
   // settings.*-Schluessel: die Kennzahlreihe heisst im Anpassen-Panel schon
   // „Kennzahlen", und zwei Woerter fuer dieselbe Kachel waeren zwei Namen.
   metrics: 'dashboard.metrics',
+  countdown: 'dashboard.countdownTitle',
 };
 
 // Icon je Zugriffsstufe (Icon-Segmente statt langer Textlabels). Tooltip/aria

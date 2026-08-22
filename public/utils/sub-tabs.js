@@ -45,7 +45,7 @@
  * @param {string}      [opts.title]           - optional visible module title (left of the tabs).
  *                                               Decorative (aria-hidden): the bar's ariaLabel
  *                                               already names the cluster for assistive tech.
- * @param {Function}    [opts.sealIcon]        - nur bei 'nav': Icon-Fabrik (NAV_ICONS) für das
+ * @param {Function}    [opts.sealIcon]        - nur bei 'nav': Icon-Fabrik (moduleIconEl) für das
  *                                               Absender-Siegel links des Titels. Siehe unten.
  * @param {InsertPosition} [opts.insertPosition='afterbegin']
  * @returns {HTMLElement} the rendered bar element

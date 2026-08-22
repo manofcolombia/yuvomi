@@ -211,16 +211,11 @@
   display: block;
 }
 
-.health-chart__axis {
-  font-size: var(--text-xs);
-  fill: var(--color-text-secondary);
-}
-
-/* Y-Wert-Labels am linken Rand: dezenter als die X-Datumsachse, damit die
- * Kurve die Hauptrolle behält. */
-.health-chart__axis--y {
-  fill: var(--color-text-tertiary);
-}
+/* `.health-chart__axis` und `--y` STANDEN HIER und sind als `.chart__axis` nach
+ * panel.css gezogen: die Geometrie dahinter ist seit der Extraktion geteilt
+ * (utils/chart.js), und ein Page-CSS haette sie dem Budget-Trend und dem
+ * Abo-Flaechenchart nicht mitgeben koennen. Was hier bleibt, ist, was WIRKLICH
+ * diesem Modul gehoert: das Laborband und die Flaechenfuellung. */
 
 /* Flächenfüllung unter der Trend-Kurve — dieselbe Materialsprache über alle
  * Health-Charts. Bewusst sehr transparent, damit Gitter und Werte durchscheinen. */
@@ -448,6 +443,63 @@
 .health-dose__status--taken { color: var(--color-success); }
 .health-dose__status--skipped { color: var(--color-text-secondary); }
 
+/* Bedarfsmedikation (#700). Dieselbe Zeile wie die geplante Dosis, nur ohne
+ * Uhrzeitspalte - eine Bedarfsdosis hat keinen Zeitpunkt, an dem sie ansteht,
+ * sondern einen, ab dem sie erlaubt ist. Der steht deshalb rechts beim Knopf
+ * und nicht links als Anker. */
+.health-prn__status {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-inline-start: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Die Erstangabe ist die handlungsleitende und darf nicht schrumpfen; die
+ * Zweitangabe ist die Lesehilfe und tritt bei Enge ab (siehe unten). */
+.health-prn__lead {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.health-prn__detail {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Wartet der Mindestabstand noch, tritt die Zeile nicht zurueck - sie sagt
+ * etwas, das man wissen muss. Sie wird nur ruhiger als der freigegebene Stand. */
+.health-prn.is-waiting .health-prn__lead {
+  color: var(--color-text-primary);
+  font-weight: var(--font-weight-medium, 500);
+}
+
+.health-prn__take {
+  flex: 0 0 auto;
+  margin-inline-start: var(--space-2);
+}
+
+/* DIESELBEN ZWEI STUFEN WIE BEI DER GEPLANTEN DOSIS - und aus demselben Grund:
+ * `.list-row` setzt `flex-wrap: nowrap`, die Zeile fuehrt Name, zwei Angaben
+ * und einen Knopf. Zuerst faellt die Restdauer (die Uhrzeit daneben sagt
+ * dasselbe und altert nicht), dann das Wort auf dem Knopf. Der volle Satz
+ * bleibt am `title` der Statuszeile, die Zielgroesse des Knopfes unveraendert
+ * aus `.btn`, sein `aria-label` nennt weiterhin das Medikament. */
+@container list-rows (max-width: 26rem) {
+  .health-prn__detail { display: none; }
+}
+
+@container list-rows (max-width: 21rem) {
+  .health-prn__take-label { display: none; }
+}
+
 /* Die Adhärenz-Karte ist seit Block 2 die geteilte Kennzahlkarte
  * (.metric-card, panel.css): Meta-Zeile, Wert, __progress als Balken. */
 
@@ -507,8 +559,8 @@ button.health-med-card:hover {
   padding: var(--space-0h) var(--space-2);
   border-radius: var(--radius-full);
   font-size: var(--text-2xs);
-  background: color-mix(in srgb, var(--module-accent) var(--tint-surface), transparent);
-  color: color-mix(in srgb, var(--module-accent, var(--color-accent)) var(--tint-ink), var(--color-text-primary));
+  background: var(--color-fill-well);
+  color: var(--color-text-secondary);
 }
 
 .health-med-badge--muted {
@@ -1193,10 +1245,23 @@ button.health-med-card:hover {
   gap: var(--space-2);
 }
 
+/* DER GLYPH GEHÖRT SEINEM TITEL, NICHT SEINEM MODUL.
+ *
+ * Sieben Karten der Übersicht - „Heute fällig", „Bei Bedarf", „Einnahmetreue",
+ * „Letzte Vitalwerte", „Schnell erfassen", „Nächste Erinnerungen",
+ * „Export (CSV)" - trugen ihr Zeichen im Modulton und sagten damit siebenmal
+ * „Gesundheit" auf einer Seite, deren Titel und Siegel das schon beantwortet
+ * haben (Herkunfts-Regel).
+ *
+ * Es ist derselbe Befund, den v2.23.0 am Kennzahlkarten-Glyph korrigiert hat
+ * („neun Vitalkarten mit neun identischen Modul-Glyphen"), nur eine Karte
+ * höher - und er blieb stehen, weil damals nur dort gesucht wurde, wo er
+ * aufgefallen war. Der Glyph ist das Piktogramm der Beschriftung neben ihm und
+ * nimmt deshalb ihre Farbe. */
 .health-overview__card-icon {
   width: 18px;
   height: 18px;
-  color: var(--module-accent);
+  color: var(--color-text-secondary);
   flex: 0 0 auto;
 }
 
@@ -1260,6 +1325,13 @@ button.health-med-card:hover {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: var(--space-2);
+  /* Diese Reihe traegt `.metric-card` und meldet sich deshalb unter dem Namen,
+   * den die Karte fragt: die Kompaktstufe des Werts (panel.css) haengt an der
+   * Breite der REIHE, und ohne diese Zeile blieben die Vitalkarten die einzige
+   * Kennzahlreihe der App, die sie nicht bekommt. Wer eine Reihe aus
+   * `.metric-card` baut, deklariert `container: metric-grid / inline-size` -
+   * `.metric-grid` selbst tut nichts anderes. */
+  container: metric-grid / inline-size;
 }
 
 /* Nächste Erinnerungen */
@@ -1365,11 +1437,6 @@ button.health-med-card:hover {
 }
 
 /* Chart-Feinschliff: dezente Gitternetzlinien + Labor-Referenzband. */
-.health-chart__grid {
-  stroke: var(--color-border);
-  stroke-width: 1;
-}
-
 .health-chart__band {
   fill: color-mix(in srgb, var(--color-success) var(--tint-wash), transparent);
 }
@@ -1519,8 +1586,11 @@ button.health-med-card:hover {
   width: 48px;
   height: 48px;
   border-radius: var(--radius-full);
-  color: var(--module-accent);
-  background: color-mix(in srgb, var(--module-accent) var(--tint-surface), transparent);
+  /* Eine ZUSTANDSMARKE im eigenen Modul, kein Absender: der Modulton saesse
+   * hier als Dekor (Herkunfts-Regel), und einen Ton fuer „Schwangerschaft"
+   * gibt es im Vokabular nicht. Neutral, bis es einen gibt. */
+  color: var(--color-text-secondary);
+  background: var(--color-fill-well);
 }
 
 .cycle-preg__body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: var(--space-2); }
@@ -1545,8 +1615,8 @@ button.health-med-card:hover {
   font-weight: 600;
   padding: 2px var(--space-2);
   border-radius: var(--radius-full);
-  color: color-mix(in srgb, var(--module-accent, var(--color-accent)) var(--tint-ink), var(--color-text-primary));
-  background: color-mix(in srgb, var(--module-accent) var(--tint-surface), transparent);
+  color: var(--color-text-secondary);
+  background: var(--color-fill-well);
 }
 
 .cycle-preg__countdown { font-size: var(--text-sm); color: var(--color-text-secondary); }
@@ -1754,8 +1824,29 @@ button.cycle-cal__day:not(:disabled):hover { background: var(--color-surface-2);
   box-shadow: inset 0 0 0 1.5px color-mix(in oklab, var(--cycle-period) 55%, transparent);
 }
 
+/* HEUTE IST DIE STIMME, KEINE PHASE.
+ *
+ * Der Ring stand im Modulton - und der ist im Zyklus-Kalender der Ton, der den
+ * PHASEN am nächsten liegt. Gemessen (CIEDE2000, JND 2,3):
+ *
+ *   Ring im Modulton   gegen --cycle-period   17,23 light / 14,33 dark
+ *   Ring in der Stimme gegen --cycle-period   31,50 light / 25,97 dark
+ *   engster Abstand im Gitter, Modulton       17,23 / 14,33  (period)
+ *   engster Abstand im Gitter, Stimme         26,60 / 25,97  (ovulation/period)
+ *
+ * Der Fall tritt regelmäßig ein: „heute" liegt oft auf einem geloggten Tag,
+ * dann stehen beide Ringe an derselben Zelle. Die Stimme hebt den kleinsten
+ * Abstand des Gitters um gut die Hälfte.
+ *
+ * Dazu die Grammatik: der Datepicker ist die zweite Kalenderfläche der App und
+ * markiert seinen heutigen Tag seit jeher mit `--color-accent`
+ * (`.ydp-cal__day.is-today`), der Kalender selbst mit der Vollton-Scheibe in
+ * derselben Farbe. Zwei Gitter, dieselbe Frage, ein Ton.
+ *
+ * Die GEOMETRIE bleibt bei 2px: 1,5px trägt hier schon die vorhergesagte
+ * Periode, und zwei Ringe derselben Stärke wären eine Formaussage weniger. */
 .cycle-cal__day.is-today {
-  box-shadow: inset 0 0 0 2px var(--module-accent);
+  box-shadow: inset 0 0 0 2px var(--color-accent);
   font-weight: 700;
 }
 
@@ -1815,7 +1906,8 @@ button.cycle-cal__day:not(:disabled):hover { background: var(--color-surface-2);
   background: color-mix(in oklab, var(--cycle-ovulation) 20%, transparent);
   border: 2px solid var(--cycle-ovulation);
 }
-.cycle-legend__swatch.is-today { box-shadow: inset 0 0 0 2px var(--module-accent); }
+/* Die Legende spiegelt den Kalender-Marker 1:1 - also auch seinen Ton. */
+.cycle-legend__swatch.is-today { box-shadow: inset 0 0 0 2px var(--color-accent); }
 
 /* ---- Verlauf ---- */
 

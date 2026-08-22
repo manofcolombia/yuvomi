@@ -244,8 +244,11 @@
 .settings-member__name,
 .settings-provider__name,
 .settings-sync-info__name,
-/* Dashboard-Widget-Titel eine Stufe über den Zeilen-Titeln (16px vs. 14px):
- * gibt jedem Widget innere Hierarchie zwischen Name und Inhalt (Critique P3). */
+/* Dashboard-Widget-Titel eine Stufe über den Zeilen-Titeln (17px vs. 15px, die
+ * Dichte-Variante darunter): gibt jedem Widget innere Hierarchie zwischen Name
+ * und Inhalt (Critique P3). Hier stand „16px vs. 14px" - die Zahlen der Skala
+ * VOR der Apple-Umstellung, während die Regel darunter längst --type-card-title
+ * liest. */
 .widget__title {
   font-size: var(--type-card-title);
   font-weight: var(--font-weight-semibold);

@@ -25,8 +25,29 @@ function validatePhotoData(val) {
   return { value: s, error: null };
 }
 
+/**
+ * EIN GEBURTSTAG BRINGT DIE IDENTITAET SEINES MITGLIEDS MIT.
+ *
+ * `SELECT *` liefert `family_user_id`, aber nicht die Farbe dahinter - und
+ * damit stand jedes Haushaltsmitglied in der Geburtstagsliste auf derselben
+ * neutralen Scheibe, waehrend dieselbe Person auf der Uebersicht, im Kalender,
+ * in den Aufgaben und (seit v2.22.0) in den Kontakten ihre eigene Farbe traegt.
+ * Die Uebersichtskachel hatte den Join laengst (dashboard.js), die Modulseite
+ * nie - dieselbe Reichweiten-Luecke wie bei der Vollton-Kante im Kalender.
+ *
+ * EIN Select fuer alle drei Lesewege (Liste, Naechste, Einzelabruf), damit die
+ * Luecke nicht an einem davon zurueckkommt.
+ */
+const BIRTHDAY_SELECT = `
+  SELECT birthdays.*,
+         u.display_name AS family_display_name,
+         u.avatar_color AS family_avatar_color,
+         u.avatar_data  AS family_avatar_data
+    FROM birthdays
+    LEFT JOIN users u ON u.id = birthdays.family_user_id`;
+
 function loadBirthday(id) {
-  return db.get().prepare('SELECT * FROM birthdays WHERE id = ?').get(id);
+  return db.get().prepare(`${BIRTHDAY_SELECT} WHERE birthdays.id = ?`).get(id);
 }
 
 
@@ -41,15 +62,16 @@ router.get('/', (req, res) => {
     const userId = req.authUserId || req.session.userId;
     syncAllBirthdayReminders(db.get(), userId);
 
-    let sql = 'SELECT * FROM birthdays WHERE 1=1';
+    // Spalten qualifiziert: seit dem Join auf `users` waere `name` mehrdeutig.
+    let sql = `${BIRTHDAY_SELECT} WHERE 1=1`;
     const params = [];
 
     if (req.query.q) {
-      sql += ' AND name LIKE ?';
+      sql += ' AND birthdays.name LIKE ?';
       params.push(`%${String(req.query.q).trim()}%`);
     }
 
-    sql += ' ORDER BY name COLLATE NOCASE ASC';
+    sql += ' ORDER BY birthdays.name COLLATE NOCASE ASC';
 
     const rows = db.get().prepare(sql).all(...params);
     res.json({ data: sortHydrated(rows) });
@@ -64,7 +86,7 @@ router.get('/upcoming', (req, res) => {
     const userId = req.authUserId || req.session.userId;
     syncAllBirthdayReminders(db.get(), userId);
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 5, 1), 50);
-    const rows = db.get().prepare('SELECT * FROM birthdays ORDER BY name COLLATE NOCASE ASC').all();
+    const rows = db.get().prepare(`${BIRTHDAY_SELECT} ORDER BY birthdays.name COLLATE NOCASE ASC`).all();
     res.json({ data: sortHydrated(rows).slice(0, limit) });
   } catch (err) {
     log.error('GET /upcoming error:', err);

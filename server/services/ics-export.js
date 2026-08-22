@@ -6,7 +6,7 @@
  */
 
 import { randomBytes } from 'node:crypto';
-import { utcToWall } from '../utils/timezone.js';
+import { serverTimeZone, utcToWall } from '../utils/timezone.js';
 import { rruleLine } from './recurrence.js';
 
 function escapeICSText(s) {
@@ -191,13 +191,62 @@ function buildVTimezone(tzid, year) {
   return lines;
 }
 
+// buildVTimezone ist teuer (365 Offset-Sonden je Jahr plus Binärsuche) und liefert
+// für dieselbe Zone im selben Jahr immer dasselbe. Abonnenten pollen den Feed im
+// Minutentakt - deshalb einmal rechnen und behalten.
+const vtimezoneCache = new Map();
+function vtimezoneFor(tzid, year) {
+  const key = `${tzid}|${year}`;
+  let lines = vtimezoneCache.get(key);
+  if (!lines) { lines = buildVTimezone(tzid, year); vtimezoneCache.set(key, lines); }
+  return lines;
+}
+
 // Nutzt dieses Event den TZID-Export-Pfad? Nur zeitgebundene Serien mit bekannter
 // Zone - Einzeltermine sind als UTC-Instant bereits eindeutig (kein DST-Problem).
 function usesTzid(ev) {
   return !!(ev.tzid && !ev.all_day && ev.recurrence_rule);
 }
 
-function buildVEvent(ev, dtstamp, showAssignees = false) {
+// --------------------------------------------------------
+// Verankerung naiver Zeiten an der Haushaltszone (#818)
+// --------------------------------------------------------
+// Lokal angelegte Termine speichern reine Wanduhrzeit ohne Offset. Als floating
+// local time exportiert (RFC 5545: gültig, gemeint ist "die Uhr des Betrachters")
+// legen Google, Apple, Thunderbird, Outlook und Home Assistant sie in der Praxis
+// auf UTC - ein 16:00-Termin in Madrid erscheint um 18:00. Weil diese Ziffern die
+// Uhr des Haushalts meinen, tragen sie im Feed jetzt deren Zone: DTSTART;TZID=…
+// plus VTIMEZONE, dazu X-WR-TIMEZONE als Kalenderzone für die Clients, die den
+// Header auswerten.
+
+// Die Zone, an der naive Werte verankert werden. null, wenn sie UTC-gleich oder
+// nicht auflösbar ist: dann sind die Ziffern bereits UTC und ein 'Z' ist eindeutiger
+// als ein VTIMEZONE über eine Zone, die viele Clients nicht als solche führen.
+function resolveFeedZone(tz) {
+  const zone = (tz || '').trim();
+  if (!zone || /^(UTC|GMT|Z|Etc\/(UTC|GMT|GMT0|GMT\+0|GMT-0|Zulu|Universal|Greenwich))$/i.test(zone)) return null;
+  try { new Intl.DateTimeFormat('en-US', { timeZone: zone }); return zone; }
+  catch { return null; }
+}
+
+// Eine Datums-/Zeit-Property. Werte mit eigenem Offset sind als UTC-Instant
+// eindeutig; naive Werte bekommen die Feed-Zone (bzw. 'Z', wenn diese UTC ist).
+function stampProp(prop, iso, feedZone) {
+  if (hasExplicitOffset(iso)) return `${prop}:${formatUTC(iso)}`;
+  return feedZone
+    ? `${prop};TZID=${feedZone}:${formatLocal(iso)}`
+    : `${prop}:${formatLocal(iso)}Z`;
+}
+
+// Braucht dieses Event ein VTIMEZONE der Feed-Zone? Nur der naive Pfad; Ganztags-
+// Werte sind VALUE=DATE, Serien mit eigener tzid bringen ihre Zone selbst mit.
+function usesFeedZone(ev) {
+  if (ev.all_day || usesTzid(ev)) return false;
+  return !hasExplicitOffset(ev.start_datetime) ||
+    !!(ev.end_datetime && !hasExplicitOffset(ev.end_datetime));
+}
+
+function buildVEvent(ev, dtstamp, showAssignees = false, feedZone = null) {
   const lines = ['BEGIN:VEVENT'];
   lines.push(`UID:event-${ev.id}@yuvomi`);
   lines.push(`DTSTAMP:${dtstamp}`);
@@ -213,14 +262,10 @@ function buildVEvent(ev, dtstamp, showAssignees = false) {
     if (ev.end_datetime) lines.push(`DTEND;TZID=${ev.tzid}:${formatWall(ev.end_datetime, ev.tzid)}`);
   } else {
     // Extern synchronisierte Events tragen ein explizites Z/Offset → echte UTC-Konvertierung.
-    // Lokal angelegte Events sind naiv (keine Z/Offset) → floating local time, unverändert
-    // übernommen, damit sie beim Abonnenten exakt wie in der App selbst angezeigt werden.
-    const startFmt = hasExplicitOffset(ev.start_datetime) ? formatUTC(ev.start_datetime) : formatLocal(ev.start_datetime);
-    lines.push(`DTSTART:${startFmt}`);
-    if (ev.end_datetime) {
-      const endFmt = hasExplicitOffset(ev.end_datetime) ? formatUTC(ev.end_datetime) : formatLocal(ev.end_datetime);
-      lines.push(`DTEND:${endFmt}`);
-    }
+    // Lokal angelegte Events sind naiv (keine Z/Offset) → Wanduhrzeit des Haushalts,
+    // an dessen Zone verankert statt floating (#818).
+    lines.push(stampProp('DTSTART', ev.start_datetime, feedZone));
+    if (ev.end_datetime) lines.push(stampProp('DTEND', ev.end_datetime, feedZone));
   }
   // Opt-in (#482): zugewiesene Personen als Titel-Suffix "(Name, Name)".
   // Escaping erfolgt über den zusammengesetzten String, damit Kommata/Semikola
@@ -250,9 +295,9 @@ function buildVEvent(ev, dtstamp, showAssignees = false) {
       } else if (usesTzid(ev)) {
         lines.push(`EXDATE;TZID=${ev.tzid}:${formatDate(exDate)}${wallSuffix}`);
       } else {
-        const occIso = exDate + timeSuffix;
-        const fmt = hasExplicitOffset(occIso) ? formatUTC(occIso) : formatLocal(occIso);
-        lines.push(`EXDATE:${fmt}`);
+        // Gleiche Verankerung wie DTSTART - eine floating EXDATE träfe sonst nicht
+        // mehr auf ihr zonengebundenes Vorkommen (#818).
+        lines.push(stampProp('EXDATE', exDate + timeSuffix, feedZone));
       }
     }
   }
@@ -260,9 +305,10 @@ function buildVEvent(ev, dtstamp, showAssignees = false) {
   return lines.map(foldLine);
 }
 
-function buildFeed(conn, userId, now = new Date()) {
+function buildFeed(conn, userId, now = new Date(), tz = serverTimeZone()) {
   const windowStart = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000)
     .toISOString().slice(0, 10);
+  const feedZone = resolveFeedZone(tz);
 
   // Identische Sichtbarkeitslogik wie GET /api/v1/calendar:
   // alle Events außer fremden, nicht-geteilten ICS-Abos.
@@ -322,12 +368,18 @@ function buildFeed(conn, userId, now = new Date()) {
     'METHOD:PUBLISH',
     'X-WR-CALNAME:Yuvomi',
   ];
+  // Kalenderzone für die Clients, die den Header auswerten (Google, Thunderbird).
+  // Sie ersetzt die TZID-Parameter nicht, sondern deckt den Rest: Termine ohne
+  // eigene Zone und die Zone, in der der Abonnent den Kalender angelegt sieht (#818).
+  if (feedZone) out.push(`X-WR-TIMEZONE:${feedZone}`);
   // Je referenzierter Zone genau ein VTIMEZONE (RFC 5545: vor den VEVENTs), damit
-  // Abonnenten die TZID-Serien auflösen können (#549).
-  const usedZones = [...new Set(rows.filter(usesTzid).map((ev) => ev.tzid))];
+  // Abonnenten die TZID-Serien auflösen können (#549) und die an der Haushaltszone
+  // verankerten Termine (#818).
+  const usedZones = new Set(rows.filter(usesTzid).map((ev) => ev.tzid));
+  if (feedZone && rows.some(usesFeedZone)) usedZones.add(feedZone);
   const tzYear = now.getUTCFullYear();
-  for (const tzid of usedZones) out.push(...buildVTimezone(tzid, tzYear).map(foldLine));
-  for (const ev of rows) out.push(...buildVEvent(ev, dtstamp, showAssignees));
+  for (const tzid of usedZones) out.push(...vtimezoneFor(tzid, tzYear).map(foldLine));
+  for (const ev of rows) out.push(...buildVEvent(ev, dtstamp, showAssignees, feedZone));
   out.push('END:VCALENDAR');
   return out.join('\r\n') + '\r\n';
 }

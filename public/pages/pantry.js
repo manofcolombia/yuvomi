@@ -255,7 +255,7 @@ export async function render(container) {
   // 2026-07-30 wegscrollte, noch darüber, wo sie eine Zeile kostete.
 
   const list = document.createElement('div');
-  list.className = 'list-scroller pantry-list has-bulk-safe-zone';
+  list.className = 'list-scroller page-scrollport pantry-list';
   list.id = 'pantry-list';
   list.setAttribute('aria-busy', 'true');
   list.insertAdjacentHTML('beforeend', renderSkeletonList({ rows: 6, lines: 2 }));

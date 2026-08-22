@@ -759,7 +759,12 @@ async function route(req, res, server) {
 
       json(res, result.status, result.body);
 
-      if (result.status === 201 || result.status === 403) {
+      // 404 gehoert dazu: /auth/setup antwortet bei bereits vorhandenem Konto
+      // in production mit 404 und nur ausserhalb davon mit 403 (server/auth.js).
+      // Jedes reale Deployment setzt NODE_ENV=production, der 403-Zweig war hier
+      // also toter Code - und ein Rerun beendete den Installer nie, weil dieser
+      // Block nicht lief.
+      if (result.status === 201 || result.status === 403 || result.status === 404) {
         // Nicht sofort schliessen: die Abschlussseite bietet den Download der
         // .env an, und der holt die Datei von hier. Ab jetzt gilt der kurze
         // Nachlauf, den jeder weitere Request verlaengert.

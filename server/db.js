@@ -175,6 +175,7 @@ function init({ plaintextBackup = true } = {}) {
   // Beide Prüfungen laufen VOR dem Öffnen: fehlt der Cipher-Support, darf gar
   // nicht erst eine unverschlüsselte Datei entstehen.
   if (DB_KEY) {
+    assertKeyIsNotPlaceholder();
     assertCipherSupport();
     encryptPlaintextDatabase({ backup: plaintextBackup });
   }
@@ -209,6 +210,43 @@ function init({ plaintextBackup = true } = {}) {
 
   log.info(`Connected: ${DB_PATH} | Schema v${currentVersion()}`);
   return db;
+}
+
+/**
+ * Ein Platzhalter aus `.env.example` ist kein Schlüssel.
+ *
+ * `.env.example` liefert `DB_ENCRYPTION_KEY=REPLACE_WITH_A_STRONG_ENCRYPTION_KEY`
+ * (nicht etwa eine leere Zeile). Wer die Quick-Start-Zeilen am Stück kopiert und
+ * das Bearbeiten von `.env` überspringt, verschlüsselt seine Datenbank damit
+ * gegen eine Konstante, die im Repository und auf der Landingpage abgedruckt
+ * steht - also gegen nichts. Der Fehler ist zusätzlich unumkehrbar, weil ein
+ * späterer echter Schlüssel die Datei nicht mehr öffnet.
+ *
+ * Der Guard bricht NUR ab, solange die Datenbank noch nicht existiert. Genau
+ * dann ist der Fehler vermeidbar. Bestandsinstallationen, die diesen Weg schon
+ * gegangen sind, laufen weiter: ein Startfehler würde ihnen eine funktionierende
+ * Instanz nehmen, statt einen Fehler zu verhindern, der dort längst passiert
+ * ist. Sie bekommen die Warnung samt konkretem Ausweg bei jedem Start.
+ */
+function assertKeyIsNotPlaceholder() {
+  if (!DB_KEY.startsWith('REPLACE_WITH_')) return;
+
+  if (!existsSync(DB_PATH)) {
+    throw new Error(
+      '[DB] DB_ENCRYPTION_KEY is still the placeholder from .env.example ' +
+      `(${DB_KEY}). That value is published in this repository, so it protects ` +
+      'nothing. Generate a real one with `openssl rand -hex 32` and put it in ' +
+      '.env, or clear the line entirely to run without encryption.'
+    );
+  }
+
+  log.warn(
+    'DB_ENCRYPTION_KEY is the placeholder from .env.example, so this database is ' +
+    'encrypted with a publicly known value and is not protected. To rotate: stop ' +
+    `the app, copy ${DB_PATH} somewhere safe, then open the database with the old ` +
+    'key and run `PRAGMA rekey` with a value from `openssl rand -hex 32` before ' +
+    'putting that same value into .env.'
+  );
 }
 
 function applyEncryptionKey(database) {
@@ -5321,6 +5359,405 @@ const MIGRATIONS = [
                                        updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
       `).run(JSON.stringify(disabled));
     },
+  },
+  {
+    version: 146,
+    description: 'rename the shared-expenses receipt folder to the canonical module name',
+    up(db) {
+      // EIN MODUL, EIN NAME - nachgezogen fuer den Ordner, in dem die Belege
+      // liegen. Das Modul heisst `splitExpenses.title` ("Gemeinsame Ausgaben"),
+      // der Zielordner hiess `documents.splitExpensesFolder` und war in elf von
+      // vierundzwanzig Sprachen ein anderes Wort. Der Locale-Wert ist mit
+      // diesem Release auf den Modulnamen gezogen - ohne diese Migration
+      // entstuende bei jedem Bestandshaushalt beim naechsten Beleg ein ZWEITER
+      // Ordner, weil `ensureFolder` (server/routes/documents.js) den Ordner
+      // ueber seinen NAMEN sucht und sonst anlegt. Die alten Belege blieben im
+      // alten.
+      //
+      // Die Paare stehen hier ausgeschrieben und werden NICHT aus den
+      // Locale-Dateien gelesen: eine Migration ist ein historischer Fakt und
+      // muss in fuenf Jahren dasselbe tun wie heute. Ein Blick in die dann
+      // aktuellen Uebersetzungen wuerde in einem spaeteren Rename still etwas
+      // anderes umbenennen als hier gemeint war.
+      const RENAMES = [
+        ['النفقات المشتركة', 'المصاريف المشتركة'],   // ar
+        ['Sdílené výdaje', 'Společné výdaje'],       // cs
+        ['Geteilte Ausgaben', 'Gemeinsame Ausgaben'], // de
+        ['Κοινές δαπάνες', 'Κοινά έξοδα'],           // el
+        ['Közös kiadások', 'Megosztott költségek'],  // hu
+        ['Pengeluaran bersama', 'Pengeluaran Bersama'], // id
+        ['共同の支出', '共有費用'],                    // ja
+        ['Despesas partilhadas', 'Despesas compartilhadas'], // pt
+        ['Paylaşılan harcamalar', 'Paylaşılan giderler'],    // tr
+        ['Chi tiêu chung', 'Chi phí chung'],         // vi
+        ['共同支出', '共享支出'],                      // zh
+      ];
+
+      // Der Ordner traegt die Sprache, in der er entstanden ist, und ein
+      // Haushalt kann die Sprache gewechselt haben - deshalb wird jede der elf
+      // Zeilen geprueft statt nur die des aktuellen Locales. Getroffen wird
+      // hoechstens eine.
+      // Der Quellordner wird EXAKT gesucht, der Konflikt dagegen mit
+      // `COLLATE NOCASE` - und dort mit `id <> ?`, statt einen beliebigen
+      // Treffer hinterher gegen die eigene id zu halten.
+      //
+      // Der Unterschied ist der Startabbruch: `name` traegt ein `UNIQUE`
+      // (Migration 60). Bei `id` unterscheiden sich alt und neu NUR in der
+      // Grossschreibung, ein Haushalt kann also beide Ordner besitzen -
+      // "Pengeluaran bersama" und "Pengeluaran Bersama" nebeneinander, vom
+      // case-sensitiven UNIQUE ausdruecklich erlaubt. Ein NOCASE-Blick auf
+      // den Zielnamen liefert dann dieselbe erste Zeile wie der Blick auf den
+      // Quellnamen, ein Vergleich `clash.id !== source.id` haelte das faelsch-
+      // licherweise fuer konfliktfrei, und das folgende UPDATE liefe in die
+      // UNIQUE-Verletzung. Migration v146 braeche ab, und mit ihr der Start.
+      const findExact = db.prepare('SELECT id FROM family_document_folders WHERE name = ?');
+      const findClash = db.prepare('SELECT id FROM family_document_folders WHERE name = ? COLLATE NOCASE AND id <> ?');
+      const rename = db.prepare('UPDATE family_document_folders SET name = ? WHERE id = ?');
+
+      for (const [from, to] of RENAMES) {
+        const source = findExact.get(from);
+        if (!source) continue;
+
+        // Zielname schon vergeben? Dann NICHT umbenennen. Zwei Ordner mit
+        // demselben Namen waeren schlimmer als ein Ordner mit dem alten:
+        // `ensureFolder` nimmt den ersten Treffer, und welcher das ist, haengt
+        // an der Zeilenreihenfolge.
+        if (findClash.get(to, source.id)) continue;
+
+        rename.run(to, source.id);
+      }
+    },
+  },
+  {
+    version: 147,
+    description: 'repair reward icons and descriptions stored as the text null',
+    up(db) {
+      // Issue #789: der PATCH-Handler fuer den Praemienkatalog unterschied
+      // `undefined` (Feld fehlt, unveraendert lassen) nicht von `null` (Feld
+      // leer abgeschickt) und schickte das gesendete `null` durch `String()`.
+      // Jede Praemie ohne Icon bekam beim ersten Bearbeiten deshalb den
+      // vierstelligen Text "null" als Icon - und wer eine Beschreibung leerte,
+      // bekam sie als "null" zurueck. Die Route ist repariert, die bereits
+      // geschriebenen Zeilen bleiben ohne diese Migration stehen.
+      //
+      // Getroffen wird ausschliesslich der exakte Wert - kein LIKE, kein TRIM.
+      // Eine Beschreibung, die "null" nur ENTHAELT, ist echter Text.
+      db.prepare("UPDATE reward_catalog SET icon = NULL WHERE icon = 'null'").run();
+      db.prepare("UPDATE reward_catalog SET description = NULL WHERE description = 'null'").run();
+
+      // Der Einloese-Verlauf haelt Name/Icon/Kosten als Snapshot (siehe
+      // Migration 1). Wer eine bereits verdorbene Praemie eingeloest hat, traegt
+      // das "null" auch dort - und der Verlauf wird aus dem Katalog nicht mehr
+      // nachgezogen, muss also eigens repariert werden.
+      db.prepare("UPDATE reward_redemptions SET reward_icon = NULL WHERE reward_icon = 'null'").run();
+    },
+  },
+  {
+    version: 148,
+    description: 'PRN medications: minimum interval and default dose per dose (#700)',
+    up: `
+      -- Discussion #700: "bei Bedarf" stand seit v65 als Spalte, im Formular und
+      -- als Abzeichen in der Liste - nur gebucht werden konnte so eine Dosis
+      -- nicht, weil beide Buchungspfade an einem Knopf hingen, den erst ein
+      -- Zeitplan erzeugt. Ein Bedarfsmedikament hat definitionsgemaess keinen.
+      --
+      -- min_interval_hours ist der Mindestabstand zweier Dosen in Stunden. Er
+      -- ist der eigentliche Wunsch aus der Meldung: aus ihm und der letzten
+      -- Einnahme faellt der Zeitpunkt, ab dem die naechste erlaubt ist. REAL,
+      -- weil "alle 4,5 Stunden" auf Beipackzetteln vorkommt. NULL = kein
+      -- Abstand hinterlegt, dann bleibt der Countdown aus.
+      --
+      -- prn_dose_qty ist die uebliche Menge je Bedarfseinnahme - das Gegenstueck
+      -- zu medication_schedules.dose_qty, das es fuer eine geplante Dosis schon
+      -- gibt. Ohne sie wuesste die Bedarfsbuchung keine Menge und koennte den
+      -- Bestand nicht mitfuehren, waehrend die geplante das seit jeher tut.
+      ALTER TABLE medications ADD COLUMN min_interval_hours REAL;
+      ALTER TABLE medications ADD COLUMN prn_dose_qty REAL;
+    `,
+  },
+  {
+    version: 149,
+    description: 'comments on tasks (#734)',
+    up: `
+      -- Discussion #734: über eine Aufgabe wird geredet - bisher woanders.
+      -- Das Vorbild steht im selben Schema: expense_comments (Migration 44)
+      -- führt dieselben vier Spalten für die geteilten Ausgaben.
+      --
+      -- Abweichung an einer Stelle: updated_at. Ein Kommentar ist Fließtext, in
+      -- dem sich vertippt wird, und ein stillschweigend geänderter Beitrag ist
+      -- in einer Unterhaltung etwas anderes als ein korrigierter Betrag. Die
+      -- Spalte bleibt NULL, solange niemand nachbessert - so trägt nur der
+      -- geänderte Kommentar den Hinweis.
+      --
+      -- CASCADE auf beiden Wegen, wie beim Vorbild: mit der Aufgabe geht ihre
+      -- Unterhaltung, mit dem Konto gehen dessen Beiträge.
+      CREATE TABLE IF NOT EXISTS task_comments (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id    INTEGER NOT NULL REFERENCES tasks(id)  ON DELETE CASCADE,
+        user_id    INTEGER NOT NULL REFERENCES users(id)  ON DELETE CASCADE,
+        comment    TEXT    NOT NULL,
+        created_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+        updated_at TEXT
+      );
+
+      -- Gelesen wird immer je Aufgabe und in Reihenfolge.
+      CREATE INDEX IF NOT EXISTS idx_task_comments_task ON task_comments(task_id, id);
+    `,
+  },
+  {
+    version: 150,
+    description: 'countdown flag on events and tasks (#647)',
+    up: `
+      -- Discussion #647: "XX Tage bis ..." - und die eigentliche Arbeit war die
+      -- Frage, WO das lebt. Der Thread hat sie zu Ende diskutiert und kommt auf
+      -- ein Flag an dem, was es ohnehin schon gibt, statt auf ein zweites
+      -- System:
+      --
+      --   @Kyrodan zaehlt bis zu Terminen, die er sowieso im Kalender fuehrt
+      --   (Urlaub, "Disney+ verlaengern"). Ein eigenes Objekt hiesse fuer ihn,
+      --   dasselbe Datum zweimal zu pflegen.
+      --
+      --   @jamespurnama1 zaehlt bis zum Fuehrerschein und bis zum Luftfilter -
+      --   nichts davon ist ein Termin, und sein Punkt ist die RUECKSETZUNG auf
+      --   dieselbe DAUER, nicht auf dasselbe Datum. Das ist genau
+      --   tasks.recurrence_from_completion (Migration 137, #658), das es hier
+      --   schon gibt. Er hat als Aufloesung ein Uebersichts-Widget
+      --   vorgeschlagen, das aus BEIDEN Quellen einsammelt.
+      --
+      -- Ein drittes Objekt haette also nur eine dritte Schreibweise fuer eine
+      -- Faelligkeit hinzugefuegt, die zweimal existiert. Zwei Flags und ein
+      -- Widget kommen ohne aus.
+      --
+      -- Bei calendar_events gehoert das Flag in dieselbe Gruppe wie icon (v53)
+      -- und visibility (v83): Yuvomi-eigene Felder ohne CalDAV-/Google-
+      -- Gegenstueck. Es steht nicht in MIRRORED_FIELDS
+      -- (services/calendar-outbound.js), loest also keinen Push aus, und der
+      -- Rueckweg schreibt eine feste Spaltenliste, laesst es also stehen - eine
+      -- Anzeigeeinstellung, die nur hier etwas bedeutet, ueberlebt damit jeden
+      -- Sync-Lauf.
+      ALTER TABLE calendar_events ADD COLUMN countdown INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE tasks           ADD COLUMN countdown INTEGER NOT NULL DEFAULT 0;
+    `,
+  },
+  {
+    version: 151,
+    description: 'search index: drop duplicate shopping item rows and make their insert trigger idempotent',
+    up: `
+      -- JEDER NEU ANGELEGTE EINKAUFSARTIKEL STAND ZWEIMAL IM VOLLTEXT-INDEX.
+      --
+      -- Zwei AFTER-INSERT-Trigger auf shopping_items, und SQLite sichert die
+      -- Reihenfolge zweier Trigger desselben Typs nicht zu. Die tatsaechliche
+      -- war:
+      --   1. trg_shopping_items_sort_order (Migration 133) macht ein UPDATE auf
+      --      dieselbe Zeile, sobald sort_order beim Einfuegen 0 ist - das ist
+      --      der Normalfall, denn keiner der neun Einfuegewege setzt sie.
+      --   2. Dieses UPDATE loest trg_search_items_au aus. Der loescht (noch
+      --      nichts) und schreibt eine Index-Zeile.
+      --   3. Erst DANACH laeuft trg_search_items_ai und schreibt eine zweite.
+      --
+      -- WARUM ES NIE JEMAND GEMERKT HAT: es heilte sich beim ersten Anfassen
+      -- selbst, denn trg_search_items_au loescht ueber (entity, entity_id) und
+      -- erwischt damit beide Zeilen. Abhaken genuegte. Doppelt waren also genau
+      -- die frisch angelegten, unberuehrten Artikel - und das sind die, nach
+      -- denen jemand sucht. runSearch deckelt bei fuenf Treffern je Art, also
+      -- kamen von fuenf angelegten Artikeln zweieinhalb an.
+      --
+      -- DER FIX SITZT AM INSERT-TRIGGER UND NICHT AM SORT-ORDER-TRIGGER, obwohl
+      -- der das UPDATE ausloest: eine Reihenfolge, die SQLite nicht zusichert,
+      -- laesst sich nicht reparieren, indem man sie anders herum annimmt. Mit
+      -- DELETE vor INSERT ist der Trigger idempotent und stimmt in BEIDER
+      -- Richtung - und er bleibt richtig, wenn morgen ein dritter
+      -- AFTER-INSERT-Trigger dazukommt. Es ist derselbe Griff, den der
+      -- _au-Trigger nebenan schon macht.
+      DROP TRIGGER IF EXISTS trg_search_items_ai;
+      CREATE TRIGGER trg_search_items_ai AFTER INSERT ON shopping_items BEGIN
+        DELETE FROM search_index WHERE entity = 'item' AND entity_id = NEW.id;
+        INSERT INTO search_index (entity, entity_id, title, body)
+        SELECT 'item', i.id, COALESCE(i.name, ''),
+               TRIM(COALESCE(i.notes, '') || ' ' ||
+                    COALESCE((SELECT group_concat(tag, ' ') FROM shopping_item_tags WHERE item_id = i.id), ''))
+        FROM shopping_items i WHERE i.id = NEW.id;
+      END;
+
+      -- Bestandsdaten: die schon geschriebenen Dubletten wegraeumen.
+      --
+      -- Ueber die rowid und NICHT ueber einen Neuaufbau des item-Anteils, wie
+      -- ihn Migration 77 fuer den ganzen Index gemacht hat. Ein Neuaufbau
+      -- muesste die Trigger-Logik ein zweites Mal hinschreiben (inklusive der
+      -- Tags im body), und eine Abweichung zwischen beiden Fassungen waere ein
+      -- stiller Verlust im Index - hier faellt nur weg, was doppelt ist.
+      --
+      -- Welche der beiden Zeilen bleibt, ist gleichgueltig: beide Trigger lesen
+      -- dieselbe Zeile im selben Zustand und schreiben denselben Inhalt.
+      --
+      -- Ohne Einschraenkung auf 'item', weil (entity, entity_id) im ganzen
+      -- Index eindeutig sein MUSS - genau davon geht jeder _au-Trigger aus,
+      -- wenn er vor dem Neuschreiben ueber diese beiden Spalten loescht. Was
+      -- sonst noch doppelt liegt, ist derselbe Fehler und geht mit.
+      DELETE FROM search_index WHERE rowid NOT IN (
+        SELECT MIN(rowid) FROM search_index GROUP BY entity, entity_id
+      );
+    `,
+  },
+  {
+    version: 152,
+    description: 'contact categories carry their own colour instead of a css name list',
+    up: `
+      -- DER TON EINER KATEGORIE GEHOERT IN DIE DATEN, NICHT IN EINE
+      -- SELEKTORLISTE. Er stand als sieben Regeln \`.contact-group--<key>\` in
+      -- contacts.css, und der Selektor kann per Konstruktion nur die
+      -- SEED-Schluessel treffen: seit #357 legt der Haushalt eigene Kategorien
+      -- an, und die fielen deshalb alle auf den Modulton zurueck - im
+      -- Demo-Haushalt sahen "Familie" und "Dienstleistungen" gleich aus. Eine
+      -- Farbe, die zwei Dinge meint, ist keine (Vollton-Regel, DESIGN.md).
+      --
+      -- GESPEICHERT WIRD DER TOKEN-AUSDRUCK, NICHT EIN HEX-WERT, und das ist
+      -- keine Bequemlichkeit: die sieben Toene sind THEMENABHAENGIG
+      -- (--color-success ist #1E7B35 im Light und #30D158 im Dark). Ein Hex in
+      -- der Datenbank koennte den Dunkelmodus nicht bedienen. Dasselbe Muster
+      -- fuehren die Kontofarben des Budgets seit ihrer Einfuehrung
+      -- (\`var(--chart-series-2)\` als gespeicherter Wert).
+      --
+      -- NULL heisst NEUTRAL, nicht "Vorgabe": eine Kategorie ohne kuratierten
+      -- Ton traegt bewusst keine Farbe, statt sich eine zu borgen.
+      ALTER TABLE contact_categories ADD COLUMN color TEXT;
+
+      UPDATE contact_categories SET color = 'var(--color-success)'      WHERE key = 'doctor'    AND color IS NULL;
+      UPDATE contact_categories SET color = 'var(--color-warning)'      WHERE key = 'school'    AND color IS NULL;
+      UPDATE contact_categories SET color = 'var(--color-accent)'       WHERE key = 'authority' AND color IS NULL;
+      UPDATE contact_categories SET color = 'var(--module-budget)'      WHERE key = 'insurance' AND color IS NULL;
+      UPDATE contact_categories SET color = 'var(--module-meals)'       WHERE key = 'craftsman' AND color IS NULL;
+      UPDATE contact_categories SET color = 'var(--color-danger)'       WHERE key = 'emergency' AND color IS NULL;
+      UPDATE contact_categories SET color = 'var(--color-text-secondary)' WHERE key = 'misc'    AND color IS NULL;
+    `,
+  },
+  {
+    version: 153,
+    description: 'idempotency keys for retry-safe POST requests on the public api',
+    up: `
+      -- RETRY-SICHERES ANLEGEN UEBER DIE OEFFENTLICHE API (#822).
+      --
+      -- Das Problem ist aelter als jeder Endpoint: ein Client schickt POST,
+      -- die Antwort geht auf dem Weg verloren, und er kann danach nicht mehr
+      -- unterscheiden, ob angelegt wurde oder nicht. Wiederholt er, hat er
+      -- womoeglich zwei Aufgaben; wiederholt er nicht, womoeglich keine. Ohne
+      -- serverseitiges Gedaechtnis ist das nicht aufloesbar - deshalb steht es
+      -- hier und nicht im Prozessspeicher: es muss einen Neustart ueberleben,
+      -- sonst ist die Zusage genau dann wertlos, wenn sie zaehlt.
+      --
+      -- DER SCHLUESSEL GEHOERT DEM AKTEUR, nicht dem Pfad: derselbe
+      -- Schluesselwert von zwei Konten sind zwei Vorgaenge, und ein Konto, das
+      -- einen Schluessel fuer zwei verschiedene Anfragen benutzt, hat einen
+      -- Fehler - den soll es als Konflikt zu sehen bekommen, nicht als still
+      -- zurueckgespielte fremde Antwort. Deshalb UNIQUE ueber (user_id, key)
+      -- und nicht ueber (user_id, key, path).
+      --
+      -- request_hash ist der Fingerabdruck aus Methode, Pfad und Rumpf. Er
+      -- entscheidet ueber Wiedergabe oder Konflikt.
+      --
+      -- status NULL heisst LAEUFT NOCH: der Datensatz entsteht, bevor die
+      -- Route arbeitet, damit ein gleichzeitiger zweiter Versuch sich am
+      -- eindeutigen Index stoesst statt danebenzulaufen.
+      CREATE TABLE IF NOT EXISTS idempotency_keys (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id       INTEGER NOT NULL,
+        key           TEXT    NOT NULL,
+        method        TEXT    NOT NULL,
+        path          TEXT    NOT NULL,
+        request_hash  TEXT    NOT NULL,
+        status        INTEGER,
+        response_body TEXT,
+        created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
+        completed_at  TEXT,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      );
+
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_idempotency_keys_actor
+        ON idempotency_keys(user_id, key);
+
+      -- Abgelaufenes wird beim naechsten Schluessel-Request weggeraeumt; der
+      -- Index haelt dieses Aufraeumen billig, damit es keinen Cron braucht.
+      CREATE INDEX IF NOT EXISTS idx_idempotency_keys_created
+        ON idempotency_keys(created_at);
+    `,
+  },
+  {
+    version: 154,
+    description: 'Outlook (Microsoft Graph) one-way push: accounts, calendar selection, event links, event target columns',
+    up: `
+      -- Outlook.com spricht kein CalDAV mehr - der einzige Schreibweg ist die
+      -- Microsoft Graph API. Neuer Provider "Outlook-Push": one-way
+      -- Yuvomi -> Outlook fuer persoenliche Microsoft-Konten (outlook.com /
+      -- M365 Family), Multi-Account wie caldav_accounts.
+
+      -- Ein verbundenes Microsoft-Konto. OAuth-Tokens liegen pro Konto-Zeile,
+      -- NICHT in sync_config (Multi-Account). auto_sync_calendar_id +
+      -- owner_user_id aktivieren den Auto-Sync: alle fuer den Owner sichtbaren
+      -- lokalen Termine werden automatisch in diesen einen Kalender gepusht.
+      CREATE TABLE outlook_accounts (
+        id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+        name                  TEXT NOT NULL,
+        ms_user_id            TEXT,
+        email                 TEXT,
+        access_token          TEXT NOT NULL,
+        refresh_token         TEXT NOT NULL,
+        token_expiry          TEXT,
+        needs_reauth          INTEGER NOT NULL DEFAULT 0,
+        auto_sync_calendar_id TEXT,
+        owner_user_id         INTEGER REFERENCES users(id),
+        created_at            TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+        last_sync             TEXT,
+        last_error            TEXT
+      );
+      -- Reconnect desselben Microsoft-Kontos ersetzt die Tokens statt zu duplizieren.
+      CREATE UNIQUE INDEX idx_outlook_accounts_ms_user
+        ON outlook_accounts(ms_user_id) WHERE ms_user_id IS NOT NULL;
+
+      -- Beim Verbinden von Graph geladene Kalender; enabled = als Push-Ziel
+      -- waehlbar. Neue Kalender starten deaktiviert: der Connect-Flow fuehrt
+      -- erst zur Anlage eines dedizierten Zielkalenders.
+      CREATE TABLE outlook_calendar_selection (
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        account_id     INTEGER NOT NULL REFERENCES outlook_accounts(id) ON DELETE CASCADE,
+        calendar_id    TEXT NOT NULL,
+        calendar_name  TEXT NOT NULL,
+        calendar_color TEXT,
+        can_edit       INTEGER NOT NULL DEFAULT 1,
+        enabled        INTEGER NOT NULL DEFAULT 1,
+        created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+        UNIQUE(account_id, calendar_id)
+      );
+
+      -- Push-Zustand je (Event, Konto): ein Termin kann in mehrere Konten
+      -- gepusht werden (je Familienmitglied ein eigener Zielkalender).
+      -- BEWUSST KEIN FK auf calendar_events: die Zeile muss das Loeschen des
+      -- lokalen Events ueberleben, damit der naechste Sync das Remote-Event in
+      -- Outlook loescht (Tombstone). Anders als Google/CalDAV gibt es keinen
+      -- Handoff zu external_source='outlook' - ohne Inbound-Sync wuerde das
+      -- Event danach einfrieren; es bleibt dauerhaft 'local'.
+      CREATE TABLE outlook_event_links (
+        event_id            INTEGER NOT NULL,
+        account_id          INTEGER NOT NULL REFERENCES outlook_accounts(id) ON DELETE CASCADE,
+        outlook_calendar_id TEXT NOT NULL,
+        outlook_event_id    TEXT NOT NULL,
+        content_hash        TEXT,
+        -- Graph-ETag des Events nach dem letzten eigenen Schreibzugriff. Der Sync
+        -- listet je Kalender einmal id+changeKey: weicht der Key ab, wurde der
+        -- Termin in Outlook veraendert und wird auf den Yuvomi-Stand zurueckgesetzt;
+        -- fehlt die id, wurde er in Outlook geloescht und wird neu angelegt.
+        outlook_change_key  TEXT,
+        last_pushed_at      TEXT,
+        last_error          TEXT,
+        PRIMARY KEY (event_id, account_id)
+      );
+      CREATE INDEX idx_outlook_links_account ON outlook_event_links(account_id);
+
+      -- Explizites Push-Ziel am Event (Muster target_caldav_* /
+      -- target_google_calendar_id); gewinnt gegen den Auto-Sync-Kalender.
+      -- Keine external_source-CHECK-Erweiterung noetig (kein Handoff, s. o.).
+      ALTER TABLE calendar_events ADD COLUMN target_outlook_account_id INTEGER;
+      ALTER TABLE calendar_events ADD COLUMN target_outlook_calendar_id TEXT;
+    `,
   },
 ];
 

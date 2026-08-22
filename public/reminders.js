@@ -8,7 +8,7 @@
 import { api } from '/api.js';
 import { t } from '/i18n.js';
 import { isPushSubscribed } from '/push.js';
-import { NAV_ICONS } from '/nav-icons.js';
+import { moduleIconEl } from '/nav-icons.js';
 import { toastSurface } from '/utils/toast-surface.js';
 
 // --------------------------------------------------------
@@ -167,15 +167,15 @@ const REMINDER_ORIGINS = {
 function createOriginSeal(entityType) {
   const origin = REMINDER_ORIGINS[entityType];
   const seal = document.createElement('span');
-  // --vivid, weil der Toast die eine umgekehrte Flaeche der App ist; die
-  // Begruendung samt Messung steht an der Klasse in layout.css.
-  seal.className = 'module-seal module-seal--sm module-seal--vivid';
+  // Hier stand zusaetzlich `module-seal--vivid`: der Toast ist die eine
+  // umgekehrte Flaeche der App und brauchte deshalb das Vollton-Gesicht. Es
+  // ist seit 2026-08-17 das einzige, also steht es in der Basisregel.
+  seal.className = 'module-seal module-seal--sm';
   seal.setAttribute('aria-hidden', 'true');
   seal.style.setProperty('--seal-accent', origin?.accent ?? 'var(--module-reminders)');
-  // `?.()` wie nav-icons.js es dokumentiert: der Fallback oben deckt einen
-  // unbekannten entity_type ab, nicht einen umbenannten Icon-Namen - der
-  // wuerde hier werfen und den ganzen Erinnerungs-Toast mitnehmen.
-  seal.appendChild(NAV_ICONS[origin?.icon]?.() ?? createBellSvg());
+  // Der Fallback oben deckt einen unbekannten entity_type ab; ein Icon-Name
+  // ohne eigenes Zeichen faellt in moduleIconEl still auf Lucide zurueck.
+  seal.appendChild(origin?.icon ? moduleIconEl(origin.icon) : createBellSvg());
   return seal;
 }
 

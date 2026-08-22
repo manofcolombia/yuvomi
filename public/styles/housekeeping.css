@@ -74,8 +74,13 @@
 }
 
 @container housekeeping-page (max-width: 479px) {
+  /* Der SCHRIFTGRAD stand hier auch (`--text-base`, 16px) und ist entfallen:
+   * die Kennzahl-Zeile klemmt ihn seit 2026-08-19 selbst, gestuft und mit
+   * Title 3 als Untergrenze (panel.css). Zwei Hosts unterboten sie lokal
+   * auf Fussnotengroesse - genau die Drift, gegen die das geteilte Bauteil
+   * gebaut wurde. Die Polsterung bleibt: sie ist eine Platzfrage, keine
+   * Typo-Entscheidung. */
   .metric-card { padding: var(--space-2); }
-  .metric-card__value { font-size: var(--text-base); }
 }
 
 /* HIG-Karte: randlos auf dem Grouped-Grund, opake Fläche, shadow-sm - dieselbe
@@ -228,10 +233,39 @@
   white-space: nowrap;
 }
 
-.housekeeping-chart__bar {
+/* DER BALKEN BRAUCHT SEINE BAHN.
+ *
+ * Ohne sie zeigt er nur sich selbst: zwei Balken standen als 34px und 88px
+ * nebeneinander, und wie voll der hoehere ist, war nicht ablesbar - dasselbe,
+ * was der Wetterbalken aus v2.21.0 mit „Verhaeltnis statt Zahlenpaar" geloest
+ * hat. Die Bahn ist neutral und traegt die volle Hoehe, der gefuellte Teil
+ * traegt die Farbe und den Anteil.
+ *
+ * Die HOEHE steht hier, nicht im Markup: `--bar-scale` (0..1) kommt aus den
+ * Daten, `--chart-bar-height` ist ein Designwert und gehoert dem Stylesheet. */
+.housekeeping-chart {
+  --chart-bar-height: 88px;
+}
+
+.housekeeping-chart__track {
   width: 24px;
+  height: var(--chart-bar-height);
+  display: flex;
+  align-items: flex-end;
   border-radius: var(--radius-full) var(--radius-full) 0 0;
-  background: var(--module-accent);
+  background: var(--color-fill-well);
+  overflow: hidden;
+}
+
+.housekeeping-chart__bar {
+  width: 100%;
+  /* `scaleY` statt `height`: projektweite Konvention fuer Fuellstaende
+   * (budget/dashboard/tasks), vom frontend-audit erzwungen. */
+  height: 100%;
+  border-radius: inherit;
+  background: var(--color-accent);
+  transform-origin: bottom center;
+  transform: scaleY(var(--bar-scale, 0));
 }
 
 .housekeeping-field {
@@ -455,8 +489,13 @@
   height: 56px;
   border-radius: var(--radius-sm);
   object-fit: cover;
-  color: var(--module-accent);
-  background: color-mix(in srgb, var(--module-accent) var(--tint-surface), var(--color-surface));
+  /* NENNT NICHTS: ein Platzhalter, kein Absenderzeichen. Er trug den Modulton
+   * als Waschung und sagte damit „Haushaltshilfe" auf einer Seite, die das schon
+   * beantwortet. Neutral ist hier die Aussage, nicht der Rückzug - siehe die
+   * Vollton-Regel in DESIGN.md (Colors): entweder es nennt etwas, dann im
+   * Vollton, oder es nennt nichts, dann neutral. */
+  color: var(--color-text-secondary);
+  background: var(--color-fill-well);
 }
 
 .housekeeping-report-item div {
@@ -604,52 +643,25 @@
   border-top: 1px solid var(--color-border-subtle);
 }
 
+/* DIE DRITTE FASSUNG DERSELBEN ABLEGEFLÄCHE - jetzt nur noch ihr Maß.
+ *
+ * document-attach.css erzählt im Kopf seines Dropzone-Blocks, dass diese
+ * Definition einmal zweimal stand (documents.css und calendar.css) und dabei
+ * auseinandergelaufen war. Sie stand dreimal: hier lag eine wörtliche Kopie mit
+ * eigenen Farben, eigenem Radius und einer Icon-Kachel, die als Karte in einer
+ * Karte gebaut war - also genau der Fehler, den die Zusammenführung damals
+ * korrigiert hat, nur an einer Stelle, die niemand gesucht hatte.
+ *
+ * Was bleibt, ist die einzige echte Abweichung: im Modal ist weniger Platz.
+ * Farbe, Zustände, Kachel und Dateiname kommen aus der einen Definition. */
 .modal-panel .document-dropzone {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-2);
   min-height: 132px;
   padding: var(--space-4);
-  border: 1.5px dashed color-mix(in srgb, var(--module-accent) var(--tint-hint), var(--color-border));
   border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--module-accent) var(--tint-wash), var(--color-surface));
-  color: var(--color-text-secondary);
-  text-align: center;
-  cursor: pointer;
-}
-
-.modal-panel .document-dropzone__icon {
-  width: 42px;
-  height: 42px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius-md);
-  color: var(--module-accent);
-  background-color: var(--color-surface);
-  box-shadow: var(--shadow-sm);
 }
 
 .modal-panel .document-dropzone__title {
   font-size: var(--text-sm);
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-text-primary);
-}
-
-.modal-panel .document-dropzone__hint,
-.modal-panel .document-dropzone__file {
-  max-width: 100%;
-  font-size: var(--text-xs);
-  overflow-wrap: anywhere;
-}
-
-.modal-panel .document-dropzone__file {
-  padding: var(--space-1) var(--space-2);
-  border-radius: var(--radius-sm);
-  color: var(--module-accent);
-  background: color-mix(in srgb, var(--module-accent) var(--tint-surface), transparent);
   font-weight: var(--font-weight-semibold);
 }
 

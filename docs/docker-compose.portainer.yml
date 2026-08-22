@@ -129,6 +129,10 @@ services:
       - GOOGLE_DRIVE_CLIENT_ID=${GOOGLE_DRIVE_CLIENT_ID:-}
       - GOOGLE_DRIVE_CLIENT_SECRET=${GOOGLE_DRIVE_CLIENT_SECRET:-}
       - GOOGLE_DRIVE_REDIRECT_URI=${GOOGLE_DRIVE_REDIRECT_URI:-}
+      # Outlook calendar push via Microsoft Graph (optional)
+      - MS_CLIENT_ID=${MS_CLIENT_ID:-}
+      - MS_CLIENT_SECRET=${MS_CLIENT_SECRET:-}
+      - MS_REDIRECT_URI=${MS_REDIRECT_URI:-}
       # Apple Calendar CalDAV (optional)
       - APPLE_CALDAV_URL=${APPLE_CALDAV_URL:-https://caldav.icloud.com}
       - APPLE_USERNAME=${APPLE_USERNAME:-}
@@ -147,6 +151,7 @@ services:
       - DOCUMENT_STORAGE_WEBDAV_ALLOW_PRIVATE_NETWORK=${DOCUMENT_STORAGE_WEBDAV_ALLOW_PRIVATE_NETWORK:-false}
       # Sync interval in minutes
       - SYNC_INTERVAL_MINUTES=${SYNC_INTERVAL_MINUTES:-15}
+      - MAX_UPLOAD_MB=${MAX_UPLOAD_MB:-5}
       # Set true only for ICS calendar feeds on a private/local network.
       - ICS_SUBSCRIPTION_ALLOW_PRIVATE_NETWORK=${ICS_SUBSCRIPTION_ALLOW_PRIVATE_NETWORK:-false}
       # Set true only for recipe provider (Mealie/Tandoor) mirrors on a private/local network.

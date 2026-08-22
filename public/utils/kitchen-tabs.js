@@ -1,18 +1,21 @@
 import { t } from '/i18n.js';
 import { api } from '/api.js';
 import { renderSubTabs, setSubTabBadge, scrollActiveSubTabIntoView } from '/utils/sub-tabs.js';
-import { NAV_ICONS } from '/nav-icons.js';
+import { MODULE_ICON, moduleIconEl } from '/nav-icons.js';
 import { toLocalDateKey } from '/utils/date.js';
+import { KITCHEN_MODULES as KITCHEN_MODULES_SOURCE } from '/utils/module-accent.js';
 
 // Reihenfolge = Küchen-Kreislauf: planen → kochen → einkaufen → lagern.
-export const KITCHEN_ROUTES = Object.freeze(['/meals', '/recipes', '/shopping', '/pantry']);
+//
+// DIE ABLEITUNG LÄUFT SEIT 2026-08-18 ANDERSHERUM: die Modul-Ids stehen in
+// `/utils/module-accent.js`, die Routen entstehen hier daraus. Vorher war es
+// umgekehrt, und das ging so lange gut, wie niemand ausserhalb dieser Datei die
+// Gruppe brauchte - der geteilte Ton-Auflöser tut es, und diese Datei wird vom
+// Test-Loader gestubt. Die Begründung steht dort; die Aussage ist dieselbe wie
+// vorher: EINE Quelle für die Frage „gehört dieses Modul zur Küche?".
+export { KITCHEN_MODULES } from '/utils/module-accent.js';
+export const KITCHEN_ROUTES = Object.freeze(KITCHEN_MODULES_SOURCE.map((mod) => `/${mod}`));
 export const KITCHEN_STORAGE_KEY = 'yuvomi-kitchen-tab';
-
-// Modul-Namen der Gruppe, aus den Routen abgeleitet (`route.slice(1)`) - dieselbe
-// Konvention, die `isModuleDisabled` unten schon nutzt. Einzige Quelle für die
-// Frage „gehört dieses Modul zur Küche?", damit der geteilte Akzent nicht über
-// eine zweite, driftende Liste läuft.
-export const KITCHEN_MODULES = Object.freeze(KITCHEN_ROUTES.map((route) => route.slice(1)));
 
 const TABS = () => [
   { route: '/meals',    labelKey: 'nav.meals',    icon: 'utensils'      },
@@ -165,7 +168,7 @@ export function renderKitchenTabsBar(container, activeRoute) {
     // vier Köpfe (Rezepte, Vorrat) tragen gar keinen Seitentitel, hätten also
     // einen Absender ohne Brief. Das Besteck ist dasselbe Zeichen, das die
     // Bottom-Nav für „Küche" führt (kitchenNavButtonEl in router.js).
-    sealIcon: () => NAV_ICONS.utensils(),
+    sealIcon: () => moduleIconEl(MODULE_ICON.kitchen),
     insertPosition: 'afterbegin',
     onChange: (route) => window.yuvomi?.navigate(route),
   });

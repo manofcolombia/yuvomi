@@ -12,6 +12,7 @@ import { esc, fmtLocation, renderMarkdownLight } from '/utils/html.js';
 import { toLocalDateKey, parseLocalDateKey, addLocalDays } from '/utils/date.js';
 import { predictCycle, PHASE } from '/utils/health-cycle.js';
 import { localizeBirthdayEvent } from '/utils/birthday-event.js';
+import { countdownPhrase, countdownRank } from '/utils/countdown.js';
 import { findPageFab } from '/utils/fab.js';
 import { openModal, closeModal, confirmModal } from '/components/modal.js';
 import { renderAvatarStack } from '/components/user-multi-select.js';
@@ -22,7 +23,9 @@ import {
   nearestPreset, normalizeDashboardConfig, isUserOrderedConfig, sameWidgetConfig,
 } from '/utils/dashboard-widgets.js';
 import { whoMark } from '/utils/seal-pair.js';
+import { MODULE_ICON, moduleIconHTML } from '/nav-icons.js';
 import { exitWallMode, isWallActive, syncWallMode } from '/utils/wall-mode.js';
+import { rememberLayoutHint, layoutHintSizes } from '/utils/dashboard-layout-hint.js';
 
 // Hält den AbortController des aktuellen FAB-Listeners - wird bei jedem render() erneuert.
 let _fabController = null;
@@ -246,6 +249,49 @@ function maybeHintCustomize(container) {
 // Wieder-Einblenden-Leiste dieselbe Sichtbarkeitsregel teilen.
 const MODULE_FOR_WIDGET = { tasks: 'tasks', calendar: 'calendar', shopping: 'shopping', meals: 'meals', notes: 'notes', birthdays: 'birthdays', budget: 'budget', rewards: 'rewards', health: 'health', cycle: 'health', housekeeping: 'housekeeping' };
 
+/* DER COUNTDOWN IST EIN WIDGET, DAS ES ERST GIBT, WENN JEMAND ETWAS MARKIERT
+ * HAT (#647). Er hat keine eigene Seite und keinen eigenen Bestand: seine
+ * Kachel zeigt Termine und Aufgaben, die jemand ausdrücklich dafür markiert
+ * hat, und in einem Haushalt, der das noch nie getan hat, gibt es nichts zu
+ * zeigen und nichts einzurichten.
+ *
+ * ER RENDERT DESHALB NICHT LEER, SONDERN IST DANN NICHT VERFUEGBAR - das ist
+ * genau der Unterschied, den das Familien-Widget unten schon einmal gekostet
+ * hat: ein Renderer, der '' zurückgibt, verschwindet aus dem Raster, bleibt
+ * aber `visible: true` und taucht damit auch in der Ablage der versteckten
+ * Widgets nicht auf. Hier fällt er aus beiden Listen, so wie ein abgeschaltetes
+ * Modul auch, und kommt mit dem ersten Countdown an seiner gespeicherten
+ * Position zurück.
+ *
+ * Der Zähler ist modulweit und nicht Teil von `data`, weil ihn zwei Aufrufer
+ * brauchen, von denen einer (die Ablage der versteckten Widgets) die Daten
+ * nicht sieht. Er wird bei jedem render() zurückgesetzt und nach dem Laden
+ * gesetzt - ein Stand von vorhin darf keine Kachel versprechen. */
+let countdownAvailable = false;
+
+function setCountdownAvailability(items) {
+  countdownAvailable = Array.isArray(items) && visibleCountdowns(items).length > 0;
+}
+
+// Aus welchem Modul ein Countdown stammt, entscheidet über ihn: wer den
+// Kalender abgeschaltet hat, soll dessen Einträge auch hier nicht sehen. Die
+// Kachel als Ganzes gehört keinem Modul (siehe PERMISSION_WIDGETS), ihre
+// einzelnen Zeilen schon - dieselbe Aufteilung wie bei der Kennzahlreihe.
+//
+// SEIT DEM REVIEW ZU PR #793 IST DAS DIE ZWEITE INSTANZ, NICHT DIE ERSTE:
+// aussortiert wird schon in services/countdowns.js, vor Schnitt und Gesamtzahl.
+// Hier zu filtern allein war der Fehler - der Server schickte fünf Termine
+// eines abgeschalteten Kalenders, diese Zeile warf alle fünf weg, und die
+// Kachel verschwand mitsamt der Aufgabe, die dahinter gestanden hätte.
+// Stehen bleibt der Filter für den Fall, dass ein Modul umgeschaltet wird,
+// ohne dass das Dashboard neu lädt.
+function visibleCountdowns(items) {
+  return (Array.isArray(items) ? items : []).filter((c) => {
+    const mod = c.source === 'task' ? 'tasks' : 'calendar';
+    return !window.yuvomi?.isModuleDisabled(mod);
+  });
+}
+
 function isWidgetModuleEnabled(id) {
   const mod = MODULE_FOR_WIDGET[id];
   if (mod && window.yuvomi?.isModuleDisabled(mod)) return false;
@@ -260,6 +306,7 @@ function isWidgetModuleEnabled(id) {
   // waere aus der Oberflaeche heraus nicht mehr erreichbar. Hier faellt es aus
   // beiden Listen, so wie ein abgeschaltetes Modul auch.
   if (id === 'family' && isSoloHousehold()) return false;
+  if (id === 'countdown' && !countdownAvailable) return false;
   return true;
 }
 
@@ -285,13 +332,19 @@ function widgetLabel(id) {
     family:   () => t('dashboard.familyMembers'),
     clock:    () => t('dashboard.clock'),
     metrics:  () => t('dashboard.metrics'),
+    countdown: () => t('dashboard.countdownTitle'),
   };
   return (map[id] ?? (() => id))();
 }
 
+/* HIER STAND DIE ZWEITE TABELLE MODUL -> ZEICHEN, und sie war von der ersten
+ * abgewichen: Notizen fuehrte hier `pin`, in der Navigation `sticky-note`. Wer
+ * das Widget und die Leiste nebeneinander sah, sah zwei Zeichen fuer ein Modul.
+ * Die Zuordnung steht jetzt einmal in MODULE_ICON (nav-icons.js) - inklusive
+ * der vier Dashboard-eigenen Karten (Wetter, Uhr, Kennzahlen, Countdown), die
+ * keine Module sind, aber dieselbe Absender-Rolle im Kopf tragen. */
 function widgetIcon(id) {
-  const map = { tasks: 'check-square', calendar: 'calendar', birthdays: 'cake', budget: 'wallet', rewards: 'award', health: 'heart-pulse', cycle: 'calendar-heart', housekeeping: 'paintbrush', family: 'users', shopping: 'shopping-cart', meals: 'utensils', notes: 'pin', weather: 'cloud-sun', clock: 'clock', metrics: 'layout-grid' };
-  return map[id] ?? 'layout-dashboard';
+  return MODULE_ICON[id] ?? MODULE_ICON.dashboard;
 }
 
 const BUDGET_CATEGORY_LABEL_KEYS = {
@@ -496,7 +549,14 @@ function formatPoints(value) {
  * `--seal-accent` aus dem Fenster, und der Guard meldet ein Siegel ohne
  * Herkunft - gemessen, nicht vermutet.
  */
-function widgetHeader(icon, title, count, linkHref, linkLabel, sealSlug = null) {
+/* DIE ID, NICHT DAS ZEICHEN (2026-08-17). Hier stand ein Icon-NAME je
+ * Aufrufstelle - die dritte Abschrift der Zuordnung Modul → Zeichen, und die
+ * hartnaeckigste: sie ueberlebte sogar die Zusammenlegung von `widgetIcon()`,
+ * weil kein Kopf ihn je fragte. Notizen trug hier weiter `pin`, waehrend die
+ * Leiste daneben `sticky-note` zeichnete. Wer die Id uebergibt, kann diese
+ * Abweichung gar nicht mehr schreiben. */
+function widgetHeader(widgetId, title, count, linkHref, linkLabel, sealSlug = null) {
+  const icon = widgetIcon(widgetId);
   // Ein eigenes Link-Label spricht auch im aria-Label mit eigener Stimme:
   // „Alle: Familienmitglieder" für einen „Verwalten"-Link wäre eine Lüge.
   const customLabel = linkLabel != null;
@@ -512,28 +572,47 @@ function widgetHeader(icon, title, count, linkHref, linkLabel, sealSlug = null) 
   const badge = count != null && Number.isFinite(numericCount) && numericCount > 0
     ? `<span class="widget__badge">${count}</span>`
     : '';
+  // OHNE ZIEL KEIN LINK. Jede Kachel bis #647 gehoerte genau einer Seite, und
+  // „Alle" fuehrte dorthin. Der Countdown gehoert zweien: seine Zeilen kommen
+  // aus dem Kalender UND aus den Aufgaben, und jede fuehrt selbst an ihren Ort.
+  // Ein Kopf-Link muesste sich fuer eine der beiden entscheiden und waere fuer
+  // die andere Haelfte der Liste falsch. `href="null"` waere die schlechtere
+  // Antwort auf dieselbe Frage gewesen.
+  const link = linkHref
+    ? `<a href="${linkHref}" data-route="${linkHref}" class="widget__link"
+         aria-label="${esc(customLabel ? `${linkLabel}: ${title}` : t('dashboard.allLinkFor', { module: title }))}">
+        ${linkLabel}
+      </a>`
+    : '';
   // Herkunfts-Regel (Block 2): das Dashboard ist eine Mischstelle, also
   // traegt jeder Widget-Kopf das Markensiegel seines Moduls. Der Slug kommt
   // aus dem ersten Segment der Widget-Route; ein unbekannter Slug faellt im
   // var()-Fallback auf den App-Akzent zurueck. Wo Aktions-Link und Herkunft
   // auseinanderfallen (Familie: „Verwalten" fuehrt in die Einstellungen, die
-  // Karte gehoert aber den Menschen), benennt sealSlug die Herkunft explizit -
-  // sonst spraeche eine Karte zwei Modultoene (Critique P2).
+  // Karte gehoert aber den Menschen; der Countdown hat gar keinen Link mehr),
+  // benennt sealSlug die Herkunft explizit - sonst spraeche eine Karte zwei
+  // Modultoene (Critique P2).
+  //
+  // Diese beiden Zeilen bleiben in Sichtweite ihrer Bau-Stelle unten: der
+  // Guard „wer ein Markensiegel baut, benennt eine Herkunft" liest ein Fenster
+  // von acht Zeilen um das `module-seal` herum, und der Link-Block dazwischen
+  // hat sie beim ersten Anlauf genau daraus herausgeschoben.
   const slug = sealSlug ?? ((linkHref || '').split('/')[1] || '');
   const seal = slug ? ` style="--seal-accent: var(--module-${slug}, var(--color-accent))"` : '';
+  // Vollton statt Toenung (Widget-Kopf-Kur 2026-08-17): das Siegel ist seit
+  // dem Rueckbau des Absenderbands der EINZIGE Farbtraeger des Kopfes. Die
+  // Klasse `--vivid` steht hier nicht mehr, weil es die Toenung nicht mehr
+  // gibt: der Vollton ist seither das eine Gesicht des Siegels (layout.css).
   return `
     <div class="widget__header">
       <h3 class="widget__title">
         <span class="module-seal module-seal--sm"${seal} aria-hidden="true">
-          <i data-lucide="${icon}"></i>
+          ${moduleIconHTML(icon)}
         </span>
         <span class="widget__title-text">${title}</span>
         ${badge}
       </h3>
-      <a href="${linkHref}" data-route="${linkHref}" class="widget__link"
-         aria-label="${esc(customLabel ? `${linkLabel}: ${title}` : t('dashboard.allLinkFor', { module: title }))}">
-        ${linkLabel}
-      </a>
+      ${link}
     </div>
   `;
 }
@@ -739,7 +818,7 @@ function skeletonWidget(lines = 3) {
 function renderUrgentTasks(tasks) {
   if (!tasks.length) {
     return `<div class="widget widget--tasks">
-      ${widgetHeader('check-square', t('nav.tasks'), 0, '/tasks')}
+      ${widgetHeader('tasks', t('nav.tasks'), 0, '/tasks')}
       <div class="widget__empty">
         <i data-lucide="check-circle" class="empty-state__icon" style="color:var(--color-success)" aria-hidden="true"></i>
         <div>${t('dashboard.allDone')}</div>
@@ -763,7 +842,7 @@ function renderUrgentTasks(tasks) {
   }).join('');
 
   return `<div class="widget widget--tasks">
-    ${widgetHeader('check-square', t('nav.tasks'), tasks.length, '/tasks')}
+    ${widgetHeader('tasks', t('nav.tasks'), tasks.length, '/tasks')}
     <div class="widget__body">${items}</div>
   </div>`;
 }
@@ -837,7 +916,7 @@ function renderUpcomingBirthdays(allBirthdays, size) {
   const birthdays = allBirthdays.slice(0, listRowCap(size));
   if (!birthdays.length) {
     return `<div class="widget widget--birthdays">
-      ${widgetHeader('cake', t('nav.birthdays'), 0, '/birthdays')}
+      ${widgetHeader('birthdays', t('nav.birthdays'), 0, '/birthdays')}
       <div class="widget__empty">
         <i data-lucide="cake" class="empty-state__icon" aria-hidden="true"></i>
         <div>${t('dashboard.noBirthdays')}</div>
@@ -851,23 +930,126 @@ function renderUpcomingBirthdays(allBirthdays, size) {
       : b.days_until === 1
         ? t('common.tomorrow')
         : t('dashboard.daysLeft', { count: b.days_until });
+    // Familien-Geburtstage tragen die Identitaetsfarbe des Mitglieds - dieselbe
+    // Farbsprache wie die Familien-Kachel daneben; vorher trug hier jede Zeile
+    // die Modul-Toenung, und dieselbe Person war in einer Kachel leuchtend und
+    // in der naechsten grau (Etappe 4, Critique 2026-08-17). Kontakte OHNE
+    // Verknuepfung behalten die Toenung: sie haben keine Identitaetsfarbe, und
+    // eine erfundene (Hash) spraeche die Farbsprache der Familie fuer Fremde.
+    const avatarStyle = b.family_user_color
+      ? ` style="background-color:${esc(b.family_user_color)};color:${getReadableTextColor(b.family_user_color)}"`
+      : '';
     return `
       <div class="birthday-widget-item" data-route="/birthdays" role="button" tabindex="0">
-        <div class="birthday-widget-item__avatar">
+        <div class="birthday-widget-item__avatar"${avatarStyle}>
           ${b.photo_data ? `<img src="${esc(b.photo_data)}" alt="" loading="lazy">` : `<span>${esc(initials(b.name))}</span>`}
         </div>
         <div class="birthday-widget-item__body">
           <div class="birthday-widget-item__name">${esc(b.name)}</div>
           <div class="birthday-widget-item__meta">${formatDate(b.next_birthday)} · ${daysLabel}</div>
         </div>
-        ${b.next_age != null ? `<div class="birthday-widget-item__age" title="${esc(t('birthdays.turnsAge', { age: b.next_age }))}" aria-label="${esc(t('birthdays.turnsAge', { age: b.next_age }))}">${esc(String(b.next_age))}</div>` : ''}
+        ${b.next_age != null ? `<div class="birthday-widget-item__age">${esc(t('birthdays.turnsAge', { age: b.next_age }))}</div>` : ''}
       </div>
     `;
   }).join('');
 
   return `<div class="widget widget--birthdays">
-    ${widgetHeader('cake', t('nav.birthdays'), birthdays.length, '/birthdays')}
+    ${widgetHeader('birthdays', t('nav.birthdays'), birthdays.length, '/birthdays')}
     <div class="widget__body">${items}</div>
+  </div>`;
+}
+
+/* DIE KACHEL AUS #647. Sie steht bewusst direkt hinter den Geburtstagen: es ist
+ * dieselbe Form - eine nach Nähe sortierte Liste aus „was" und „noch so lange" -
+ * und der Thread hat genau das als Auflösung vorgeschlagen, statt eines zweiten
+ * Systems neben Kalender und Aufgaben (@jamespurnama1).
+ *
+ * ZWEI QUELLEN, EINE LISTE, UND MAN SIEHT WELCHE. Ein Termin und eine Aufgabe
+ * zählen gleich herunter, führen aber woanders hin: das Icon der Zeile ist das
+ * des Termins (Yuvomi-eigenes Feld) bzw. das Aufgabenzeichen, und der Klick
+ * öffnet das jeweilige Modul. Ohne diesen Unterschied wäre die Liste eine
+ * dritte Sorte Eintrag, und genau die sollte es nicht geben.
+ *
+ * Der Rang ist die Nähe, nicht die Herkunft (sortiert der Server). Was vorbei
+ * ist, kommt eine Nachfrist lang weiter an und steht dann ganz oben - seine
+ * Tageszahl ist negativ. Wie lange und für wen, entscheidet der Server; die
+ * Kachel nimmt die Liste, wie sie kommt (siehe services/countdowns.js). */
+function renderCountdowns(allItems, size, total = null) {
+  const shown = visibleCountdowns(allItems);
+  const items = shown.slice(0, listRowCap(size));
+  // Kein Leerzustand: ohne Countdown ist die Kachel nicht leer, sondern nicht
+  // vorhanden (isWidgetModuleEnabled). Diese Zeile ist der Notausgang für den
+  // Fall, dass die Verfügbarkeit und die Daten auseinanderlaufen.
+  if (!items.length) return '';
+
+  const rows = items.map((c) => {
+    const phrase = countdownPhrase(c.days_until);
+    const label = phrase.count === undefined ? t(phrase.key) : t(phrase.key, { count: phrase.count });
+    // Die Farbe des Termins trägt die Zeile als schmale Marke - dieselbe
+    // Zuordnung, die er im Kalender hat. Eine Aufgabe hat keine, sie bekommt
+    // den Modulton.
+    const accent = c.color
+      ? ` style="--countdown-accent:${esc(c.color)}"`
+      : ` style="--countdown-accent:var(--module-${c.source === 'task' ? 'tasks' : 'calendar'}, var(--color-accent))"`;
+    /* DIE ZEILE TRIFFT IHR OBJEKT, nicht sein Modul - wie jede andere Zeile des
+     * Dashboards. Sie führte auf `/tasks` bzw. `/calendar`, und damit landete
+     * „Führerschein verlängern, ca. 3 Jahre" in einer ungefilterten Liste, in
+     * der ein Eintrag von 2029 praktisch unauffindbar ist: die Zeile versprach
+     * ein Objekt und lieferte ein Modul.
+     *
+     * Zwei Wege, weil die beiden Quellen zwei Wege HABEN und keinen dritten
+     * brauchen: die Aufgabe hängt sich an denselben Quick-Action-Griff wie die
+     * Zeilen des Aufgaben-Widgets (`data-task-id`, ausgewertet in `wireLinks`),
+     * der Termin an dieselbe Deep-Link-Route wie die Zeilen des
+     * Kalender-Widgets. Wichtig ist dabei das Datum: `c.date` ist das NÄCHSTE
+     * Vorkommen, nicht der Serienstart - ohne es öffnete eine jährliche
+     * Verlängerung ihr Blatt Jahre in der Vergangenheit. */
+    const anchor = c.source === 'task'
+      ? ` data-task-id="${esc(String(c.id))}" data-task-title="${esc(c.title)}"`
+      : ` data-route="/calendar?open=${encodeURIComponent(String(c.id))}&date=${encodeURIComponent(c.date)}"`;
+    return `
+      <div class="countdown-item" role="button" tabindex="0"${anchor}${accent}>
+        <span class="countdown-item__icon" aria-hidden="true">
+          <i data-lucide="${esc(c.icon || 'calendar')}"></i>
+        </span>
+        <div class="countdown-item__body">
+          <div class="countdown-item__title">${esc(c.title)}</div>
+          <div class="countdown-item__meta">${formatDate(c.date)}</div>
+        </div>
+        <div class="countdown-item__days countdown-item__days--${countdownRank(c.days_until)}">${esc(label)}</div>
+      </div>
+    `;
+  }).join('');
+
+  /* SIEGEL UND KOPFBAND SPRECHEN JETZT DENSELBEN TON, und der Ton ist der der
+   * Übersicht. Hier stand `'calendar'`: ein teal Kalendersiegel in einem
+   * violetten Kopfband, weil `.widget--countdown` als einzige der vierzehn
+   * Kacheln kein `--widget-accent` bekommen hatte und auf den App-Akzent
+   * zurückfiel. Genau der Fehler, den der `sealSlug`-Parameter verhindern soll -
+   * er war gesetzt, die Gegenseite im Stylesheet fehlte.
+   *
+   * `dashboard` und nicht `calendar`, weil die Kachel zwei Quellen hat und
+   * keiner von beiden gehört; in der Messung kamen drei von fünf Zeilen aus den
+   * Aufgaben. Dieselbe Antwort wie beim Wetter, das aus demselben Grund
+   * `--module-dashboard` trägt: eine Kachel ohne Modul gehört der Seite. */
+  /* WAS NICHT PASST, WIRD GENANNT. Die Kachel schnitt still ab - zweimal sogar:
+   * der Server bei fünf, die Kachel je nach Größe bei drei. Wer sechs Dinge
+   * markiert hatte, sah fünf und nichts, das auf den sechsten hinwies; die
+   * Kachel sah dabei vollständig aus.
+   *
+   * Gezählt wird gegen die SERVER-Gesamtzahl, nicht gegen die geladene Liste:
+   * sonst verschwiege die Zeile genau den Schnitt, der weiter oben passiert
+   * ist. Fehlt sie (älterer Server, Fehlerpfad), fällt sie auf die geladene
+   * Länge zurück - dann stimmt sie wenigstens für den Kachelschnitt. */
+  const gesamt = Number.isFinite(Number(total)) ? Number(total) : shown.length;
+  const rest = Math.max(0, gesamt - items.length);
+  const more = rest > 0
+    ? `<p class="countdown-more">${esc(t('dashboard.countdownMore', { count: rest }))}</p>`
+    : '';
+
+  return `<div class="widget widget--countdown">
+    ${widgetHeader('countdown', t('dashboard.countdownTitle'), gesamt, null, null, 'dashboard')}
+    <div class="widget__body">${rows}${more}</div>
   </div>`;
 }
 
@@ -888,7 +1070,7 @@ function renderTodayMeals(meals, visibleMealTypes = MEAL_ORDER) {
   }).join('');
 
   return `<div class="widget widget--meals">
-    ${widgetHeader('utensils', t('dashboard.todayMeals'), null, '/meals', t('dashboard.weekLink'))}
+    ${widgetHeader('meals', t('dashboard.todayMeals'), null, '/meals', t('dashboard.weekLink'))}
     <div class="meals-widget">
       <div class="meal-slots">${slots}</div>
     </div>
@@ -898,7 +1080,7 @@ function renderTodayMeals(meals, visibleMealTypes = MEAL_ORDER) {
 function renderPinnedNotes(notes) {
   if (!notes.length) {
     return `<div class="widget widget--notes">
-      ${widgetHeader('pin', t('nav.notes'), 0, '/notes')}
+      ${widgetHeader('notes', t('nav.notes'), 0, '/notes')}
       <div class="widget__empty">
         <i data-lucide="sticky-note" class="empty-state__icon" aria-hidden="true"></i>
         <div>${t('dashboard.noPinnedNotes')}</div>
@@ -935,7 +1117,7 @@ function renderPinnedNotes(notes) {
   // die frühere .widget--wide war in keinem CSS definiert und damit tot — entfernt,
   // damit Notizen wie jedes andere Widget genau ein Größen-Vokabular trägt (Critique P2).
   return `<div class="widget widget--notes">
-    ${widgetHeader('pin', t('nav.notes'), notes.length, '/notes')}
+    ${widgetHeader('notes', t('nav.notes'), notes.length, '/notes')}
     <div class="notes-grid-widget">${items}</div>
   </div>`;
 }
@@ -1024,7 +1206,7 @@ function renderFamilyWidget(users, data) {
     : esc(t('dashboard.familyDayCalm'));
 
   return `<div class="widget widget--family">
-    ${widgetHeader('users', t('dashboard.familyMembers'), null, '/settings', t('dashboard.manage'), 'contacts')}
+    ${widgetHeader('family', t('dashboard.familyMembers'), null, '/settings', t('dashboard.manage'), 'contacts')}
     <div class="family-widget">
       <div class="family-widget__list">
         ${rows}
@@ -1094,7 +1276,7 @@ function renderBudgetWidget(budget, currency) {
 
   if (!hasData) {
     return `<div class="widget widget--budget">
-      ${widgetHeader('wallet', t('dashboard.budgetOverview'), null, '/budget')}
+      ${widgetHeader('budget', t('dashboard.budgetOverview'), null, '/budget')}
       <div class="widget__empty">
         <i data-lucide="wallet" class="empty-state__icon" aria-hidden="true"></i>
         <div>${t('dashboard.noBudgetData')}</div>
@@ -1104,7 +1286,7 @@ function renderBudgetWidget(budget, currency) {
   }
 
   return `<div class="widget widget--budget">
-    ${widgetHeader('wallet', t('dashboard.budgetOverview'), null, '/budget')}
+    ${widgetHeader('budget', t('dashboard.budgetOverview'), null, '/budget')}
     <div class="budget-widget">
       <div class="budget-widget__headline">
         <span>${t('dashboard.monthlyBalance')}</span>
@@ -1135,8 +1317,8 @@ function renderBudgetWidget(budget, currency) {
 /* WARUM DAS EIN WIDGET IST UND KEIN FESTER BLOCK.
  *
  * Der Handoff entwirft eine feste Folge: Gruss, „Heute", Kacheln, Familie,
- * Wetter. `dashboard_widgets` speichert aber Auswahl UND Reihenfolge pro
- * Haushalt - als fester Block waere entweder die Einstellung tot oder das
+ * Wetter. `dashboard_widgets` speichert aber Auswahl UND Reihenfolge, seit #585
+ * je Person - als fester Block waere entweder die Einstellung tot oder das
  * Raster braeche, sobald jemand ein Modul abwaehlt. Als Widget-Typ ordnet die
  * Kachelreihe sich ein, laesst sich verschieben, ausblenden und in der Groesse
  * aendern wie jede andere Kachel, und der Server brauchte dafuer keine Zeile:
@@ -1181,7 +1363,7 @@ function metricTileFor(id, data, currency) {
       if (open == null) return null;
       const overdue = data.overdueTaskCount ?? 0;
       return {
-        id, route, icon: 'check-square', label: t('nav.tasks'),
+        id, route, icon: widgetIcon('tasks'), label: t('nav.tasks'),
         value: t('dashboard.metricOpen', { count: open }),
         note: overdue > 0 ? t('dashboard.metricOverdue', { count: overdue }) : t('dashboard.metricNothingOverdue'),
         noteTone: overdue > 0 ? 'danger' : null,
@@ -1192,7 +1374,7 @@ function metricTileFor(id, data, currency) {
       if (items == null) return null;
       const lists = data.shoppingOpenLists ?? 0;
       return {
-        id, route, icon: 'shopping-cart', label: t('nav.shopping'),
+        id, route, icon: widgetIcon('shopping'), label: t('nav.shopping'),
         value: t('dashboard.metricItems', { count: items }),
         note: items === 0 ? t('dashboard.metricAllBought') : t('dashboard.metricOnLists', { count: lists }),
       };
@@ -1209,7 +1391,7 @@ function metricTileFor(id, data, currency) {
       // bekommt Label-Farbe statt Rot.
       const neutral = (budget.income || 0) === 0 && balance < 0;
       return {
-        id, route, icon: 'wallet', label: t('nav.budget'),
+        id, route, icon: widgetIcon('budget'), label: t('nav.budget'),
         value: formatCurrency(balance, currency),
         note: t('dashboard.monthlyBalance'),
         tone: neutral ? 'balance-neutral' : balance >= 0 ? 'balance-positive' : 'balance-negative',
@@ -1220,7 +1402,7 @@ function metricTileFor(id, data, currency) {
       if (!next) return null;
       const days = next.days_until;
       return {
-        id, route, icon: 'cake', label: t('nav.birthdays'),
+        id, route, icon: widgetIcon('birthdays'), label: t('nav.birthdays'),
         value: days === 0 ? t('common.today') : days === 1 ? t('common.tomorrow') : t('dashboard.daysLeft', { count: days }),
         note: next.name,
       };
@@ -1229,7 +1411,7 @@ function metricTileFor(id, data, currency) {
       const meals = data.todayMeals ?? [];
       if (!meals.length) return null;
       return {
-        id, route, icon: 'utensils', label: t('nav.meals'),
+        id, route, icon: widgetIcon('meals'), label: t('nav.meals'),
         value: t('dashboard.metricMeals', { count: meals.length }),
         note: meals[0]?.title || t('dashboard.todayMeals'),
       };
@@ -1244,7 +1426,7 @@ function metricTileFor(id, data, currency) {
       const pinned = data.pinnedNotesCount ?? notes.filter((n) => n.pinned).length;
       if (!pinned) return null;
       return {
-        id, route, icon: 'pin', label: t('nav.notes'),
+        id, route, icon: widgetIcon('notes'), label: t('nav.notes'),
         value: t('dashboard.metricPinned', { count: pinned }),
         note: notes[0]?.title || t('notes.titlePlaceholder'),
       };
@@ -1253,7 +1435,7 @@ function metricTileFor(id, data, currency) {
       const leader = (data.rewards?.standings ?? [])[0];
       if (!leader) return null;
       return {
-        id, route, icon: 'award', label: t('nav.rewards'),
+        id, route, icon: widgetIcon('rewards'), label: t('nav.rewards'),
         value: t('dashboard.metricPoints', { count: leader.balance ?? 0 }),
         note: leader.display_name,
       };
@@ -1267,7 +1449,7 @@ function metricTileFor(id, data, currency) {
       if (!h.hasMeds || !(h.dosesTotal > 0)) return null;
       const offen = h.dosesTotal - (h.dosesTaken ?? 0) - (h.dosesSkipped ?? 0);
       return {
-        id, route, icon: 'heart-pulse', label: t('nav.health'),
+        id, route, icon: widgetIcon('health'), label: t('nav.health'),
         value: t('dashboard.metricDoses', { count: Math.max(0, offen) }),
         // Die Nachbestellung schlaegt die naechste Uhrzeit: eine leere Packung
         // ist der Zustand, der eine Handlung braucht, eine faellige Dosis der,
@@ -1282,7 +1464,7 @@ function metricTileFor(id, data, currency) {
       const hk = data.housekeeping ?? {};
       if (!hk.configured) return null;
       return {
-        id, route, icon: 'sparkles', label: t('nav.housekeeping'),
+        id, route, icon: widgetIcon('housekeeping'), label: t('nav.housekeeping'),
         value: t('dashboard.metricVisits', { count: hk.visitsThisMonth ?? 0 }),
         // Drei Zustaende, ein Rang: wer gerade da ist, ist die Nachricht; sonst
         // zaehlt offenes Geld; sonst der letzte Besuch.
@@ -1309,9 +1491,13 @@ function renderMetricTile(tile) {
         <!-- Der Ton gehoert AUF das Siegel, nicht auf die Karte darum: .module-seal
              deklariert --seal-accent in seiner eigenen Regel, und eine Deklaration
              am Element schlaegt jeden geerbten Wert. Von der Karte aus gesetzt
-             trugen alle vier Kacheln denselben violetten App-Akzent. -->
+             trugen alle vier Kacheln denselben violetten App-Akzent.
+             Zwei Siegel-Gesichter auf einem Board waeren zwei Wahrheiten -
+             der Satz galt erst fuer dieses Board und seit 2026-08-17 fuer die
+             ganze App: es gibt nur noch das Vollton-Gesicht, also braucht es
+             auch keine Klasse mehr, die es auswaehlt. -->
         <span class="module-seal module-seal--sm" aria-hidden="true"
-              style="--seal-accent: var(--module-${tile.id}, var(--color-accent))"><i data-lucide="${tile.icon}"></i></span>
+              style="--seal-accent: var(--module-${tile.id}, var(--color-accent))">${moduleIconHTML(tile.icon)}</span>
         <span class="metric-card__label">${esc(tile.label)}</span>
       </span>
       <span class="metric-card__value">${esc(tile.value)}</span>
@@ -1374,7 +1560,7 @@ function renderRewardsWidget(rewards) {
   const standings = Array.isArray(rewards?.standings) ? rewards.standings : [];
   if (!standings.length) {
     return `<div class="widget widget--rewards">
-      ${widgetHeader('award', t('nav.rewards'), 0, '/rewards')}
+      ${widgetHeader('rewards', t('nav.rewards'), 0, '/rewards')}
       <div class="widget__empty">
         <i data-lucide="award" class="empty-state__icon" aria-hidden="true"></i>
         <div>${t('dashboard.noRewards')}</div>
@@ -1408,7 +1594,7 @@ function renderRewardsWidget(rewards) {
 
   const badge = Number(rewards?.participantCount) || standings.length;
   return `<div class="widget widget--rewards">
-    ${widgetHeader('award', t('nav.rewards'), badge, '/rewards')}
+    ${widgetHeader('rewards', t('nav.rewards'), badge, '/rewards')}
     <div class="widget__body">
       <div class="rewards-widget">${rows}</div>
       ${footer}
@@ -1423,7 +1609,7 @@ function renderRewardsWidget(rewards) {
 function renderHealthWidget(health) {
   if (!health?.hasMeds) {
     return `<div class="widget widget--health">
-      ${widgetHeader('heart-pulse', t('nav.health'), null, '/health')}
+      ${widgetHeader('health', t('nav.health'), null, '/health')}
       <div class="widget__empty">
         <i data-lucide="heart-pulse" class="empty-state__icon" aria-hidden="true"></i>
         <div>${t('dashboard.healthNoMeds')}</div>
@@ -1469,7 +1655,7 @@ function renderHealthWidget(health) {
   }
 
   return `<div class="widget widget--health">
-    ${widgetHeader('heart-pulse', t('nav.health'), null, '/health')}
+    ${widgetHeader('health', t('nav.health'), null, '/health')}
     <div class="widget__body">
       <div class="health-widget">${main}${lowChip}</div>
     </div>
@@ -1515,7 +1701,7 @@ function renderCycleWidget(cycle) {
   // Ohne Historie: Onboarding-Empty statt Fehlerkachel — führt in den Zyklus-Flow.
   if (!prediction.hasData) {
     return `<div class="widget widget--cycle">
-      ${widgetHeader('calendar-heart', t('health.cycle.title'), null, '/health/cycle')}
+      ${widgetHeader('cycle', t('health.cycle.title'), null, '/health/cycle')}
       <div class="widget__empty">
         <i data-lucide="calendar-heart" class="empty-state__icon" aria-hidden="true"></i>
         <div>${t('health.cycle.emptyTitle')}</div>
@@ -1545,7 +1731,7 @@ function renderCycleWidget(cycle) {
     </svg>`;
 
   return `<div class="widget widget--cycle">
-    ${widgetHeader('calendar-heart', t('health.cycle.title'), null, '/health/cycle')}
+    ${widgetHeader('cycle', t('health.cycle.title'), null, '/health/cycle')}
     <div class="widget__body">
       <div class="cycle-widget" data-phase="${esc(prediction.phase)}">
         ${ring}
@@ -1569,7 +1755,7 @@ function renderCycleWidget(cycle) {
 function renderHousekeepingWidget(hk, currency) {
   if (!hk?.configured) {
     return `<div class="widget widget--housekeeping">
-      ${widgetHeader('paintbrush', t('nav.housekeeping'), null, '/housekeeping')}
+      ${widgetHeader('housekeeping', t('nav.housekeeping'), null, '/housekeeping')}
       <div class="widget__empty">
         <i data-lucide="paintbrush" class="empty-state__icon" aria-hidden="true"></i>
         <div>${t('dashboard.housekeepingNone')}</div>
@@ -1603,7 +1789,7 @@ function renderHousekeepingWidget(hk, currency) {
     : '';
 
   return `<div class="widget widget--housekeeping">
-    ${widgetHeader('paintbrush', t('nav.housekeeping'), null, '/housekeeping')}
+    ${widgetHeader('housekeeping', t('nav.housekeeping'), null, '/housekeeping')}
     <div class="widget__body">
       <div class="housekeeping-widget">${statusBlock}${unpaidChip}</div>
     </div>
@@ -1650,7 +1836,7 @@ function renderTodayRow(row) {
   // Titel in Textfarbe, das Modul-Label lebt als ruhiger Untertitel weiter
   // (nie versal, nie ueber dem Titel).
   const inner = `
-      <span class="${mark ? 'seal-pair' : ''}"><span class="module-seal today-cockpit-card__icon"><i data-lucide="${row.icon}" aria-hidden="true"></i></span>${mark}</span>
+      <span class="${mark ? 'seal-pair' : ''}"><span class="module-seal today-cockpit-card__icon">${moduleIconHTML(row.icon)}</span>${mark}</span>
       <span class="today-cockpit-card__body">
         <strong class="today-cockpit-card__value">${esc(row.title)}</strong>
         <span class="today-cockpit-card__sub">${esc(row.sub)}</span>
@@ -1668,7 +1854,7 @@ function renderTodayRow(row) {
 // sie ein Link dorthin, ohne bleibt sie ein ruhiges <div> ohne Interaktion.
 function renderTodayStateRow({ title, sub, icon, route }) {
   const inner = `
-      <span class="module-seal today-cockpit-card__icon"><i data-lucide="${icon}" aria-hidden="true"></i></span>
+      <span class="module-seal today-cockpit-card__icon">${moduleIconHTML(icon)}</span>
       <span class="today-cockpit-card__body">
         <strong class="today-cockpit-card__value">${esc(title)}</strong>
         ${sub ? `<span class="today-cockpit-card__sub">${esc(sub)}</span>` : ''}
@@ -1874,6 +2060,12 @@ function renderDashboardOverview(user, editing = false, weather = null, updatedA
         </div>
         <div class="dashboard-overview__tools">
           ${editing ? `
+          <!-- Die Beruhigung stand nur im Toast NACH dem Speichern, die
+               Unsicherheit sitzt aber DAVOR: während man eine Kachel wegzieht
+               und nicht weiß, ob man sie gerade den Kindern wegnimmt (Critique
+               2026-08-16). Ein Satz im Anpassen-Modus beantwortet sie im
+               richtigen Moment. -->
+          <p class="dashboard-customize-scope">${t('dashboard.customizeScopeHint')}</p>
           <div class="dashboard-customize-toolbar" role="toolbar" aria-label="${t('dashboard.customizeTitle')}">
             <button class="btn btn--ghost" id="dashboard-customize-reset">
               <i data-lucide="rotate-ccw" class="icon-sm" aria-hidden="true"></i>
@@ -1995,6 +2187,7 @@ function renderDashboardLayout(cfg, data, weather, currency, { editing = false, 
     tasks: () => renderUrgentTasks(data.urgentTasks ?? []),
     calendar: () => renderUpcomingEvents(data.upcomingEvents ?? []),
     birthdays: (size) => renderUpcomingBirthdays(data.birthdays ?? [], size),
+    countdown: (size) => renderCountdowns(data.countdowns ?? [], size, data.countdownTotal),
     budget: () => renderBudgetWidget(data.budget ?? {}, currency),
     rewards: () => renderRewardsWidget(data.rewards ?? {}),
     health: () => renderHealthWidget(data.health ?? {}),
@@ -2070,27 +2263,13 @@ function renderDashboardLayout(cfg, data, weather, currency, { editing = false, 
  * Der Cache ist bewusst duenn: nur Sichtbarkeit und Groesse, also genau das,
  * was die Kachelform bestimmt. Er ist eine VORHERSAGE, keine Quelle - die
  * Wahrheit bleibt die Serverantwort, und ein veralteter oder kaputter Eintrag
- * faellt still auf den Standard zurueck. */
-const LAYOUT_HINT_KEY = 'yuvomi-dash-layout-hint';
-
-function rememberLayoutHint(cfg) {
-  try {
-    localStorage.setItem(LAYOUT_HINT_KEY, JSON.stringify(
-      cfg.filter((w) => w.visible).map((w) => w.size),
-    ));
-  } catch { /* z.B. voller oder gesperrter Speicher: der Hinweis ist entbehrlich */ }
-}
-
-function layoutHintSizes() {
-  try {
-    const stored = JSON.parse(localStorage.getItem(LAYOUT_HINT_KEY) ?? 'null');
-    if (Array.isArray(stored) && stored.length && stored.every((s) => typeof s === 'string')) return stored;
-  } catch { /* unlesbar: Standard */ }
-  return DEFAULT_WIDGET_CONFIG.filter((w) => w.visible).map((w) => w.size);
-}
+ * faellt still auf den Standard zurueck.
+ *
+ * Er liegt in utils/dashboard-layout-hint.js, weil er seit #585 auch beim
+ * Abmelden verworfen werden muss - die Begruendung steht dort. */
 
 function renderDashboardSkeleton() {
-  const tiles = layoutHintSizes()
+  const tiles = layoutHintSizes(DEFAULT_WIDGET_CONFIG.filter((w) => w.visible).map((w) => w.size))
     .map((size) => `<div class="widget-wrapper ${widgetSizeClass(size)}">${skeletonWidget(3)}</div>`)
     .join('');
   return `
@@ -2157,7 +2336,7 @@ function renderWidgetError(id) {
 function renderShoppingLists(lists) {
   if (!lists.length) {
     return `<div class="widget widget--shopping">
-      ${widgetHeader('shopping-cart', t('nav.shopping'), 0, '/shopping')}
+      ${widgetHeader('shopping', t('nav.shopping'), 0, '/shopping')}
       <div class="widget__empty">
         <i data-lucide="shopping-cart" class="empty-state__icon" aria-hidden="true"></i>
         <div>${t('dashboard.noShoppingLists')}</div>
@@ -2201,7 +2380,7 @@ function renderShoppingLists(lists) {
   }).join('');
 
   return `<div class="widget widget--shopping">
-    ${widgetHeader('shopping-cart', t('nav.shopping'), totalOpen, '/shopping')}
+    ${widgetHeader('shopping', t('nav.shopping'), totalOpen, '/shopping')}
     <div class="widget__body">${listsHtml}</div>
   </div>`;
 }
@@ -2232,6 +2411,124 @@ function weatherIconHtml(weather, icon, cls, size, desc) {
            alt="${esc(desc)}" width="${size}" height="${size}" loading="lazy">`;
 }
 
+/**
+ * Die Wetterlage als Ton (tokens.css 5b) - sechs Werte, aus dem Icon-Namen
+ * abgeleitet und NICHT aus dem Beschreibungstext: der ist lokalisiert und in
+ * der OWM-Fassung sogar frei formuliert, das Icon dagegen ist beim selben
+ * Provider immer derselbe Schlüssel.
+ *
+ * BEIDE PROVIDER LAUFEN DURCH DIESELBE FUNKTION, weil sie zwei Schreibweisen
+ * für dieselbe Sache liefern: Open-Meteo Lucide-Namen (`cloud-rain`), OWM
+ * Legacy dreistellige Codes mit Tag/Nacht-Suffix (`10d`). Zwei Funktionen
+ * hätten sich beim nächsten neuen Zustand getrennt.
+ *
+ * Ein unbekannter Schlüssel liefert bewusst `null`: das Widget fällt dann auf
+ * seinen bisherigen Modulton zurück, statt eine falsche Lage zu behaupten.
+ */
+function weatherToneKey(icon) {
+  const key = String(icon || '');
+  if (/^\d{2}[dn]$/.test(key)) {
+    const code = key.slice(0, 2);
+    const night = key.endsWith('n');
+    if (code === '01') return night ? 'night' : 'clear';
+    if (code === '02') return night ? 'night' : 'clear';
+    if (code === '09' || code === '10') return 'rain';
+    if (code === '11') return 'storm';
+    if (code === '13') return 'snow';
+    return 'cloud';                      // 03, 04, 50 (Nebel/Dunst)
+  }
+  if (key === 'sun') return 'clear';
+  if (key === 'cloud-sun') return 'clear';
+  if (key === 'moon' || key === 'cloud-moon') return 'night';
+  if (key === 'cloud-lightning') return 'storm';
+  if (key === 'cloud-snow') return 'snow';
+  if (key === 'cloud-rain' || key === 'cloud-drizzle') return 'rain';
+  if (key === 'cloud') return 'cloud';
+  return null;
+}
+
+function weatherToneAttr(icon) {
+  const tone = weatherToneKey(icon);
+  return tone ? ` data-weather-tone="${tone}"` : '';
+}
+
+/**
+ * Die Gangart der Glyphe - vier Bewegungen, und jede sagt, was sie zeigt:
+ * `rays` dreht die Sonnenstrahlen um ihre Scheibe, `drift` lässt die Wolke
+ * ziehen, `fall` schickt Tropfen und Flocken nach unten, `flash` lässt den
+ * Blitz aufleuchten. Klare Nacht bekommt keine - ein Mond zieht nicht.
+ *
+ * WARUM DAS NICHT AM TON HÄNGT: `sun` und `cloud-sun` tragen denselben Ton
+ * (Bernstein), bewegen sich aber gegensätzlich. Bei `sun` sind alle `<path>`
+ * die Strahlen und dürfen rotieren; bei `cloud-sun` ist die Wolke selbst ein
+ * `<path>` und würde mitdrehen. Ein gemeinsames Attribut hätte die beiden
+ * genau einmal verwechselt, und zwar sichtbar.
+ *
+ * Die Bewegung sitzt in Kindknoten der Lucide-SVGs (Strahlen, Tropfen, Blitz),
+ * die dort eine feste Reihenfolge haben (v0.469.0: Wolke zuerst, Niederschlag
+ * danach). Ändert Lucide seinen Aufbau, greift die Regel nicht mehr und die
+ * Glyphe steht still - der schlechtestmögliche Ausgang ist kein Defekt.
+ */
+function weatherMotionAttr(icon) {
+  const key = String(icon || '');
+  const owm = /^(\d{2})([dn])$/.exec(key);
+  const code = owm?.[1];
+  // HIER STAND `key.endsWith('n')` FÜR BEIDE ZWEIGE, und „sun" endet auf n:
+  // die Sonne hat ihre Strahlen nie gedreht. Das Tag/Nacht-Suffix ist eine
+  // Eigenheit der OWM-Codes und wird deshalb auch nur dort gelesen - aus dem
+  // Lucide-Namen kommt es nie.
+  if (key === 'sun') return ' data-weather-motion="rays"';
+  if (key === 'moon') return '';
+  if (code === '01') return owm[2] === 'n' ? '' : ' data-weather-motion="rays"';
+  if (key === 'cloud-rain' || key === 'cloud-drizzle' || key === 'cloud-snow'
+      || code === '09' || code === '10' || code === '13') {
+    return ' data-weather-motion="fall"';
+  }
+  if (key === 'cloud-lightning' || code === '11') return ' data-weather-motion="flash"';
+  if (key === 'cloud' || key === 'cloud-sun' || key === 'cloud-moon'
+      || code === '02' || code === '03' || code === '04' || code === '50') {
+    return ' data-weather-motion="drift"';
+  }
+  return '';
+}
+
+/**
+ * Fünf Temperaturbänder für die Verlaufszeile (tokens.css 5b).
+ *
+ * DIE SCHWELLEN STEHEN IN DER JEWEILIGEN EINHEIT, nicht als Umrechnung einer
+ * Celsius-Zahl: „unter null" ist im Fahrenheit-Haushalt 32 °F und nicht
+ * 31,999. Die drei Leitern sind dieselben Grenzen, dreimal ausgeschrieben -
+ * eine Umrechnung im Code hätte an den Rundungsstellen andere Bänder ergeben
+ * als die Zahl daneben.
+ */
+const WEATHER_BANDS = ['icy', 'cold', 'mild', 'warm', 'hot'];
+const WEATHER_BAND_EDGES = {
+  metric:   [0, 10, 20, 28],
+  imperial: [32, 50, 68, 82],
+  standard: [273, 283, 293, 301],
+};
+
+/**
+ * `Number(null)` ist 0 und `Number('')` auch - beides sind gueltige
+ * Temperaturen, und ein fehlender Wert waere damit stillschweigend zu
+ * „0 Grad, also kalt" geworden. Ein Test hat genau das gefunden. Die 0 selbst
+ * muss durch: sie ist der haeufigste Winterwert.
+ */
+function weatherNumber(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+}
+
+function weatherTempBand(temp, units) {
+  const value = weatherNumber(temp);
+  if (value === null) return null;
+  const edges = WEATHER_BAND_EDGES[units] || WEATHER_BAND_EDGES.metric;
+  let i = 0;
+  while (i < edges.length && value >= edges[i]) i += 1;
+  return WEATHER_BANDS[i];
+}
+
 // Wetter als Masthead-Zeile (Seele-Paket): beiläufiger Kontext unterm Gruß
 // (Apple-Today-Muster) statt einer eigenen Karte - die Karte bleibt als Opt-in
 // für Wandtablets im Anpassen-Tray. Kein Echo: ist die Karte sichtbar, reicht
@@ -2240,10 +2537,46 @@ function mastheadWeatherHtml(weather) {
   if (!weather?.current) return '';
   const desc = weatherDescText(weather, weather.current.desc);
   return `
-    <p class="dashboard-overview__weather">
+    <p class="dashboard-overview__weather"${weatherToneAttr(weather.current.icon)}>
       ${weatherIconHtml(weather, weather.current.icon, 'dashboard-overview__weather-icon', 18, desc)}
       <span>${esc(String(weather.current.temp))}${weatherUnitSymbol(weather.units)} · ${esc(desc)}</span>
     </p>`;
+}
+
+/**
+ * Die Tagesspanne der Verlaufszeile, normiert auf die Spanne der GANZEN
+ * Vorhersage. Erst dadurch sagt der Balken etwas: eine Zeile aus fünf gleich
+ * langen Balken wäre Dekoration, eine Zeile, in der der Mittwoch nach oben
+ * rutscht, ist eine Auskunft.
+ *
+ * Zwei Randfälle, beide gemessen und nicht gedacht: eine flache Woche (alle
+ * Tage gleich) ergäbe 0/0 und damit einen unsichtbaren Balken, ein einzelner
+ * warmer Tag einen Strich von einem Pixel. Deshalb die Mindestlänge - der
+ * Balken bleibt auch dann ein Balken, wenn die Woche nichts zu erzählen hat.
+ */
+const WEATHER_SPAN_MIN = 0.14;
+
+function weatherSpanModel(forecast) {
+  const days = Array.isArray(forecast) ? forecast : [];
+  const values = days.flatMap((d) => [weatherNumber(d.temp_min), weatherNumber(d.temp_max)])
+    .filter((v) => v !== null);
+  if (values.length < 2) return null;
+  const lo = Math.min(...values);
+  const hi = Math.max(...values);
+  const span = hi - lo;
+  return (d) => {
+    const min = weatherNumber(d.temp_min);
+    const max = weatherNumber(d.temp_max);
+    if (min === null || max === null) return null;
+    let from = span > 0 ? (min - lo) / span : 0;
+    let to   = span > 0 ? (max - lo) / span : 1;
+    if (to - from < WEATHER_SPAN_MIN) {
+      const mid = (from + to) / 2;
+      from = Math.max(0, Math.min(1 - WEATHER_SPAN_MIN, mid - WEATHER_SPAN_MIN / 2));
+      to = from + WEATHER_SPAN_MIN;
+    }
+    return { from, to };
+  };
 }
 
 function renderWeatherWidget(weather) {
@@ -2257,23 +2590,36 @@ function renderWeatherWidget(weather) {
   const descText = (desc) => weatherDescText(weather, desc);
   const iconHtml = (icon, cls, size, desc) => weatherIconHtml(weather, icon, cls, size, desc);
 
+  const spanOf = weatherSpanModel(forecast);
+
   const forecastHtml = forecast.map((d, i) => {
     const date = new Date(d.date + 'T12:00:00');
-    const label = new Intl.DateTimeFormat(getLocale(), { weekday: 'short' }).format(date);
+    const label = i === 0
+      ? t('common.today')
+      : new Intl.DateTimeFormat(getLocale(), { weekday: 'short' }).format(date);
     const extraCls = i >= 3 ? ' weather-forecast__day--extended' : '';
+    // Der Balken trägt das Band der HÖCHSTtemperatur: sie ist die Zahl, nach
+    // der ein Tag eingeschätzt wird ("wird es warm?"), und sie steht daneben.
+    const band = weatherTempBand(d.temp_max, units);
+    const span = spanOf?.(d);
+    const spanHtml = span
+      ? `<div class="weather-forecast__span"${band ? ` data-weather-band="${band}"` : ''}
+              style="--span-from:${span.from.toFixed(4)};--span-to:${span.to.toFixed(4)}" aria-hidden="true"></div>`
+      : '';
     return `
       <div class="weather-forecast__day${extraCls}">
-        <div class="weather-forecast__label">${label}</div>
+        <div class="weather-forecast__label${i === 0 ? ' weather-forecast__label--today' : ''}">${esc(label)}</div>
         ${iconHtml(d.icon, 'weather-forecast__icon', 32, descText(d.desc))}
         <div class="weather-forecast__temps">
           <span class="weather-forecast__high">${d.temp_max}°</span>
           <span class="weather-forecast__low">${d.temp_min}°</span>
         </div>
+        ${spanHtml}
       </div>`;
   }).join('');
 
   return `
-    <div class="widget widget--weather weather-widget" id="weather-widget">
+    <div class="widget widget--weather weather-widget" id="weather-widget"${weatherToneAttr(current.icon)}${weatherMotionAttr(current.icon)}>
       <h3 class="sr-only">${esc(t('dashboard.weather'))}</h3>
       <button class="weather-widget__refresh" id="weather-refresh-btn" aria-label="${t('dashboard.weatherRefresh')}" title="${t('dashboard.weatherRefreshTitle')}">
         <i data-lucide="refresh-cw" class="icon-md" aria-hidden="true"></i>
@@ -2288,7 +2634,7 @@ function renderWeatherWidget(weather) {
               ${t('dashboard.weatherFeelsLike', { temp: current.feels_like, humidity: current.humidity, wind: current.wind_speed, windUnit })}
             </div>
           </div>
-          ${iconHtml(current.icon, 'weather-widget__icon', 80, descText(current.desc))}
+          <span class="weather-widget__glyph">${iconHtml(current.icon, 'weather-widget__icon', 80, descText(current.desc))}</span>
         </div>
         ${forecast.length ? `<div class="weather-forecast">${forecastHtml}</div>` : ''}
       </div>
@@ -2424,7 +2770,7 @@ function renderWallRow(row) {
     : '';
   return `
     <li class="wall-row wall-row--${esc(row.tone)}">
-      <span class="module-seal wall-row__seal"><i data-lucide="${esc(row.icon)}" aria-hidden="true"></i></span>
+      <span class="module-seal wall-row__seal">${moduleIconHTML(row.icon)}</span>
       <span class="wall-row__body">
         <span class="wall-row__title">${esc(row.title)}</span>
         <span class="wall-row__sub">${esc(row.sub)}</span>
@@ -2444,7 +2790,7 @@ function renderWallProgram(model) {
     // aus zwei Metern wie ein Defekt, nicht wie Ruhe.
     parts.push(`
       <li class="wall-row wall-row--state">
-        <span class="module-seal wall-row__seal"><i data-lucide="${esc(model.state.icon)}" aria-hidden="true"></i></span>
+        <span class="module-seal wall-row__seal">${moduleIconHTML(model.state.icon)}</span>
         <span class="wall-row__body">
           <span class="wall-row__title">${esc(model.state.title)}</span>
           ${model.state.sub ? `<span class="wall-row__sub">${esc(model.state.sub)}</span>` : ''}
@@ -2538,11 +2884,13 @@ function renderWallWeather(weather) {
   if (!weather?.current) return '';
   const { city, current, forecast, units } = weather;
   const desc = weatherDescText(weather, current.desc);
-  const days = (Array.isArray(forecast) ? forecast : []).slice(0, 4).map((d) => {
+  const days = (Array.isArray(forecast) ? forecast : []).slice(0, 4).map((d, i) => {
     const date = new Date(`${d.date}T12:00:00`);
-    const label = new Intl.DateTimeFormat(getLocale(), { weekday: 'short' }).format(date);
+    const label = i === 0
+      ? t('common.today')
+      : new Intl.DateTimeFormat(getLocale(), { weekday: 'short' }).format(date);
     return `
-      <li class="wall-weather__day">
+      <li class="wall-weather__day"${weatherToneAttr(d.icon)}>
         <span class="wall-weather__day-label">${esc(label)}</span>
         ${weatherIconHtml(weather, d.icon, 'wall-weather__day-icon', 32, weatherDescText(weather, d.desc))}
         <span class="wall-weather__day-temps">
@@ -2553,7 +2901,7 @@ function renderWallWeather(weather) {
   }).join('');
 
   return `
-    <section class="wall__weather" aria-labelledby="wall-weather-title">
+    <section class="wall__weather" aria-labelledby="wall-weather-title"${weatherToneAttr(current.icon)}${weatherMotionAttr(current.icon)}>
       <h2 class="wall__section-title" id="wall-weather-title">${esc(t('dashboard.weather'))}</h2>
       <div class="wall-weather__now">
         ${weatherIconHtml(weather, current.icon, 'wall-weather__icon', 64, desc)}
@@ -2865,7 +3213,10 @@ function wireLinks(container, rerender, { editing = false } = {}) {
 
   // Task-Items öffnen Quick-Action-Modal statt direkt zu navigieren
   if (editing) return;
-  container.querySelectorAll('.task-item[data-task-id]').forEach((el) => {
+  // Die Countdown-Zeile einer Aufgabe hängt an demselben Griff (#647): sie
+  // nennt ein Objekt, also trifft der Klick dieses Objekt. Ein eigener Handler
+  // daneben wäre ein zweiter Weg zur selben Handlung.
+  container.querySelectorAll('.task-item[data-task-id], .countdown-item[data-task-id]').forEach((el) => {
     const show = () => openTaskQuickAction(el.dataset.taskId, el.dataset.taskTitle, rerender);
     el.addEventListener('click', show);
     el.addEventListener('keydown', (e) => {
@@ -2966,7 +3317,10 @@ export async function render(container, { user }) {
     ${wallMode ? '' : renderFab()}
   `);
 
-  let data         = { upcomingEvents: [], urgentTasks: [], todayMeals: [], pinnedNotes: [], shoppingLists: [], birthdays: [], users: [], budget: {}, rewards: {}, health: {}, housekeeping: {} };
+  let data         = { upcomingEvents: [], urgentTasks: [], todayMeals: [], pinnedNotes: [], shoppingLists: [], birthdays: [], countdowns: [], users: [], budget: {}, rewards: {}, health: {}, housekeeping: {} };
+  // Ein Stand von vorhin darf keine Kachel versprechen: erst nach dem Laden
+  // wieder wahr (siehe die Notiz an `countdownAvailable`).
+  setCountdownAvailability([]);
   let weather      = null;
   let weatherAutoLocate = false;
   let widgetConfig = DEFAULT_WIDGET_CONFIG;
@@ -2974,8 +3328,10 @@ export async function render(container, { user }) {
   // Das Kopfband „Heute auf einen Blick" ist kein Rasterkachel, folgt aber
   // derselben Anpassen-Grammatik wie die Widgets: ausblenden am Block, zurueck
   // ueber die Chip-Leiste, und es faehrt in denselben Speicher-, Abbruch- und
-  // Ruecknahme-Zyklus mit (#740). Haushaltweit wie `dashboard_widgets`, weil
-  // die Uebersicht eine gemeinsame Seite ist.
+  // Ruecknahme-Zyklus mit (#740). Persoenlich wie `dashboard_widgets` (#585):
+  // beide liegen im selben PUT, und ein haushaltweites Kopfband neben einer
+  // persoenlichen Anordnung hiesse, dass ein Ausblenden je nach Element mal
+  // mich und mal alle traefe.
   let glanceVisible = true;
   let savedGlanceVisible = true;
   let isCustomizing = false;
@@ -3000,6 +3356,7 @@ export async function render(container, { user }) {
     if (Array.isArray(data?.upcomingEvents)) {
       data.upcomingEvents = data.upcomingEvents.map(localizeBirthdayEvent);
     }
+    setCountdownAvailability(data?.countdowns);
     weather      = weatherRes.data ?? null;
     weatherAutoLocate = Boolean(prefsRes.data?.weather_user?.auto_locate ?? prefsRes.data?.weather_auto_locate);
     widgetConfig = normalizeDashboardConfig(prefsRes.data?.dashboard_widgets ?? DEFAULT_WIDGET_CONFIG);
@@ -3096,9 +3453,16 @@ export async function render(container, { user }) {
     rebuildDashboard(widgetConfig);
   }
 
+  /* „ZURÜCKSETZEN" HATTE SEIT #585 ZWEI PLAUSIBLE BEDEUTUNGEN und lieferte eine
+   * dritte (Critique 2026-08-16). Solange die Anordnung dem Haushalt gehörte,
+   * war „auf Standard" eindeutig. Seit sie der Person gehört, kann der Satz auch
+   * „zurück zu dem, was die Familie hatte" oder „zurück zu meinem letzten Stand"
+   * heißen - und keine der beiden trifft zu. Der Folgentext sagt jetzt, was
+   * wirklich passiert, statt es die Nutzerin herausfinden zu lassen. */
   async function resetDashboardConfig() {
     const confirmed = await confirmModal(t('dashboard.customizeResetConfirm'), {
       confirmLabel: t('dashboard.customizeReset'),
+      detail: t('dashboard.customizeResetDetail'),
     });
     if (!confirmed) return;
     widgetConfig = DEFAULT_WIDGET_CONFIG.map((w) => ({ ...w }));
@@ -3434,7 +3798,7 @@ export async function render(container, { user }) {
   }
 }
 
-export const __test = { buildTodayHighlights, buildTodayProgram, buildTodayCockpitModel, renderTodayCockpit, renderPinnedNotes, renderFamilyWidget, formatDueDate, normalizeVisibleMealTypes, renderTodayMeals, calendarEventRoute, recipeOrMealsRoute, eventOccurrenceDateKey, eventStartDate, renderWallSurface, renderWallWho, selectMetricTiles, METRIC_TILE_ORDER, PROGRAM_ROW_CAP, WALL_ROW_CAP };
+export const __test = { buildTodayHighlights, buildTodayProgram, buildTodayCockpitModel, renderTodayCockpit, renderPinnedNotes, renderFamilyWidget, formatDueDate, normalizeVisibleMealTypes, renderTodayMeals, calendarEventRoute, recipeOrMealsRoute, eventOccurrenceDateKey, eventStartDate, renderWallSurface, renderWallWho, selectMetricTiles, METRIC_TILE_ORDER, PROGRAM_ROW_CAP, WALL_ROW_CAP, weatherToneKey, weatherMotionAttr, weatherTempBand, weatherSpanModel };
 
 function wireWeatherRefresh(container, onUpdated = null) {
   const refreshBtn = container.querySelector('#weather-refresh-btn');

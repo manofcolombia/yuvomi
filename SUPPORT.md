@@ -11,7 +11,7 @@ Yuvomi is a solo-maintained open-source project. Pick the channel that fits:
   [private vulnerability reporting](https://github.com/ulsklyc/yuvomi/security/advisories/new)
   (see [SECURITY.md](SECURITY.md)).
 - **Setup help** — the [installation guide](docs/installation.md) covers Docker/Podman,
-  HTTPS, backups and troubleshooting; the [README FAQ](README.md#faq) answers the most
-  common questions.
+  HTTPS, backups and troubleshooting; the README answers the
+  [three questions worth asking first](README.md#before-you-commit).
 
 Expect answers within a few days — this is one person's evenings, not a support desk.

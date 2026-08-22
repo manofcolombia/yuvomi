@@ -457,6 +457,16 @@ function renewalForecast() {
   return months.map((row) => ({ ...row, amount: Number(row.amount.toFixed(2)) }));
 }
 
+// KEINE geteilte Chart-Geometrie (utils/chart.js), und das ist Absicht: die
+// traegt einen 40px-Gutter fuer eine Werteachse, und diese Flaeche hat keine.
+// Sie ist 72px flach, beschriftet alle sechs Monate statt drei Marken und liegt
+// damit naeher an der Sparkline der Kennzahlkarte als am Trend-Chart. Eine
+// andere FORM, keine andere Fassung derselben.
+//
+// `vector-effect` ist dagegen faellig: `preserveAspectRatio="none"` streckt
+// einen 100x52-viewBox auf rund 300x72, also X um Faktor 3 und Y um 1,4 - ohne
+// den Ausschalter wird die 2,5px-Linie in einer Achse dicker als in der
+// anderen. Dieselbe Zeile steht an jeder anderen gestreckten Kurve der App.
 function renderAreaChart(title, rows) {
   const max = Math.max(...rows.map((row) => row.amount), 1);
   const points = rows.map((row, index) => {
@@ -473,7 +483,7 @@ function renderAreaChart(title, rows) {
       </div>
       <svg class="subscriptions-area-chart" viewBox="0 0 100 52" preserveAspectRatio="none" aria-hidden="true">
         <polygon points="${areaPoints}"></polygon>
-        <polyline points="${points}"></polyline>
+        <polyline points="${points}" vector-effect="non-scaling-stroke"></polyline>
       </svg>
       <div class="subscriptions-chart-axis">
         ${rows.map((row) => `<span>${esc(row.label)}</span>`).join('')}

@@ -77,12 +77,33 @@ router.post('/apple/connect', requireAdmin, async (req, res) => {
 /**
  * DELETE /api/v1/calendar/apple/disconnect
  * Apple-CalDAV-Credentials löschen.
- * Response: 204
+ * Query: ?deleteEvents=true nimmt die gespiegelten Termine mit (#820).
+ * Response: 204 - bleibt leer, obwohl die Google-Gegenstelle die Zahl der
+ * gelöschten Termine meldet: der Statuscode ist seit v2.7.1 zugesagte Oberfläche,
+ * und ein 204 → 200 wäre für Bestandsclients ein Bruch ohne Gegenwert. Wer die
+ * Zahl braucht, nimmt DELETE /apple/mirrored-events.
  */
 router.delete('/apple/disconnect', requireAdmin, (req, res) => {
   try {
-    appleCalendar.clearCredentials();
+    appleCalendar.clearCredentials({
+      deleteEvents: req.query.deleteEvents === 'true',
+    });
     res.status(204).end();
+  } catch (err) {
+    log.error('', err);
+    res.status(500).json({ error: 'Interner Fehler', code: 500 });
+  }
+});
+
+/**
+ * DELETE /api/v1/calendar/apple/mirrored-events
+ * Admin only. Entfernt die lokal gespiegelten Apple-Termine, ohne die Verbindung
+ * anzufassen (#820). Der iCloud-Kalender bleibt unberührt.
+ * Response: { data: { removed: number } }
+ */
+router.delete('/apple/mirrored-events', requireAdmin, (req, res) => {
+  try {
+    res.json({ data: { removed: appleCalendar.clearMirroredEvents() } });
   } catch (err) {
     log.error('', err);
     res.status(500).json({ error: 'Interner Fehler', code: 500 });

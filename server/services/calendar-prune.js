@@ -141,3 +141,49 @@ export function deleteMirroredEvents(database, externalIds) {
   if (removed) log.info(`Removed ${removed} mirrored event(s) on user request.`);
   return removed;
 }
+
+// --------------------------------------------------------
+// Aufräumen nach dem Trennen eines Kontos (#820).
+//
+// Das Trennen löscht Tokens und Kalenderauswahl, nicht aber die schon gespiegelten
+// Termine. Die bleiben als Waisen liegen: ihr `calendar_ref_id` zeigt ins Leere, kein
+// Sync fasst sie je wieder an, und beim erneuten Verbinden legt der Inbound sie unter
+// neuen Zeilen nochmal an - sichtbar als Dubletten, am deutlichsten bei Serien. Von
+// Hand ist das nicht zu räumen: es gibt nur das Löschen je Termin.
+//
+// Der Scope ist die Quelle, nicht der Kalender: nach dem Trennen ist die
+// Kalenderzuordnung gerade das, was fehlt. Lokale Termine (`external_source = 'local'`)
+// bleiben unangetastet - auch die, die auf einen Upload warten.
+//
+// LOKAL, NICHT NACH AUSSEN: wie beim Aufräumen darüber ein direktes DELETE ohne
+// Tombstone. Wer seine Kopie wegräumt, löscht nicht den Kalender beim Anbieter.
+// --------------------------------------------------------
+
+/**
+ * Wie viele Termine dieser Sync-Quelle liegen lokal? Die Zahl steht in der Rückfrage.
+ *
+ * @param {object} database
+ * @param {string} source  external_source-Wert ('google' | 'apple')
+ * @returns {number}
+ */
+export function countSourceEvents(database, source) {
+  return database.prepare(
+    'SELECT COUNT(*) AS n FROM calendar_events WHERE external_source = ?'
+  ).get(source).n;
+}
+
+/**
+ * Entfernt alle lokal gespiegelten Termine dieser Sync-Quelle.
+ *
+ * @param {object} database
+ * @param {string} source  external_source-Wert ('google' | 'apple')
+ * @returns {number} Anzahl gelöschter Termine
+ */
+export function deleteSourceEvents(database, source) {
+  const result = database.prepare(
+    'DELETE FROM calendar_events WHERE external_source = ?'
+  ).run(source);
+  const removed = Number(result.changes) || 0;
+  if (removed) log.info(`Removed ${removed} mirrored ${source} event(s) on user request.`);
+  return removed;
+}

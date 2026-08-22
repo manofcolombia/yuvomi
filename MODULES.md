@@ -47,10 +47,14 @@ Optional fields:
 - `menu.label`, `menu.icon`, `menu.order`: left-menu label, Lucide icon name, and order.
 - `accent`: a `#RRGGBB` color. It is your module's **tone**: the app exposes it as
   `--active-module-accent` while your page is open, so your own content can use it, and it colors
-  the browser/PWA status bar on your route. Since v2.2.0 it no longer colors the app's chrome -
+  the browser/PWA status bar on your route. It also fills your module's mark wherever the app names
+  your module next to others - the navigation, the settings module list - at full strength; a mark
+  that names something carries its color rather than a tint of it (see the full-tone rule in
+  `DESIGN.md`). Since v2.2.0 it no longer colors the app's chrome -
   the navigation, the action button and shared controls carry the app's own accent in every module
   (see the one-voice rule in `docs/SPEC.md`), so the frame does not change color when a visitor
-  opens your page.
+  opens your page. Pick a tone that reads against both a light and a dark surface: the mark is
+  filled with it and carries a light or dark glyph on top.
 
 ## Client Entry
 
@@ -111,7 +115,7 @@ Scheduled jobs have no session. Issue an API token under Settings -> Admin -> AP
 
 Yuvomi scans `modules/` and validates each `module.json`. Invalid modules are shown as errored in Settings and are not loaded. Disabled modules are not served to the browser and do not appear in navigation. If a module page fails while rendering, Yuvomi shows an error for that page without changing core application code.
 
-Admins can enable, disable, and order modules in Settings -> Personal -> Navigation. Ordering is per user and open to every member; the enable/disable switches are admin-only. Copying a new folder into `modules/` makes it appear there automatically.
+Admins enable and disable modules in Settings -> Modules -> Active modules. Ordering is a separate, personal matter and lives in Settings -> Personal -> Navigation, where every member also decides which modules they want in their own navigation - hiding one there removes it from that member's sidebar and mobile favourites without taking it from the household. Copying a new folder into `modules/` makes it appear in both places automatically.
 
 ## Compatibility Across Yuvomi Releases
 

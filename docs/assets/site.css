@@ -60,6 +60,14 @@
      element; 70% is `--tint-ink`, the readable step of the same hue.
      Measured: 7.06:1 light, 6.13:1 dark. */
   --accent-soft: color-mix(in srgb, var(--accent) 16%, var(--surface));
+  /* Ziffer auf --accent-soft. Im Light traegt das --accent selbst (4.65:1), im
+     Dark nicht: --accent #A78BFA auf dem dortigen --accent-soft #3b3445 misst
+     4.38:1 bei noetigen 4.5:1, und 16.8px/700 ist keine "large text"-Ausnahme
+     (dafuer braeuchte es >=18.66px bold). Drei unabhaengige Messverfahren kamen
+     auf denselben Wert (Critique 2026-08-16). Der Dark-Wert ist bewusst das
+     schon vorhandene --accent-hover (5.67:1) statt eines neuen Violettwerts.
+     ACHTUNG: beide Dark-Pfade pflegen, sonst driftet es wie seinerzeit --m-split. */
+  --accent-on-soft: var(--accent);
   --accent-deep: color-mix(in srgb, var(--accent) 70%, var(--text-1));
   --accent-glow: color-mix(in srgb, var(--accent) 16%, transparent);
 
@@ -74,6 +82,13 @@
   --m-tasks: #157F3D;
   --m-calendar: #00668F;
   --m-meals: #C2410C;
+  /* Vorrat zieht in der App aus derselben Familie wie Mahlzeiten
+     (tokens.css: --module-pantry und --module-meals sind beide
+     --_family-kitchen). Als Referenz statt als Hexwert notiert: so folgt es den
+     beiden Dark-Bloecken von selbst und kann nicht wie --m-split auseinander
+     laufen. Fehlte, seit die vierte Handoff-Zeile es benutzt - das leere Token
+     liess ausgerechnet die Solo-Zeile ohne Farbe. */
+  --m-pantry: var(--m-meals);
   --m-recipes: #0C7C5B;
   --m-shopping: #CF236F;
   --m-notes: #9D6007;
@@ -81,19 +96,40 @@
   --m-birthdays: #CE2A63;
   --m-budget: #0F766E;
   --m-documents: #42587E;
+  /* Inventory shares the app's records family with Documents on purpose - there
+     the two are told apart by their seal, not by their tone. */
+  --m-inventory: #42587E;
   --m-housekeeping: #7C3AED;
   --m-health: #9E1E88;
   --m-rewards: #BA4468;
   --m-split: #1975A5;
+  /* Infrastruktur, kein Modul. Backup und API-Tokens trugen hier die Toene von
+     Aufgaben und Gemeinsamen Ausgaben - eine Farbe, die in der App eine
+     Zugehoerigkeit BEDEUTET, auf einer Karte, die keine hat. Der Neutralton ist
+     der der App (--_family-neutral) und sagt zusaetzlich: das hier schaltet ihr
+     nicht an und aus. Gemessen als Grafik (3:1 verlangt): 5.04:1 auf --surface,
+     4.82:1 auf --bg. */
+  --m-infra: #677079;
 
   /* The code plate keeps ONE palette in both themes - it is a terminal, and a
      terminal does not turn white. It now borrows the app's dark neutrals so it
      reads as the same material as a dark-mode card. --code-accent doubles as
-     the focus ring there (5.66:1 on the plate), --code-comment holds 5.22:1. */
+     the focus ring there.
+
+     Ratios against --code-bg, recomputed 2026-08-20 - all four pass AA:
+       --code-text     13.94:1
+       --code-val      10.07:1
+       --code-accent    5.68:1   (was documented as 5.66)
+       --code-comment   4.76:1   (was documented as 5.22 - the comment
+                                  overstated it by 0.46 and no measurement
+                                  ever caught up with the note)
+     --code-val was a raw #7ee787 in install.html, the only one of the four
+     plate colours without a token. */
   --code-bg: #262422;
   --code-text: #F5F3ED;
   --code-comment: #948E85;
   --code-accent: #A78BFA;
+  --code-val: #7ee787;
 
   /* --r-xs is the inline-chip radius. It existed as a hardcoded 4px in five
      places and as a stray 5px in two more, on a scale that starts at 8px.
@@ -151,6 +187,7 @@
 
   --accent: #A78BFA;         /* --color-accent (dark) */
   --accent-hover: #BCA6FC;   /* --color-accent-hover (dark) */
+  --accent-on-soft: #BCA6FC; /* siehe :root - beide Dark-Pfade */
   --accent-ink: #191816;     /* --color-ink-on-vivid (dark) */
   /* A touch stronger than light, as before - a glow has less to work with on a
      dark ground. --accent-soft and --accent-deep need no entry: they are
@@ -167,10 +204,12 @@
   --m-birthdays: #FB7185;
   --m-budget: #2DD4BF;
   --m-documents: #7E9BCC;
+  --m-inventory: #7E9BCC;
   --m-housekeeping: #C4B5FD;
   --m-health: #DB60CB;
   --m-rewards: #E68CA6;
   --m-split: #2FB6E8;
+  --m-infra: #A2ACB6;
 
   /* The code plate is deliberately NOT mirrored: it is the one surface that
      keeps its own palette in both themes. */
@@ -208,6 +247,7 @@
 
     --accent: #A78BFA;
     --accent-hover: #BCA6FC;
+    --accent-on-soft: #BCA6FC;
     --accent-ink: #191816;
     --accent-glow: color-mix(in srgb, var(--accent) 22%, transparent);
 
@@ -221,10 +261,12 @@
     --m-birthdays: #FB7185;
     --m-budget: #2DD4BF;
     --m-documents: #7E9BCC;
+    --m-inventory: #7E9BCC;
     --m-housekeeping: #C4B5FD;
     --m-health: #DB60CB;
     --m-rewards: #E68CA6;
     --m-split: #2FB6E8;
+    --m-infra: #A2ACB6;
 
     --shadow-sm: 0 1px 3px rgba(0,0,0,0.30);
     --shadow-md: 0 4px 12px rgba(0,0,0,0.38);

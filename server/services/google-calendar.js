@@ -10,6 +10,8 @@
  *   google_sync_token     - Inkrementeller Sync-Token von Google (events.list)
  *   google_last_sync      - ISO-8601-Timestamp des letzten erfolgreichen Syncs
  *   google_calendar_id    - ID des zu synchronisierenden Kalenders (Default: 'primary')
+ *   google_last_error     - Fehlermeldung des letzten Laufs, fehlt nach einem sauberen (#820)
+ *   google_last_error_at  - ISO-8601-Timestamp dieses Fehlers
  */
 
 import { createLogger } from '../logger.js';
@@ -24,6 +26,8 @@ import { nearestColorId } from '../utils/ical-color.js';
 // Fallback-Zone für den Outbound-Sync, wenn Google für den Zielkalender keine liefert.
 import { serverTimeZone } from '../utils/timezone.js';
 import { assignDefaultToEvent } from './sync-assignment.js';
+import { countSourceEvents, deleteSourceEvents } from './calendar-prune.js';
+import { readSyncOutcome, withSyncOutcome } from './sync-outcome.js';
 import { rruleValue } from './recurrence.js';
 
 const GOOGLE_COLOR = '#4285F4';
@@ -515,20 +519,49 @@ function getStatus() {
     lastSync,
     selectedCount: enabledCalendarIds().length,
     readonly: isReadonly(),
+    // Reist mit dem Status, damit die Rückfrage vor dem Löschen die Zahl sofort
+    // nennen kann - und damit die Einstellungen den Rückstand auch dann noch
+    // zeigen, wenn längst getrennt wurde (#820).
+    mirroredEvents: countSourceEvents(db.get(), 'google'),
+    // Ein still gescheiterter Lauf sah bisher aus wie ein Kalender, der einfach
+    // aufhoert zu aktualisieren - der Fehler stand nur im Serverlog (#820).
+    ...readSyncOutcome(db.get(), 'google'),
   };
 }
 
 /**
- * Tokens und Sync-State löschen (Verbindung trennen).
+ * Entfernt die lokal gespiegelten Google-Termine (#820). Ohne Wirkung nach außen:
+ * der Google-Kalender bleibt unberührt, geräumt wird nur die Kopie.
+ * @returns {number} Anzahl gelöschter Termine
  */
-function disconnect() {
-  ['google_access_token', 'google_refresh_token', 'google_token_expiry',
-   'google_last_sync', 'google_readonly'].forEach(cfgDel);
-  db.get().prepare('DELETE FROM google_calendar_selection').run();
-  // Offene Löschungen verfallen mit der Verbindung: ohne Token gibt es niemanden
-  // mehr, bei dem gelöscht werden könnte (#593).
-  db.get().prepare(`DELETE FROM calendar_pending_deletions WHERE source = 'google'`).run();
-  log.info('Disconnected.');
+function clearMirroredEvents() {
+  return deleteSourceEvents(db.get(), 'google');
+}
+
+/**
+ * Tokens und Sync-State löschen (Verbindung trennen).
+ * @param {object} [opts]
+ * @param {boolean} [opts.deleteEvents] Gespiegelte Termine mitnehmen (#820).
+ * @returns {{ removed: number }}
+ */
+function disconnect({ deleteEvents = false } = {}) {
+  // Vor dem Trennen: danach ist die Kalenderauswahl fort, und ein Aufräumen nach
+  // Kalender wäre nicht mehr möglich. Beides in einer Transaktion, damit nicht die
+  // Termine fallen und die Verbindung stehen bleibt (oder umgekehrt).
+  return db.get().transaction(() => {
+    const removed = deleteEvents ? clearMirroredEvents() : 0;
+    ['google_access_token', 'google_refresh_token', 'google_token_expiry',
+     'google_last_sync', 'google_readonly',
+     // Der Fehlerstand gehoert zur Verbindung: bliebe er stehen, meldete die
+     // Karte nach dem Trennen einen Ausfall, den es nicht mehr gibt (#820).
+     'google_last_error', 'google_last_error_at'].forEach(cfgDel);
+    db.get().prepare('DELETE FROM google_calendar_selection').run();
+    // Offene Löschungen verfallen mit der Verbindung: ohne Token gibt es niemanden
+    // mehr, bei dem gelöscht werden könnte (#593).
+    db.get().prepare(`DELETE FROM calendar_pending_deletions WHERE source = 'google'`).run();
+    log.info('Disconnected.' + (removed ? ` ${removed} mirrored event(s) removed.` : ''));
+    return { removed };
+  })();
 }
 
 /**
@@ -536,7 +569,16 @@ function disconnect() {
  * Inbound:  Google → lokale DB (Upsert via external_calendar_id)
  * Outbound: lokale Termine (external_source='local', external_calendar_id IS NULL) → Google
  */
+/**
+ * Ein Lauf, dessen Ausgang den Lauf überlebt (#820). Der Wrapper liegt um
+ * runSync() statt in ihm, damit JEDER Ausstieg erfasst wird - auch das frühe
+ * Werfen bei fehlendem Token, das ohne Verbindung der wahrscheinlichste Fall ist.
+ */
 async function sync() {
+  return withSyncOutcome(db.get(), 'google', runSync);
+}
+
+async function runSync() {
   const client   = loadAuthorizedClient();
   const calendar = google.calendar({ version: 'v3', auth: client });
 
@@ -602,7 +644,8 @@ async function sync() {
         throw err;
       }
 
-      upsertGoogleEvents(response.data.items || [], calRefId, calColor, eventColorMap, { fullResync: !syncToken });
+      upsertGoogleEvents(response.data.items || [], calRefId, calColor, eventColorMap,
+        { fullResync: !syncToken, calTimeZone: meta?.timeZone ?? null });
       pageToken    = response.data.nextPageToken;
       newSyncToken = response.data.nextSyncToken || newSyncToken;
     } while (pageToken);
@@ -754,7 +797,7 @@ function originalStartDate(item) {
   return raw ? String(raw).slice(0, 10) : null;
 }
 
-function upsertGoogleEvents(items, calRefId = null, calColor = GOOGLE_COLOR, colorMap = {}, { fullResync = false } = {}) {
+function upsertGoogleEvents(items, calRefId = null, calColor = GOOGLE_COLOR, colorMap = {}, { fullResync = false, calTimeZone = null } = {}) {
   // Auf den meldenden Kalender eingegrenzt: wird ein Event in Google von Kalender
   // A nach B verschoben, meldet A es als 'cancelled', während B es als aktiv
   // liefert - bei beiden dieselbe Event-ID. Ein ID-only-DELETE löscht dann je
@@ -827,6 +870,12 @@ function upsertGoogleEvents(items, calRefId = null, calColor = GOOGLE_COLOR, col
     const endDt       = allDay
       ? googleAllDayEndToInclusive(item.end?.date)
       : (item.end?.dateTime || item.end?.date || null);
+    // Zeitzone der Serie (#829). Google liefert die IANA-Zone neben der Zeit;
+    // ohne sie wiederholt die Expansion den festen Offset des ersten Vorkommens
+    // und die Serie driftet über die Sommer-/Winterzeit-Grenze um eine Stunde -
+    // derselbe Fehler, der für CalDAV/Apple schon als #549 behoben wurde, nur
+    // hier nie nachgezogen. Ganztags-Termine tragen keine Zone.
+    const tzid        = allDay ? null : (item.start?.timeZone || calTimeZone || null);
     const title       = item.summary || '(kein Titel)';
     const description = item.description || null;
     const location    = item.location    || null;
@@ -862,12 +911,12 @@ function upsertGoogleEvents(items, calRefId = null, calColor = GOOGLE_COLOR, col
       // Umfärbung (user_modified) nicht als Unterschied zählt. Die Bindings der
       // SET-Liste kommen dafür ein zweites Mal.
       const values = [
-        title, description, startDt, endDt, allDay ? 1 : 0, location, rrule, evColor, calRefId,
+        title, description, startDt, endDt, allDay ? 1 : 0, location, rrule, tzid, evColor, calRefId,
       ];
       db.get().prepare(`
         UPDATE calendar_events
         SET title = ?, description = ?, start_datetime = ?, end_datetime = ?,
-            all_day = ?, location = ?, recurrence_rule = ?,
+            all_day = ?, location = ?, recurrence_rule = ?, tzid = ?,
             color = CASE WHEN user_modified = 0 THEN ? ELSE color END,
             calendar_ref_id = ?
         WHERE id = ?
@@ -878,6 +927,7 @@ function upsertGoogleEvents(items, calRefId = null, calColor = GOOGLE_COLOR, col
                OR all_day         IS NOT ?
                OR location        IS NOT ?
                OR recurrence_rule IS NOT ?
+               OR tzid            IS NOT ?
                OR color           IS NOT CASE WHEN user_modified = 0 THEN ? ELSE color END
                OR calendar_ref_id IS NOT ?
               )
@@ -886,9 +936,9 @@ function upsertGoogleEvents(items, calRefId = null, calColor = GOOGLE_COLOR, col
       const inserted = db.get().prepare(`
         INSERT INTO calendar_events
           (title, description, start_datetime, end_datetime, all_day,
-           location, color, external_calendar_id, external_source, recurrence_rule, calendar_ref_id, created_by)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'google', ?, ?, 1)
-      `).run(title, description, startDt, endDt, allDay ? 1 : 0, location, evColor, item.id, rrule, calRefId);
+           location, color, external_calendar_id, external_source, recurrence_rule, tzid, calendar_ref_id, created_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'google', ?, ?, ?, 1)
+      `).run(title, description, startDt, endDt, allDay ? 1 : 0, location, evColor, item.id, rrule, tzid, calRefId);
       assignDefaultToEvent(db.get(), inserted.lastInsertRowid, defaultAssignee);
     }
 
@@ -1064,8 +1114,8 @@ function localEventToGoogle(event, colorMap = {}, timeZone = serverTimeZone()) {
   return gEvent;
 }
 
-export { getAuthUrl, handleCallback, getStatus, disconnect, sync, listCalendars,
-         listSelection, setCalendarEnabled, setReadonly, flushOutbound };
+export { getAuthUrl, handleCallback, getStatus, disconnect, clearMirroredEvents, sync,
+         listCalendars, listSelection, setCalendarEnabled, setReadonly, flushOutbound };
 export const __test = {
   localEventToGoogle, googleAllDayEndToInclusive, localAllDayEndToExclusive,
   upsertGoogleEvents, upsertExternalCalendar, setReadonly, isReadonly, isWritableRole,

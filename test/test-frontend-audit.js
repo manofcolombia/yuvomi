@@ -567,6 +567,123 @@ test('kein endlos animiertes Element traegt in derselben Regel einen filter', ()
 });
 
 /**
+ * Das Wetter-Vokabular haelt an vier Enden zusammen.
+ *
+ * DIE LAGEN UND BAENDER STEHEN NICHT ALS LISTE HIER, sondern werden aus
+ * dashboard.js gelesen - `weatherToneKey()` erzeugt sie, also ist sie die
+ * Quelle. Eine Liste im Test waere die zweite Wahrheit, und genau die ist in
+ * diesem Repo schon dreimal auseinandergelaufen (Modulzahl, Waehrungen,
+ * Familientoene). Kommt eine siebte Lage dazu, faellt dieser Guard von selbst
+ * um, statt sie durchzulassen.
+ *
+ * VIER ENDEN, WEIL EIN TON AN VIER STELLEN GLEICHZEITIG STEHEN MUSS:
+ *   1. der Light-Wert in `:root`,
+ *   2. der Dark-Wert - in BEIDEN Dark-Bloecken. Das ist die eigentliche
+ *      Drift-Gefahr: tokens.css fuehrt @media(prefers-color-scheme) UND
+ *      [data-theme="dark"], und wer nur einen bedient, baut einen Fehler, den
+ *      genau die Haelfte der Nutzer sieht.
+ *   3. die Aufloesungsregel in dashboard.css, die `[data-weather-tone="x"]`
+ *      auf das Token abbildet - ohne sie steht das Attribut im DOM und faerbt
+ *      nichts,
+ *   4. und fuer jede Gangart eine Animation samt reduced-motion-Ausschalter.
+ *
+ * Guard-Ebene: Struktur (aus der JS-Abbildung abgeleitet) + Wert.
+ */
+test('jede Wetterlage traegt ihren Ton in beiden Themes und loest ihn auch auf', () => {
+  const page = read('../public/pages/dashboard.js');
+  const tokens = read('../public/styles/tokens.css');
+  const css = read('../public/styles/dashboard.css');
+
+  const toneFn = page.match(/function weatherToneKey\([\s\S]*?\n}/);
+  assert.ok(toneFn, 'weatherToneKey() nicht gefunden - die Quelle der Lagen ist weg.');
+  const tones = [...new Set([...toneFn[0].matchAll(/return '([a-z]+)'/g)].map((m) => m[1]))];
+  assert.ok(tones.length >= 6, `Nur ${tones.length} Wetterlagen gelesen - die Signatur greift nicht mehr.`);
+
+  const bandsDecl = page.match(/const WEATHER_BANDS = \[([^\]]+)\]/);
+  assert.ok(bandsDecl, 'WEATHER_BANDS nicht gefunden.');
+  const bands = [...bandsDecl[1].matchAll(/'([a-z]+)'/g)].map((m) => m[1]);
+  assert.ok(bands.length >= 5, `Nur ${bands.length} Temperaturbaender gelesen.`);
+
+  const darkScheme = darkSchemeBlock(tokens);
+  const darkAttr = darkAttrBlock(tokens);
+  assert.ok(darkScheme && darkAttr, 'Ein Dark-Block von tokens.css ist nicht auffindbar.');
+
+  const missing = [];
+  const check = (name, attr) => {
+    if (!new RegExp(`\\n\\s*--_${name}:\\s*#`).test(tokens)) missing.push(`tokens.css :root --_${name}`);
+    if (!new RegExp(`--_${name}:\\s*#`).test(darkScheme[1])) missing.push(`tokens.css prefers-color-scheme --_${name}`);
+    if (!new RegExp(`--_${name}:\\s*#`).test(darkAttr[1])) missing.push(`tokens.css [data-theme=dark] --_${name}`);
+    if (!new RegExp(`--${name}:\\s*var\\(--_${name}\\)`).test(tokens)) missing.push(`tokens.css oeffentliches --${name}`);
+    if (!css.includes(attr)) missing.push(`dashboard.css ${attr}`);
+  };
+
+  for (const tone of tones) check(`weather-${tone}`, `[data-weather-tone="${tone}"]`);
+  for (const band of bands) check(`weather-band-${band}`, `[data-weather-band="${band}"]`);
+
+  assert.deepEqual(missing, [], `Wetter-Vokabular unvollstaendig:\n${missing.join('\n')}`);
+});
+
+test('jede Bewegung des Wetter-Widgets steht unter einer Bewegungs-Bedingung', () => {
+  const page = read('../public/pages/dashboard.js');
+  const css = read('../public/styles/dashboard.css');
+
+  const motionFn = page.match(/function weatherMotionAttr\([\s\S]*?\n}/);
+  assert.ok(motionFn, 'weatherMotionAttr() nicht gefunden.');
+  const motions = [...new Set([...motionFn[0].matchAll(/data-weather-motion="([a-z]+)"/g)].map((m) => m[1]))];
+  assert.ok(motions.length >= 4, `Nur ${motions.length} Gangarten gelesen - die Signatur greift nicht mehr.`);
+
+  // DIE SIGNATUR IST „Wetter-Selektor + animation", NICHT EINE LISTE VON
+  // GANGARTEN. Ein Guard ueber die vier bekannten Namen waere beim fuenften
+  // gruen geblieben - genau der Fehler, den die Umstellung auf
+  // `no-preference` gerade behoben hat. Er faellt hier ueber die BAUART:
+  // jede Regel, die eine Wetter-Flaeche animiert, muss unter einer
+  // prefers-reduced-motion-Bedingung stehen.
+  const stray = [];
+  let seen = 0;
+  for (const rule of eachRule(css)) {
+    if (!/weather-widget|weather-forecast|wall-weather|data-weather-motion/.test(rule.selector)) continue;
+    if (!/\banimation(-name|-delay|-duration)?\s*:\s*(?!none)/.test(rule.body)) continue;
+    seen += 1;
+    const gated = rule.at.some((at) => /prefers-reduced-motion/.test(at));
+    // ZWEI BAUARTEN BRAUCHEN DIE BEDINGUNG NICHT, und beide sind das Gegenteil
+    // von Umgebungsbewegung:
+    //   - der Wand-Nachtmodus HAELT Bewegung an, statt sie zu starten;
+    //   - der Ladekringel des Aktualisieren-Knopfs ist Rueckmeldung auf eine
+    //     angestossene Aktion und laeuft nur, solange die Anfrage laeuft. Auch
+    //     unter reduzierter Bewegung muss erkennbar bleiben, dass etwas
+    //     passiert - Apple laesst seine Aktivitaetsanzeigen aus demselben Grund
+    //     drehen. Die Zusicherung darunter belegt, dass er wirklich fluechtig
+    //     ist; ohne sie waere das hier eine Ausnahme auf Zuruf.
+    const transient = /--spinning/.test(rule.selector);
+    if (!gated && !/data-wall-night/.test(rule.selector) && !transient) {
+      stray.push(`${rule.selector} -> ${rule.body.trim().slice(0, 60)}`);
+    }
+  }
+  assert.ok(seen >= 6, `Nur ${seen} animierte Wetter-Regeln gesehen - die Signatur greift nicht mehr.`);
+  assert.deepEqual(stray, [],
+    'Bewegung am Wetter-Widget ohne Bewegungs-Bedingung. Sie gehoert in den\n'
+    + '`@media (prefers-reduced-motion: no-preference)`-Block in dashboard.css -\n'
+    + 'eine nachgeschobene `animation: none`-Gegenregel verliert gegen jeden\n'
+    + `Selektor mit einem Zusatz mehr (gemessen am fallenden Regen).\n${stray.join('\n')}`);
+
+  // Und die Gegenrichtung: der Block muss jede Gangart auch wirklich fuehren.
+  const inBlock = [...eachRule(css)]
+    .filter((rule) => rule.at.some((at) => /prefers-reduced-motion:\s*no-preference/.test(at)))
+    .map((rule) => rule.selector).join('\n');
+  const missing = motions.filter((m) => !inBlock.includes(`[data-weather-motion="${m}"]`));
+  assert.deepEqual(missing, [], `Gangart ohne Animation: ${missing.join(', ')}`);
+  assert.match(inBlock, /weather-widget__glyph::before/, 'der Lichthauch muss im Bewegungsblock atmen');
+
+  // Die Ausnahme oben gilt nur, solange sie fluechtig IST: die Klasse wird um
+  // die Anfrage herum gesetzt und wieder entfernt. Bliebe sie stehen, waere
+  // aus der Rueckmeldung eine Dauerbewegung ohne Ausschalter geworden.
+  assert.match(page, /classList\.add\('weather-widget__refresh--spinning'\)/,
+    'der Ladekringel muss beim Anstossen gesetzt werden');
+  assert.match(page, /classList\.remove\('weather-widget__refresh--spinning'\)/,
+    'der Ladekringel muss wieder entfernt werden - sonst ist er keine Rueckmeldung, sondern Dauerbewegung');
+});
+
+/**
  * Jedes benutzte Token muss auch existieren.
  *
  * DIE GEGENRICHTUNG WAR ABGEDECKT, DIESE NICHT. Alle Token-Guards des Repos
@@ -1254,7 +1371,17 @@ test('sync-calendar leaf loads CalDAV, Google, and Apple with independent status
   assert.match(source, /api\.get\('\/calendar\/google\/calendars'\)/);
   assert.match(source, /api\.patch\('\/calendar\/google\/calendars'/);
   assert.match(source, /api\.put\('\/calendar\/google\/readonly'/);
-  assert.match(source, /api\.delete\('\/calendar\/google\/disconnect'\)/);
+  // Ohne schliessendes Anfuehrungszeichen, aus demselben Grund wie beim
+  // CalDAV-Konto darueber: seit #820 haengt ein `?deleteEvents=` daran.
+  assert.match(source, /api\.delete\(`\/calendar\/google\/disconnect\?deleteEvents=/);
+  assert.match(source, /api\.delete\(endpoint\)/);
+  assert.match(source, /'\/calendar\/google\/mirrored-events'/);
+  // Der letzte Sync-Fehler steht an der Statuszeile, die er erklaert (#820) -
+  // vorher stand er nur im Serverlog, und ein stumm gescheiterter Sync sah aus
+  // wie ein Kalender, der einfach aufhoert sich zu aktualisieren.
+  assert.match(source, /appendSyncError\(status, googleStatus\?\.lastError\)/);
+  assert.match(source, /appendSyncError\(status, appleStatus\?\.lastError\)/);
+  assert.match(source, /t\('settings\.syncErrorDetail', \{ error: lastError \}\)/);
 
   // Apple: legacy badge + hint steering new users to CalDAV, endpoints preserved.
   assert.match(source, /settings\.legacy/);
@@ -1262,7 +1389,8 @@ test('sync-calendar leaf loads CalDAV, Google, and Apple with independent status
   assert.match(source, /api\.get\('\/calendar\/apple\/status'\)/);
   assert.match(source, /api\.post\('\/calendar\/apple\/connect'/);
   assert.match(source, /api\.post\('\/calendar\/apple\/sync'/);
-  assert.match(source, /api\.delete\('\/calendar\/apple\/disconnect'\)/);
+  assert.match(source, /api\.delete\(`\/calendar\/apple\/disconnect\?deleteEvents=/);
+  assert.match(source, /'\/calendar\/apple\/mirrored-events'/);
 
   // OAuth callback handling: localized banner, expand disclosure, scrub only callback params.
   assert.match(source, /sync_ok/);
@@ -3082,16 +3210,216 @@ test('das Lesemass haengt an der Seite, nicht am Traeger', () => {
 
 test('wer eine Pille zeigt, markiert seinen Scrollport', () => {
   const layout = read('../public/styles/layout.css');
-  assert.match(layout, /\.has-bulk-safe-zone\s*\{[\s\S]*?padding-block-end:\s*var\(--bulk-pill-safe-zone\)/,
+  assert.match(layout, /\.page-scrollport[^{]*\{[^}]*padding-block-end:[^;]*--shell-tail/,
     'die Rolle muss den Nachlauf auch wirklich setzen - sonst prueft der Rest hier eine Klasse ohne Wirkung');
 
   for (const page of walkJsFiles('../public/pages/')) {
     const src = read(page);
     if (!/\bsetBulkPill\s*\(/.test(src)) continue;
-    assert.match(src, /has-bulk-safe-zone/,
+    assert.match(src, /page-scrollport/,
       `${page}: zeigt eine Sammelaktions-Pille, markiert aber seinen Scrollport nicht - `
       + 'sie verdeckt dann am Listenende die Zeilen, auf die sie sich bezieht');
   }
+});
+
+/**
+ * Und sie steht NUR dort - der Ersatz raeumt seinen Vorgaenger weg.
+ *
+ * Die Regel darueber kam 2026-08-13, weil die Pillenzone an `.app-content`
+ * bei keinem der drei Module etwas ausrichtete. Entfernt wurde die alte dabei
+ * nicht, und weil beide fuer sich richtig aussehen, fiel sieben Tage lang
+ * niemandem auf, dass jedes Modul mit Pille sie zweimal zahlt: einmal als
+ * Nachlauf IM Scrollport (wirksam) und einmal als toter Streifen darunter
+ * (76px bei 1440x900 und 1680x1050, 80px bei 390x844, in allen drei Modulen
+ * gleich, gemessen 2026-08-20).
+ *
+ * Geprueft wird die Abwesenheit an der Box, die NICHT scrollt. Das ist die
+ * Gegenrichtung zum Guard darueber: der sagt „die Zone muss am Scrollport
+ * stehen", dieser sagt „und sonst nirgends". Ein Guard, der nur das
+ * Vorhandensein prueft, ist gegen doppelt gemoppelt blind - genau das ist hier
+ * passiert.
+ */
+/**
+ * Wer seinen eigenen Scrollport mitbringt, markiert ihn - app-weit.
+ *
+ * Die App hat zwei Scrollport-Architekturen, und die Nachlauf-Regel in
+ * layout.css unterscheidet sie ueber `.page-scrollport`. Faellt die Rolle bei
+ * einer Seite aus, greift die Regel dort an `.app-content` - also an der Box,
+ * die den Scrollport ENTHAELT statt an ihm. Das Padding verkuerzt dann den
+ * Scrollport, statt am Inhaltsende zu reiten: Sichtflaeche weg, und der
+ * Streifen darunter scrollt nicht mit. Genau dieser Defekt lief von 2026-08-12
+ * bis 2026-08-20, erst nur beim Install-Banner, dann doppelt bei der Pille.
+ *
+ * DAS KRITERIUM IST DER MODUL-ROOT, nicht eine Liste von Modulnamen: wer
+ * `height: 100%` UND `overflow: hidden` an seiner `*-page`-Regel traegt, kann
+ * nicht selbst scrollen und hat folglich ein Kind, das es tut. Damit waechst
+ * die Zusicherung mit dem naechsten Modul mit, statt es zu vergessen.
+ */
+test('wer seinen eigenen Scrollport mitbringt, markiert ihn', () => {
+  const styleDir = new URL('../public/styles/', import.meta.url);
+
+  // 1. Alle Seiten mit eigenem Scrollport, aus den Stylesheets gelesen.
+  const eigenerPort = [];
+  for (const file of readdirSync(styleDir).filter((f) => f.endsWith('.css'))) {
+    for (const rule of eachRule(read(`../public/styles/${file}`))) {
+      const selector = rule.selector.trim();
+      // Nur der Modul-Root selbst: `.notes-page`, nicht `.notes-page .foo` und
+      // nicht `.document-viewer__pdf-page` (eine PDF-Seite, kein Modul).
+      if (!/^\.[a-z-]+-page$/.test(selector)) continue;
+      if (!/height:\s*100%/.test(rule.body)) continue;
+      if (!/overflow:\s*hidden/.test(rule.body)) continue;
+      eigenerPort.push(selector.slice(1));
+    }
+  }
+  assert.ok(eigenerPort.length >= 8,
+    `es muessen mindestens die acht bekannten Seiten mit eigenem Scrollport gefunden werden, `
+    + `gefunden: ${eigenerPort.join(', ')}`);
+
+  // 2. Und jede von ihnen vergibt die Rolle in der Datei, die sie rendert.
+  const seiten = walkJsFiles('../public/pages/').map((f) => ({ f, src: read(f) }));
+  for (const root of new Set(eigenerPort)) {
+    const traeger = seiten.filter(({ src }) => src.includes(root));
+    assert.ok(traeger.length > 0, `kein public/pages/*.js rendert ${root}`);
+    for (const { f, src } of traeger) {
+      assert.match(src, /page-scrollport/,
+        `${f}: rendert ${root} (height:100% + overflow:hidden, scrollt also nicht selbst), `
+        + 'vergibt die Rolle page-scrollport aber nicht - der Nachlauf der fixierten '
+        + 'Shell-Flaechen landet dann an .app-content und verkuerzt den Scrollport, '
+        + 'statt am Inhaltsende zu reiten');
+    }
+  }
+});
+
+/**
+ * Und die Rolle sitzt an etwas, das wirklich scrollt.
+ *
+ * Die Gegenrichtung zum Guard darueber: eine Klasse, die an einer Box klebt,
+ * die gar keinen Ueberlauf hat, legt den Nachlauf ins Leere und sieht dabei
+ * genauso richtig aus wie eine, die ihre Sache tut.
+ */
+/**
+ * Und ein Scrollport nennt sein Bodenpolster nicht selbst.
+ *
+ * DIE ACHTE KOPIE. 2026-08-12 wurden sieben `padding-bottom: *-fab-clearance`
+ * in vier Dateien abgeschafft und ein Guard dagegen gesetzt - er sucht nach
+ * Eigenbau-TOKENS. Eine achte ueberlebte trotzdem, in calendar.css:
+ *
+ *   padding: var(--space-2) var(--space-4) calc(var(--space-16) + var(--space-4));
+ *
+ * Kein Token beim Namen, nur der dritte Wert eines Shorthands - 80px Reserve
+ * fuer einen FAB, der in der Agenda am Zeiger ausgeblendet ist. Der alte Guard
+ * konnte sie nicht sehen, weil er die falsche Sache suchte: nicht das Token ist
+ * das Problem, sondern dass ein Scrollport seinen Bodenfreiraum ueberhaupt
+ * selbst festlegt.
+ *
+ * Geprueft wird deshalb die BAUART: an einem Scrollport ist der dritte Wert
+ * eines `padding`-Shorthands verboten, ebenso ein eigenes `padding-bottom`.
+ * Sein Bodenpolster gehoert in `--scrollport-pad`, damit `.page-scrollport`
+ * den Shell-Nachlauf DARAUF legen kann statt ihn zu ersetzen. Die Zwei-Wert-
+ * Form (`padding: a b`) bleibt erlaubt: sie meint die Achsen, und die Rolle
+ * ueberschreibt ihren Boden ohnehin.
+ */
+test('ein Scrollport nennt seinen Bodenfreiraum nicht selbst', () => {
+  const styleDir = new URL('../public/styles/', import.meta.url);
+
+  const markiert = new Set();
+  for (const file of walkJsFiles('../public/pages/')) {
+    for (const m of read(file).matchAll(/["'`]([^"'`]*\bpage-scrollport\b[^"'`]*)["'`]/g)) {
+      for (const cls of m[1].split(/\s+/)) {
+        if (cls && cls !== 'page-scrollport' && /^[a-z][\w-]*$/.test(cls)) markiert.add(cls);
+      }
+    }
+  }
+
+  const verstoesse = [];
+  for (const file of readdirSync(styleDir).filter((f) => f.endsWith('.css'))) {
+    for (const rule of eachRule(read(`../public/styles/${file}`))) {
+      // Nur Regeln, deren LETZTES Glied ein markierter Scrollport ist - eine
+      // Regel auf ein Kind darin (`.agenda-view .agenda-day`) polstert das Kind.
+      const letztes = rule.selector.trim().split(/\s+/).pop() || '';
+      const klassen = [...letztes.matchAll(/\.([a-z][\w-]*)/g)].map((m) => m[1]);
+      if (!klassen.some((c) => markiert.has(c))) continue;
+
+      for (const decl of rule.body.matchAll(/(^|[;{])\s*(padding(?:-bottom|-block-end)?)\s*:([^;]*)/g)) {
+        const [, , prop, wert] = decl;
+        if (prop !== 'padding') {
+          verstoesse.push(`${file}: ${rule.selector.trim()} → ${prop}:${wert.trim()}`);
+          continue;
+        }
+        // Werte zaehlen, ohne calc(...)/var(...) mit ihren Leerzeichen zu zerlegen.
+        const teile = wert.trim().replace(/\b(?:calc|var|min|max|clamp)\([^()]*(?:\([^()]*\)[^()]*)*\)/g, 'X').split(/\s+/).filter(Boolean);
+        if (teile.length >= 3) {
+          verstoesse.push(`${file}: ${rule.selector.trim()} → padding mit ${teile.length} Werten (${wert.trim()})`);
+        }
+      }
+    }
+  }
+
+  assert.deepStrictEqual(verstoesse, [],
+    'diese Scrollports legen ihren Bodenfreiraum selbst fest, statt ihn als '
+    + '--scrollport-pad anzumelden. Genau so ueberlebte die achte FAB-Reserve den '
+    + `Umbau von 2026-08-12: ${verstoesse.join(' | ')}`);
+});
+
+test('die Scrollport-Rolle sitzt an einer Box mit Ueberlauf', () => {
+  const styleDir = new URL('../public/styles/', import.meta.url);
+
+  // Jede KLASSENGRUPPE, in der `page-scrollport` steht - nicht jede Klasse
+  // einzeln. Die Scroll-Achse liegt am geteilten Baustein (`.list-scroller`,
+  // `.budget-tab-panel`), waehrend `items-list` oder `--loans` nur benennen,
+  // welche Liste es ist. Eine Pruefung je Klasse verlangte von jedem Namen
+  // seine eigene Achse und waere an genau diesen Namen zerbrochen.
+  const gruppen = [];
+  for (const file of walkJsFiles('../public/pages/')) {
+    for (const m of read(file).matchAll(/["'`]([^"'`]*\bpage-scrollport\b[^"'`]*)["'`]/g)) {
+      const klassen = m[1].split(/\s+/).filter((c) => /^[a-z][\w-]*$/.test(c) && c !== 'page-scrollport');
+      if (klassen.length) gruppen.push({ file, klassen });
+    }
+  }
+  assert.ok(gruppen.length >= 10, `zu wenige markierte Scrollports gefunden: ${gruppen.length}`);
+
+  const scrollend = new Set();
+  for (const file of readdirSync(styleDir).filter((f) => f.endsWith('.css'))) {
+    for (const rule of eachRule(read(`../public/styles/${file}`))) {
+      if (!/overflow(-y)?:\s*(auto|scroll)/.test(rule.body)) continue;
+      for (const cls of rule.selector.matchAll(/\.([a-z][\w-]*)/g)) scrollend.add(cls[1]);
+    }
+  }
+  const blind = gruppen
+    .filter(({ klassen }) => !klassen.some((c) => scrollend.has(c)))
+    .map(({ file, klassen }) => `${file}: ${klassen.join('.')}`);
+  assert.deepStrictEqual(blind, [],
+    'diese Markierungen tragen page-scrollport, aber keine ihrer Klassen hat eine '
+    + `Scroll-Achse - die Rolle legt dort einen Nachlauf ins Leere: ${blind.join(' | ')}`);
+});
+
+test('die Pillenzone steht nur am markierten Scrollport', () => {
+  const layout = read('../public/styles/layout.css').replace(/\/\*[\s\S]*?\*\//g, '');
+
+  // Jede Regel, deren Selektor auf `.app-content` endet und ein Padding aus
+  // einer der drei Zonen setzt. Geprueft werden alle drei und nicht nur die
+  // Pille: der Defekt ist die BAUART, nicht die Flaeche - der Install-Banner
+  // machte 2026-08-19 exakt denselben Fehler auf demselben Selektor.
+  //
+  // `.app-content:not(:has(.page-scrollport))` ist ausgenommen und ist das
+  // Gegenteil des Defekts: dieser Selektor sagt ausdruecklich „nur, wenn die
+  // Seite KEINEN eigenen Scrollport mitbringt" - dann ist .app-content der
+  // Scrollport und der Nachlauf gehoert ihm.
+  const ZONEN = /--(?:fab-safe-zone|bulk-pill-safe-zone|install-prompt-tail|shell-tail)/;
+  const treffer = [];
+  for (const m of layout.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    const selector = m[1].trim().replace(/\s+/g, ' ');
+    if (!/\.app-content\s*$/.test(selector)) continue;
+    if (/:not\(:has\([^)]*\.page-scrollport[^)]*\)\)\s*$/.test(selector)) continue;
+    if (!/padding/.test(m[2]) || !ZONEN.test(m[2])) continue;
+    treffer.push(selector);
+  }
+
+  assert.deepStrictEqual(treffer, [],
+    'diese Regeln polstern .app-content mit einer Shell-Zone, ohne den Fall '
+    + 'auszuschliessen, in dem die Seite ihren eigenen Scrollport mitbringt. Dort '
+    + 'scrollt .app-content nicht, das Padding verkuerzt den echten Scrollport und '
+    + `wird zum toten Band darunter: ${treffer.join(', ')}`);
 });
 
 test('ein Kopf mit --narrow pflegt ihn beim Ansichtswechsel', () => {
@@ -3183,9 +3511,22 @@ test('der FAB weicht der Zeile, statt eine Gasse zu reservieren', () => {
   //
   // Die Marge darf nicht zurueckkommen: sie ist das eine, was die Sichtflaeche
   // kostet.
-  assert.match(layout, /:has\([^)]*\.page-fab[^)]*\)[^{]*\.app-content\s*\{[^}]*padding-block-end:\s*var\(--fab-safe-zone\)/,
-    'der FAB-Nachlauf gehoert als padding-block-end an .app-content - am Scroll-Ende '
-    + 'liegt damit leerer Raum unter dem Knopf, und der Scrollport bleibt fensterhoch');
+  // SEIT 2026-08-20 IST DIE FAB-ZONE EIN SUMMAND, KEIN FERTIGES PADDING.
+  // Hier stand die Forderung, sie als `padding-block-end` an `.app-content` zu
+  // finden - und genau diese Bauart war der Defekt: bei den acht Seiten mit
+  // eigenem Scrollport verkuerzt ein Padding dort die Bezugshoehe des
+  // Modul-Roots, statt am Inhaltsende zu reiten. Der Nachlauf haengt jetzt an
+  // `.page-scrollport`; die FAB-Zone erreicht ihn als `--fab-tail`.
+  //
+  // Geprueft wird die KETTE, weil jedes Glied fuer sich harmlos aussieht: die
+  // Bedingung setzt den Summanden, die Summe zaehlt ihn, die Regel legt sie an.
+  assert.match(layout, /:has\([^)]*\.page-fab[^{]*\{[^}]*--fab-tail:\s*var\(--fab-safe-zone\)/,
+    'die FAB-Zone muss unter der FAB-Bedingung zum Summanden --fab-tail werden');
+  assert.match(layout, /--shell-tail:\s*calc\([^;]*--fab-tail[^;]*\)/,
+    'und --fab-tail muss in der Summe --shell-tail auftauchen, sonst zaehlt ihn niemand');
+  assert.match(layout, /\.page-scrollport[^{]*\{[^}]*padding-block-end:[^;]*--shell-tail/,
+    'und --shell-tail muss als padding-block-end am Scrollport landen - am Scroll-Ende '
+    + 'liegt damit leerer Raum unter dem Knopf, und der Scrollport bleibt porthoch');
   assert.doesNotMatch(layout.replace(/\/\*[\s\S]*?\*\//g, ''), /margin-block-end:\s*var\(--fab-safe-zone\)/,
     'die FAB-Zone darf den Scrollport nicht wieder verkuerzen (Marge statt Nachlauf): '
     + 'das schnitt das Dashboard-Raster 96px ueber der Fensterkante ab');
@@ -3851,15 +4192,25 @@ test('die Sammelaktions-Pille wohnt in der Shell und kostet die Liste keine Zeil
     'der Nachlauf leitet sich aus der Pillenhöhe ab und darf nicht davon wegdriften');
 
   // --- 3. Nachlauf am Scroll-Ende ------------------------------------------
-  const safeZone = [...eachRule(layout)].filter((r) =>
-    /:has\([^)]*\.list-bulkbar[^)]*\)/.test(r.selector) && /\.app-content/.test(r.selector));
-  assert.ok(safeZone.length >= 2,
-    'der Nachlauf braucht BEIDE Fälle: mit FAB (Summe) und ohne (allein) - `:has()` trägt die '
-    + 'Spezifität seines Arguments, eine Regel allein stünde unter der FAB-Regel');
-  for (const rule of safeZone) {
-    assert.match(rule.body, /padding-block-end:[^;]*--bulk-pill-safe-zone/,
-      'jede Pillen-Regel am Scrollport muss den Nachlauf setzen');
-  }
+  // HIER STAND EINE FORDERUNG NACH ZWEI REGELN an `.app-content` - eine mit
+  // FAB, eine ohne, beide mit der Pillenzone als Summand. Sie stammte aus der
+  // Zeit, als der Nachlauf dort stand, und ueberlebte den Umzug an
+  // `.has-bulk-safe-zone` (2026-08-13) unveraendert: der Guard verlangte
+  // seitdem genau die Regel, die der Umzug ersetzt hatte, und zementierte
+  // damit den doppelten Abzug (Messung an der Regel in layout.css).
+  //
+  // Geprueft wird jetzt die Sache statt der alten Bauart: die Zone haengt an
+  // der Rolle, und die Rolle haengt an einer Bedingung - ohne Pille kein
+  // Nachlauf, sonst reservierte jede der drei Listen ihn dauerhaft.
+  const pillenSummand = [...eachRule(layout)].filter((r) =>
+    /--bulk-pill-tail:\s*var\(--bulk-pill-safe-zone\)/.test(r.body));
+  assert.strictEqual(pillenSummand.length, 1,
+    'die Pillenzone wird an GENAU EINER Stelle zum Summanden --bulk-pill-tail');
+  assert.match(pillenSummand[0].selector, /:has\([^)]*\.list-bulkbar[^)]*\)/,
+    'und nur, solange eine Pille da ist - sonst reserviert jeder Scrollport den '
+    + 'Streifen auch dann, wenn nichts ausgewaehlt ist');
+  assert.match(layout, /--shell-tail:\s*calc\([^;]*--bulk-pill-tail[^;]*\)/,
+    'und der Summand muss in der Summe --shell-tail auftauchen, sonst zaehlt ihn niemand');
 
   // --- Der Stapel: Reihenfolge IST die Zusage ------------------------------
   // Die Spalte ist unten verankert, also steht oben, wer zuerst im DOM steht.
@@ -4701,10 +5052,13 @@ test('die Touch-Zielgröße folgt DESIGN.md statt einer dritten Zahl', () => {
   // or 40px (desktop) minimum. The --target-lg and --target-md tokens encode this -
   // never go below them on interactive elements."
   //
-  // Der Satz wird hier ZITIERT und nicht gelesen: DESIGN.md steht in .gitignore
-  // (Zeile 44), liegt also nur lokal und fehlt in der CI. Ein Guard, der eine
-  // ignorierte Datei liest, ist lokal grün und im Build rot - genau so ist dieser
-  // Test beim Release v1.59.0 aufgefallen.
+  // Der Satz wird hier ZITIERT und nicht gelesen, und der Grund dafür hat
+  // gewechselt. Er war: DESIGN.md stand in .gitignore, lag also nur lokal und
+  // fehlte in der CI - ein Guard, der eine ignorierte Datei liest, ist lokal grün
+  // und im Build rot (so ist dieser Test beim Release v1.59.0 aufgefallen). Seit
+  // c0df06ec (2026-08-08) ist die Datei committed, das Argument gilt nicht mehr.
+  // Zitiert bleibt der Satz trotzdem: die Zahl gehört in die ASSERTION, damit ein
+  // Edit an DESIGN.md den Guard nicht stillschweigend mitverschiebt.
   assert.match(tokens, /--target-base:\s*44px/, 'auf Zeigergeräten bleibt es bei 44px (über der 40er-Grenze)');
   assert.match(tokens, /@media \(hover: none\)\s*\{\s*:root\s*\{\s*--target-base:\s*var\(--target-lg\)/,
     'auf Fingergeräten muss --target-base die 48px aus DESIGN.md erreichen');
@@ -5374,9 +5728,11 @@ test('phase 4 keeps More bottom-nav identity stable while exposing active sectio
   assert.doesNotMatch(routerSource, /moreBtnLabel\.textContent\s*=\s*moreLabel/);
 
   // More nutzt den eindeutigen Overflow-Glyph, nicht das mehrdeutige 3×3-Raster.
+  // Der Aufbau laeuft seit 2026-08-17 ueber `moduleIconEl` statt ueber einen
+  // eigenen NAV_ICONS-Zugriff je Bau-Stelle; geprueft wird weiter der NAME.
   const navIcons = read('../public/nav-icons.js');
-  assert.match(navIcons, /'more-horizontal':\s*\(\)\s*=>/);
-  assert.match(routerSource, /const iconFactory = NAV_ICONS\['more-horizontal'\]/);
+  assert.match(navIcons, /'more-horizontal':\s*\[/);
+  assert.match(routerSource, /moduleIconEl\('more-horizontal',\s*'nav-item__icon'\)/);
   assert.doesNotMatch(routerSource, /grid-2x2/);
 });
 
@@ -5626,8 +5982,23 @@ test('calendar agenda events and task chips keep readable contrast in mobile age
   // Zusage, die `.month-day__event` seit dem HIG-Rollout flach haelt, und der
   // Grund, aus dem im Monatsraster flache Event-Bars neben umrandeten
   // Aufgaben-Bars standen.
-  assert.match(taskBody, /background:\s*color-mix\(in srgb,\s*currentColor/, 'task chips should tint from their readable text color');
-  assert.doesNotMatch(taskBody, /border(-color)?:|box-shadow:/, 'task chips read flat: the tint is the second channel, not an edge on top of it');
+  // DIE TOENUNG IST WEG, UND DAS IST DER PUNKT (2026-08-19, Skalen-Regel).
+  //
+  // Hier stand `background: color-mix(in srgb, currentColor ...)` als Zusage -
+  // der Chip toente aus seiner Prioritaetsfarbe und trug dieselbe Farbe als
+  // Schrift darauf. Das ist die Bauart, die v2.23.0 fuer die Aufgabenliste
+  // abgeschafft hat, und sie ueberlebte hier, weil dieser Test sie festhielt.
+  // Gemessen lagen die vier getoenten Felder 6,61 (medium/high) und 6,77
+  // (high/urgent) auseinander, bei 11,3 fuer die Diagrammserien des Projekts.
+  //
+  // Die Zusage ist jetzt die der Rangmarke: neutrale Flaeche, neutrale Schrift,
+  // die Stufe im 8px-Vollton-Punkt daneben - dieselbe, die `.priority-dot` in
+  // list-row.css fuer die Aufgabenliste traegt.
+  assert.match(taskBody, /background:\s*var\(--color-fill-well\)/, 'task chips carry a neutral surface: the step is the dot, not the fill');
+  assert.doesNotMatch(taskBody, /color-mix\(in srgb,\s*currentColor/, 'task chips must not tint from their priority colour: that is the retracted fassung of the scale rule');
+  assert.match(read('../public/pages/calendar.js'), /class="priority-dot priority-dot--\$\{priority\}"/,
+    'a task chip must render the shared priority dot (list-row.css), not a second fassung of the scale');
+  assert.doesNotMatch(taskBody, /border(-color)?:|box-shadow:/, 'task chips read flat: the dot is the second channel, not an edge on top of it');
   assert.match(metaBody, /color:\s*var\(--color-text-secondary\)/, 'metadata should remain legible in light and dark themes');
 });
 
@@ -5912,13 +6283,45 @@ test('dashboard „Heute wichtig" is one inset-grouped list, not a tile grid', (
   // Reißt eines der drei Glieder, ist die Kachel wieder ein Eigenbau.
   assert.match(iconBody, /--seal-accent:\s*var\(--today-card-accent\)/, 'the icon well forwards its tone accent to the seal');
   const layout = read('../public/styles/layout.css');
-  const sealBody = cssRuleBody(layout, '\n.module-seal');
-  assert.match(sealBody, /background:[\s\S]*color-mix\(in srgb,\s*var\(--seal-accent\)\s*var\(--tint-surface\),\s*var\(--seal-base\)\)/, 'the seal carries the module tint recipe');
-  // Und der GRUND der Mischung ist ein Parameter, kein festverdrahtetes
-  // --color-surface: die Pro-Hintergrund-Regel gilt für Tönungen genauso wie
-  // für Text. Der Kopf steht auf --color-bg, der Toast auf seinem dunklen
-  // Grund - dieselben 16 % ergeben dort ohne Parameter 1,06:1.
-  assert.match(sealBody, /--seal-base:\s*var\(--color-surface\)/, 'the seal defaults its ground to the surface it usually sits on');
+  // JEDE REGEL, DIE DAS SIEGEL ANSPRICHT, nicht die eine, die so heisst: seit
+  // 2026-08-18 teilt es seine HAUT mit `.vivid-mark` (die Marken der
+  // Modulseiten borgen sie, ohne ihre Geometrie aufzugeben), und damit steht
+  // das Rezept in einer Regel mit zwei Selektoren. Ein Guard, der nur
+  // `.module-seal {` sucht, faellt genau ueber diese Zusammenlegung - und
+  // haette sie als Rueckbau des Volltons gemeldet, obwohl sie ihn ausweitet.
+  const sealBody = [...eachRule(layout)]
+    .filter((r) => r.selector.split(',').some((s) => s.trim() === '.module-seal'))
+    .map((r) => r.body)
+    .join('\n');
+  assert.ok(sealBody, 'keine .module-seal-Regel gefunden - die Signatur greift nicht mehr');
+  // DAS SIEGEL HAT EIN GESICHT, UND ES IST DER VOLLTON (2026-08-17).
+  //
+  // Hier stand das Toenungsrezept (16 % gegen einen parametrischen Grund
+  // --seal-base) - der Guard hielt fest, was dark-chroma.mjs am selben Tag
+  // widerlegt hat: eine Beimischung hellt im Dark fast nur auf, statt Farbe zu
+  // tragen. Im Light war es noch schaerfer: Notizen, Dokumente und Inventar
+  // teilen die Familie „records", und ihr Scheibengrund war bei 16 % bitweise
+  // derselbe. Der Ton IST jetzt die Flaeche, die Tinte ist --color-ink-on-vivid.
+  assert.match(sealBody, /background:[\s\S]*var\(--seal-accent\);/, 'the seal carries its module tone as the disc itself');
+  assert.match(sealBody, /color:\s*var\(--color-ink-on-vivid\)/, 'the glyph is the measured ink on a vivid ground');
+  // Und die Toenung kommt nicht durch die Hintertuer zurueck: --seal-base war
+  // der Parameter, den NUR sie brauchte. Steht er wieder da, steht auch wieder
+  // eine Mischung dahinter.
+  //
+  // UEBER `eachRule`, NICHT UEBER DIE QUELLE: die Begruendung des Rueckbaus
+  // nennt den Namen mehrfach im Kommentar, und ein Guard, der die Datei als
+  // Text liest, findet seine eigene Erklaerung und faellt darueber. Es ist
+  // dieselbe Falle, die test/css-rules.js oben beschreibt.
+  const sealGrounds = [];
+  for (const file of readdirSync(new URL('../public/styles/', import.meta.url)).filter((f) => f.endsWith('.css'))) {
+    for (const { selector, body } of eachRule(read(`../public/styles/${file}`))) {
+      if (/--seal-base\s*:/.test(body)) sealGrounds.push(`${file}: ${selector}`);
+      if (selector.includes('.module-seal--vivid')) sealGrounds.push(`${file}: ${selector}`);
+    }
+  }
+  assert.deepEqual(sealGrounds, [],
+    'Das Siegel hat ein Gesicht: kein --seal-base (den brauchte nur die Toenung) und '
+    + 'kein --vivid (das waehlte zwischen zweien aus).\n' + sealGrounds.join('\n'));
   const dashboardJs = read('../public/pages/dashboard.js');
   assert.match(dashboardJs, /class="module-seal today-cockpit-card__icon"/, 'the cockpit icon well takes its form from the seal');
 
@@ -10999,8 +11402,12 @@ test('kein Inline-Style in public/ schreibt einen Design-Wert als Literal', () =
  * Die Gegenrichtung steht darunter: eine Stufe ohne Nutzer waere eine
  * Einladung, sie beim naechsten Mal falsch zu belegen.
  */
-const TINT_SOURCE = /--(module-[\w-]+|meal-[\w-]+|cycle-[\w-]+|layer-color|note-color|holi-color|ev-color|c-accent|active-module-accent|item-module-accent|color-accent|color-warning|color-danger|color-success|today-card-accent|widget-accent|subscription-color|rw-[\w-]+)/;
-const TINT_USER_COLOUR = /--(layer-color|note-color|holi-color|ev-color|subscription-color|c-accent)/;
+const TINT_SOURCE = /--(module-[\w-]+|meal-[\w-]+|weather-[\w-]+|cycle-[\w-]+|layer-color|note-color|holi-color|ev-color|c-accent|active-module-accent|item-module-accent|color-accent|color-warning|color-danger|color-success|today-card-accent|widget-accent|subscription-color|rw-[\w-]+)/;
+/* `countdown-accent` (#647) steht hier, weil die Kachel als EINZIGE Variable
+ * beides fuehrt: bei einer Aufgabenzeile den kuratierten Modulton, bei einer
+ * Terminzeile die vom Nutzer gewaehlte Farbe des Termins. Wer beide Faelle in
+ * einer Deklaration bedient, faellt unter die strengere Regel. */
+const TINT_USER_COLOUR = /--(layer-color|note-color|holi-color|ev-color|subscription-color|c-accent|countdown-accent)/;
 /** Ab hier ist die Farbe die Flaeche und wird verdunkelt, statt beigemischt. */
 const TINT_OPAQUE_FLOOR = 45;
 
@@ -11036,6 +11443,62 @@ test('jede Toenung nimmt eine Stufe der Toenungsskala', () => {
   );
 });
 
+/**
+ * REGEL: eine NUTZERFARBE als Textfarbe traegt ein gemessenes Rezept, nie eine
+ * Stufe der Toenungsskala.
+ *
+ * DIE LUECKE, DIE DIESE SONDE SCHLIESST, IST DIE HAELFTE DES GUARDS DARUEBER,
+ * DIE NIE URTEILT. Er springt bei `pct === undefined` heraus - eine benannte
+ * Stufe ist per Definition erlaubt, das ist ja seine ganze Aussage. Damit war
+ * ausgerechnet der Fall unsichtbar, den DESIGN.md ausdruecklich verbietet: die
+ * Ink-Stufe auf einer frei gewaehlten Farbe. Der Kommentar ueber TINT_SOURCE
+ * nennt „Nutzerfarben als Text" als eines von drei Dingen, die keine Toenung
+ * sind - er verweist damit auf eine Regel, die kein Test hielt.
+ *
+ * Aufgefallen ist es an `.countdown-item__days` (#647), das `--tint-ink` auf
+ * die Farbe des Termins legte, abgeschaut bei den Geburtstagen, die einen
+ * KURATIERTEN Modulton fuehren. Der Guard darueber war dabei gruen - und zwar
+ * doppelt: die Stufe war benannt (also ausgenommen) und `--countdown-accent`
+ * stand in keiner Signatur. Erst die Korrektur auf das gemessene 35-%-Rezept
+ * hat ihn rot gefaerbt, weil eine ROHE Zahl ihn ueberhaupt erst urteilen laesst.
+ * Ein Guard, den nur die richtige Antwort weckt, ist keiner.
+ *
+ * Warum nicht in die Schleife darueber: die beantwortet „welche Stufe", diese
+ * „ueberhaupt eine Stufe". Zwei Fragen an dieselbe Deklaration, und die zweite
+ * verlangt genau die Zeilen, die die erste durchwinkt.
+ */
+test('eine Nutzerfarbe als Textfarbe nimmt ein gemessenes Rezept, keine Toenungsstufe', () => {
+  const offenders = [];
+  let seen = 0;
+  for (const file of readdirSync(new URL('../public/styles/', import.meta.url)).filter((n) => n.endsWith('.css'))) {
+    if (file === 'tokens.css') continue;
+    for (const rule of eachRule(read(`../public/styles/${file}`))) {
+      // Beide Schreibweisen einsammeln - die rohe Zahl zaehlt fuer die
+      // Reichweite, die Stufe ist der Befund.
+      for (const mix of rule.body.matchAll(/([a-z-]+)\s*:[^;]*?color-mix\(\s*in srgb\s*,\s*([^;{}]+?)\s+(?:(\d+)%|var\((--tint-[a-z]+)\))\s*,/g)) {
+        const [, prop, source, pct, step] = mix;
+        if (prop !== 'color' || !TINT_USER_COLOUR.test(source)) continue;
+        seen += 1;
+        if (pct !== undefined) continue;                       // gemessenes Rezept - erlaubt
+        offenders.push(`${file}: ${rule.selector} -> color: ${step} auf ${source.trim()}`);
+      }
+    }
+  }
+  // Reichweiten-Nachweis NACH der Messung: ohne ihn haelt die Zusicherung auch
+  // dann, wenn TINT_USER_COLOUR ins Leere greift. Der Bestand fuehrt fuenf
+  // solche Deklarationen (vier im Kalender, eine auf dem Dashboard).
+  assert.ok(seen >= 4, `Nur ${seen} Nutzerfarben-Textfarben gesehen - die Signatur greift nicht mehr.`);
+  assert.deepEqual(
+    offenders,
+    [],
+    'Eine Toenungsstufe als Textfarbe auf einer frei waehlbaren Nutzerfarbe (DESIGN.md,\n'
+    + 'Grenze der Akzent-auf-Toenung-Regel). Die Stufen sind an KURATIERTEN Modultoenen\n'
+    + 'gemessen und brechen an den Enden der Helligkeitsachse - weiss auf light 1.92:1.\n'
+    + 'Nimm das gemessene Rezept (35 % wie im Kalender) oder ein Token\n'
+    + `(--color-text-primary).\n${offenders.join('\n')}`,
+  );
+});
+
 test('jede Stufe der Toenungsskala hat mindestens einen Nutzer', () => {
   const tokens = read('../public/styles/tokens.css');
   const declared = [...tokens.matchAll(/^\s*(--tint-[a-z]+):/gm)].map((m) => m[1]);
@@ -11050,6 +11513,404 @@ test('jede Stufe der Toenungsskala hat mindestens einen Nutzer', () => {
     declared.filter((t) => !used.has(t)),
     [],
     'Eine Stufe ohne Nutzer ist eine Einladung, sie beim naechsten Mal falsch zu belegen.',
+  );
+});
+
+/**
+ * DIE VOLLTON-REGEL: was eine IDENTITAET NENNT, traegt seine Farbe im Vollton.
+ *
+ * WARUM ES DIESEN GUARD BRAUCHT, und die Antwort ist eine Wiederholung. Die
+ * Messung von 2026-08-17 (dark-chroma.mjs) hat zwei Dinge gezeigt: im Dark
+ * HELLT eine 16-%-Beimischung nur auf, statt zu faerben (Buntheit 4-8 von
+ * 24-73 des Volltons), und im Light kollabieren benachbarte Familientoene auf
+ * denselben Wert - Notizen, Dokumente und Inventar teilen die Familie
+ * „records" und hatten bei 16 % BITWEISE denselben Scheibengrund. Daraus
+ * folgte die Streichung von `module-seal--vivid` und `--seal-base`, und ein
+ * Guard darueber. DER GUARD NANNTE DIE KLASSE, NICHT DIE REGEL. Also hat er
+ * genau eine Bauart geschuetzt, waehrend elf Geschwister derselben Bauart
+ * unter anderen Namen weiterlebten: die Kategoriescheibe der Kontakte, das
+ * Absenderzeichen der Dokumentenkarte, das Modulzeichen der
+ * Einstellungs-Modulliste, die Marke der geteilten Ausgaben, das
+ * Schwangerschaftszeichen. Dieselbe Lehre wie bei der Kueche und beim Budget:
+ * ein Guard ueber eine Namensliste deckt keine Regel ab, sondern N Dateien.
+ *
+ * DIE SIGNATUR IST DIE BAUART, NICHT DER NAME. Gesucht wird ein BEHAELTER
+ * (`width` UND `height` gesetzt - eine Marke ist bemessen, ein Chip waechst mit
+ * seinem Text), dessen Hintergrund eine Identitaetsfarbe als WASCHUNG fuehrt
+ * (`--tint-wash`/`--tint-surface`) und der DIESELBE Farbe noch einmal im
+ * Vordergrund nennt. Zweimal blass ueber dieselbe Aussage - das ist die
+ * zurueckgenommene Fassung, und sie ist an ihrer Doppelung erkennbar.
+ *
+ * ZWEI WEGE FUEHREN HERAUS, und beide sind eine Antwort, kein Schlupfloch:
+ *
+ *   1. VOLLTON. Ein KURATIERTER Ton (Modul-/Familienton) traegt die Flaeche,
+ *      der Glyph nimmt `--color-ink-on-vivid`. Gemessen fuer jede Marke dieser
+ *      Runde in beiden Themes, mit und ohne Sheen: schlechtester Fall light
+ *      3.65:1, dark 6.17:1 (`.impeccable/redesign-tools/vollton-marken.mjs`) -
+ *      dasselbe Feld, das schon am `.module-seal` steht.
+ *   2. KANTE, RING ODER PUNKT. Eine FREI GEWAEHLTE Nutzerfarbe kann keine
+ *      Flaeche tragen, weil ihre Helligkeit unbestimmt ist (ein schwarzer
+ *      Termin lag bei 1.22:1). Sie steht deshalb NEBEN dem Inhalt statt
+ *      darunter: `border-inline-start: 3px solid` am Kalenderblock, der
+ *      Inset-Ring an der Countdown-Scheibe, der 8px-Punkt an der Agendazeile.
+ *      Dort braucht sie keine Tinte, also auch keine Zusicherung ueber sie.
+ *
+ * WER NICHTS NENNT, FAELLT NICHT UNTER DIE REGEL. Ein Platzhalter - die
+ * Dropzone, das Vorschaufeld ohne Bild, der Avatar eines Kontakts ohne
+ * Haushalts-Verknuepfung - sagt mit einer Modultoenung „Dokumente" auf einer
+ * Seite, die das schon beantwortet hat. Solche Flaechen sind in dieser Runde
+ * NEUTRAL geworden statt bunt; sie fuehren danach gar keine Identitaetsfarbe
+ * mehr und liegen damit ausserhalb der Signatur, ohne eine Ausnahme zu
+ * brauchen.
+ */
+/* `--color-accent` GEHOERT DAZU - aber nur ueber die Doppelnennung.
+ *
+ * Die Stimme fehlte in dieser Liste, und `.changelog-release__badge` kam
+ * dadurch durch: 16-%-Flaeche plus dieselbe Farbe als Schrift darauf, also
+ * genau die Bauart, die die Regel abgeschafft hat. Sie pauschal zu verbieten
+ * waere falsch - gemessen tragen 19 Stellen eine Stimm-Waschung, und 15 davon
+ * sind die Shell an genau dem Ort, an dem sie hingehoert (`.page-fab`,
+ * `.btn--primary`, die Nav-Indikatoren, die Overlays). Der Unterschied ist
+ * nicht die Farbe, sondern ob sie ZWEIMAL steht: die Shell fuellt voll und
+ * setzt `--color-ink-on-vivid` darauf, ein Etikett nennt sie blass und noch
+ * einmal blass. Die Guards unten pruefen genau das. */
+const MARK_SOURCE = /--(module-[\w-]+|meal-[\w-]+|weather-[\w-]+|cycle-[\w-]+|layer-color|note-color|holi-color|ev-color|c-accent|cat|active-module-accent|item-module-accent|today-card-accent|widget-accent|subscription-color|countdown-accent|module-row-accent|seal-accent|rw-[\w-]+|color-accent)\b/;
+const MARK_WASH = /var\(--tint-(wash|surface)\)/;
+/** Traeger eines Volltons: die Farbe ohne `color-mix()` drumherum. */
+const MARK_VIVID_PROP = /^(background(-color|-image)?|border(-[\w-]+)?|box-shadow|outline|fill)$/;
+
+/** Deklarationen eines Regelrumpfs, an Semikolons AUSSERHALB von Klammern. */
+function declarations(body) {
+  const out = [];
+  let depth = 0;
+  let cur = '';
+  for (const ch of body) {
+    if (ch === '(') depth += 1;
+    else if (ch === ')') depth -= 1;
+    if (ch === ';' && depth === 0) { out.push(cur); cur = ''; continue; }
+    cur += ch;
+  }
+  if (cur.trim()) out.push(cur);
+  return out
+    .map((d) => [d.slice(0, d.indexOf(':')).trim(), d.slice(d.indexOf(':') + 1).trim()])
+    .filter(([prop]) => prop);
+}
+
+/** Derselbe Wert ohne seine `color-mix()`-Aufrufe - was bleibt, ist Vollton. */
+function withoutColorMix(value) {
+  let out = '';
+  let depth = 0;
+  for (let i = 0; i < value.length; i += 1) {
+    if (depth === 0 && value.startsWith('color-mix(', i)) { depth = 1; i += 9; continue; }
+    if (depth > 0) {
+      if (value[i] === '(') depth += 1;
+      else if (value[i] === ')') depth -= 1;
+      continue;
+    }
+    out += value[i];
+  }
+  return out;
+}
+
+test('eine Marke nennt ihre Identitaet im Vollton, nicht zweimal als Waschung', () => {
+  const offenders = [];
+  let seen = 0;
+  for (const file of readdirSync(new URL('../public/styles/', import.meta.url)).filter((n) => n.endsWith('.css'))) {
+    if (file === 'tokens.css') continue;
+    for (const rule of eachRule(read(`../public/styles/${file}`))) {
+      const decls = declarations(rule.body);
+      // Ein BEHAELTER: bemessen statt vom Text getragen.
+      if (!decls.some(([p]) => p === 'width') || !decls.some(([p]) => p === 'height')) continue;
+      if (!MARK_SOURCE.test(rule.body)) continue;
+      seen += 1;
+
+      const washed = decls.find(([p, v]) => /^background(-color)?$/.test(p) && MARK_WASH.test(v) && MARK_SOURCE.test(v));
+      if (!washed) continue;
+      const source = washed[1].match(MARK_SOURCE)[0];
+      // Nennt der Vordergrund DIESELBE Farbe noch einmal? Dann ist die Aussage
+      // doppelt und beide Male blass - die zurueckgenommene Fassung.
+      if (!decls.some(([p, v]) => p === 'color' && v.includes(`var(${source}`))) continue;
+      // Traegt irgendeine Eigenschaft desselben Rumpfs die Farbe im Vollton?
+      const vivid = decls.some(([p, v]) => MARK_VIVID_PROP.test(p) && withoutColorMix(v).includes(`var(${source}`));
+      if (vivid) continue;
+      offenders.push(`${file}: ${rule.selector} -> ${source}`);
+    }
+  }
+  // Reichweiten-Nachweis: ohne ihn haelt die Zusicherung auch dann, wenn
+  // MARK_SOURCE ins Leere greift - dieselbe Vorsichtsmassnahme wie bei der
+  // Toenungsskala darueber. Der Bestand fuehrt 52 bemessene Behaelter mit einer
+  // Identitaetsfarbe; keine feste Zahl, damit eine neue Marke die Suite nicht
+  // rot faerbt, nur weil sie dazukommt.
+  assert.ok(seen >= 35, `Nur ${seen} bemessene Marken gesehen - die Signatur greift nicht mehr.`);
+  assert.deepEqual(
+    offenders,
+    [],
+    'Eine Marke nennt ihre Identitaet zweimal als Waschung (DESIGN.md, Colors: die\n'
+    + 'Vollton-Regel). Eine 16-%-Toenung hellt im Dark nur auf und laesst im Light\n'
+    + 'benachbarte Familientoene auf denselben Wert fallen - sie kann die Aussage\n'
+    + 'nicht tragen. Zwei Antworten:\n'
+    + '  kuratierter Ton  -> Vollton-Flaeche, Glyph in var(--color-ink-on-vivid)\n'
+    + '                      (Klasse `vivid-mark`, layout.css)\n'
+    + '  freie Nutzerfarbe -> Vollton als Kante, Ring oder Punkt NEBEN dem Inhalt\n'
+    + `                      (3px border-inline-start, inset box-shadow)\n${offenders.join('\n')}`,
+  );
+});
+
+/**
+ * SIGNATUR: was KEINE Marke ist, nennt seinen Ton auch nicht zweimal blass.
+ *
+ * Der Guard darueber sucht dieselbe Bauart an einer MARKE - einem bemessenen
+ * Behaelter mit `width` UND `height`. Genau diese Bedingung liess die zweite
+ * Haelfte des Bestands stehen: ein Etikett ist NICHT bemessen, es waechst mit
+ * seinem Text. Uebrig blieben acht Stellen, und sie sagten alle den Modulton in
+ * einem Raum, der ihn schon beantwortet hat - das Haushalt-Badge im Budget, das
+ * Bedarfs-Badge und die Schwangerschaftsmarke in der Gesundheit, die Zaehlmarke
+ * im Mehr-Blatt, der Widget-Zaehler, das Alters-Badge neben einem Avatar in der
+ * MITGLIEDSfarbe, die Uhrzeit im Gesundheits-Widget, der offene Betrag im
+ * Haushaltshilfe-Widget. Dieselbe Lehre wie am Siegel, zum vierten Mal: **wer
+ * eine Regel setzt, sucht ihre Geschwister ueber die BAUART, nicht ueber den
+ * Namen.** Deshalb steht hier auch kein Namensmuster: dieser Guard ist die
+ * KOMPLEMENTMENGE des Marken-Guards, alles was uebrig bleibt.
+ *
+ * Die drei Antworten stehen in DESIGN.md (Colors, Skalen-Regel):
+ *   Meldung   -> Ton in der SCHRIFT, keine Flaeche (Vorrat, Inventar-Status)
+ *   Rangmarke -> Vollton-PUNKT, Schrift neutral (Aufgaben-Prioritaet)
+ *   Zuordnung -> Vollton-FLAECHE mit --color-ink-on-vivid, und nur dort, wo die
+ *                genannte Identitaet nicht die des Raums ist (Herkunfts-Regel)
+ *
+ * DREI AUSNAHMEN, jede mit einem Grund, der KEINE Namensliste ist:
+ *  - Traegt der Rumpf die Farbe irgendwo VOLL (Kante, Ring, Punkt), ist die
+ *    Aussage gesetzt und die Flaeche darunter ist ihr Beiwerk - so gebaut sind
+ *    die vier Kalender-Ereignisansichten seit v2.22.0.
+ *  - Steht die Schrift im VOLLEN Ton, ist das ein Callout und keine
+ *    zurueckgenommene Marke (.changelog-status--error).
+ *  - `cursor: pointer` heisst BEDIENELEMENT. Fuer die gilt die Eine-Stimme-Regel
+ *    und ihr eigener Guard („kein geteiltes Bedienelement wird unter seinem
+ *    eigenen Namen umgefaerbt"); ein aktiver Filter-Chip beantwortet „wo bin
+ *    ich", und dafuer ist der Modulton zustaendig.
+ */
+const LABEL_STATE = /(:hover|:focus|:active|:checked|\.is-|--active|--selected|--current|--dragging|--loading|--open|\[aria-|\[data-)/;
+
+test('was keine Marke ist, nennt seinen Ton auch nicht zweimal blass', () => {
+  const offenders = [];
+  let seen = 0;
+  for (const file of readdirSync(new URL('../public/styles/', import.meta.url)).filter((n) => n.endsWith('.css'))) {
+    if (file === 'tokens.css') continue;
+    for (const rule of eachRule(read(`../public/styles/${file}`))) {
+      const decls = declarations(rule.body);
+      // Eine MARKE ist bemessen - die gehoert dem Guard darueber.
+      if (decls.some(([p]) => p === 'width') && decls.some(([p]) => p === 'height')) continue;
+      // Ein BEDIENELEMENT gehoert der Eine-Stimme-Regel und ihrem Guard.
+      if (decls.some(([p, v]) => p === 'cursor' && v.trim() === 'pointer')) continue;
+
+      const washed = decls.find(([p, v]) => /^background(-color)?$/.test(p) && v.includes('color-mix') && MARK_SOURCE.test(v));
+      if (!washed) continue;
+      seen += 1;
+      const source = washed[1].match(MARK_SOURCE)[0];
+      // ROHE Tinte zaehlt mit. Der Guard verlangte, dass die Schrift SELBST ein
+      // `color-mix` ist - `color: var(--color-accent)` auf einer 16-%-Flaeche
+      // derselben Farbe galt damit als Callout und kam durch. Die Regel fragt,
+      // wie oft die Farbe genannt wird, nicht in welcher Schreibweise.
+      const pale = decls.find(([p, v]) => p === 'color' && v.includes(`var(${source}`));
+      if (!pale) continue;
+      // Traegt der Rumpf die Farbe irgendwo VOLL? Dann ist die Aussage gesetzt.
+      if (decls.some(([p, v]) => MARK_VIVID_PROP.test(p) && withoutColorMix(v).includes(`var(${source}`))) continue;
+
+      const selectors = rule.selector.split(',').map((sel) => sel.trim()).filter((sel) => !LABEL_STATE.test(sel));
+      if (!selectors.length) continue;
+      offenders.push(`${file}: ${selectors.join(', ')} -> ${source}`);
+    }
+  }
+  // Reichweiten-Nachweis wie beim Marken-Guard: `seen` zaehlt die
+  // NICHT-Marken, die eine Identitaetsfarbe als Waschung fuehren - der Bestand
+  // hat davon rund 30 (die vier Kalender-Ansichten, Dropzones, Zustandsfelder).
+  // Ohne die Zahl haelt die Zusicherung auch dann, wenn MARK_SOURCE ins Leere
+  // greift.
+  assert.ok(seen >= 15, `Nur ${seen} nicht-bemessene Waschungen gesehen - die Signatur greift nicht mehr.`);
+  assert.deepEqual(
+    offenders,
+    [],
+    'Etwas, das keine Marke ist, nennt seinen Ton zweimal blass (DESIGN.md,\n'
+    + 'Colors: die Skalen-Regel). Getoente Flaeche UND gemischte Schrift derselben\n'
+    + 'Farbe ist die zurueckgenommene Fassung - eine Beimischung hellt im Dark\n'
+    + 'fast nur auf. Drei Antworten, je nachdem was das Element SAGT:\n'
+    + '  Meldung   -> Ton in der Schrift, keine Flaeche\n'
+    + '  Rangmarke -> Vollton-Punkt daneben, Schrift neutral\n'
+    + '  Zuordnung -> Vollton-Flaeche mit var(--color-ink-on-vivid); nennt sie den\n'
+    + '               Raum, in dem sie steht, bleibt sie neutral (--color-fill-well)\n'
+    + `${offenders.join('\n')}`,
+  );
+});
+
+/**
+ * REGEL: eine Farbe zaehlt auch dann zweimal, wenn sie in ZWEI Regeln steht.
+ *
+ * Die beiden Guards darueber lesen EINEN Regelkoerper. Genau daran sind sie
+ * vorbeigelaufen, und zwar an der haeufigsten Bauart ueberhaupt: der Behaelter
+ * traegt die getoente Flaeche, sein Kind den Glyph in derselben Farbe.
+ *
+ *     .rw-reward-card__icon   { background: color-mix(... --module-accent ...) }
+ *     .rw-reward-card__icon i { color: var(--module-accent) }
+ *
+ * Gemessen war das keine Theorie: sechs Praemienkacheln, sieben Kartenkoepfe der
+ * Gesundheit und der Beleg-Chip standen so im Baum, waehrend beide Guards gruen
+ * meldeten. Der Marken-Guard sah eine bemessene Flaeche ohne Tinte, der
+ * Etiketten-Guard eine Tinte ohne Flaeche - jeder fuer sich korrekt.
+ *
+ * WAS DIESER GUARD NICHT MELDET, ist ebenso wichtig wie was er meldet:
+ *   - Wo die Farbe irgendwo VOLL steht, ist die Aussage gesetzt (Vollton-Regel).
+ *     Die Terminbloecke des Kalenders tragen ihre `--ev-color` als 3px-Kante und
+ *     duerfen sie im Icon wiederholen.
+ *   - Zustaende (`:hover`, `--dragging`, `.is-`) gehoeren der Eine-Stimme-Regel.
+ *   - Bedienelemente ebenso, erkannt an `cursor: pointer` an einem der beiden.
+ *
+ * Der Nachfahre wird ueber die SELEKTOR-FORM gesucht, nicht ueber Namen: ein
+ * Guard, der `__icon` listet, findet beim naechsten Bauteil nichts (dieselbe
+ * Lehre wie beim Siegel-Guard, dessen Namensliste `.birthday-widget-item__age`
+ * uebersah).
+ */
+test('eine Waschung und ihre Tinte zaehlen zusammen, auch ueber zwei Regeln', () => {
+  const offenders = [];
+  let seen = 0;
+  for (const file of readdirSync(new URL('../public/styles/', import.meta.url)).filter((n) => n.endsWith('.css'))) {
+    if (file === 'tokens.css') continue;
+    const rules = [...eachRule(read(`../public/styles/${file}`))];
+
+    for (const rule of rules) {
+      const decls = declarations(rule.body);
+      const bedienEltern = decls.some(([p, v]) => p === 'cursor' && v.trim() === 'pointer');
+      const wash = decls.find(([p, v]) => /^background(-color)?$/.test(p) && v.includes('color-mix') && MARK_SOURCE.test(v));
+      if (!wash) continue;
+      const source = wash[1].match(MARK_SOURCE)[0];
+      // Traegt die Regel die Farbe irgendwo VOLL? Dann ist die Aussage gesetzt.
+      if (decls.some(([p, v]) => MARK_VIVID_PROP.test(p) && withoutColorMix(v).includes(`var(${source}`))) continue;
+
+      const eltern = rule.selector.split(',').map((x) => x.trim()).filter((x) => !LABEL_STATE.test(x));
+      if (!eltern.length) continue;
+      seen += 1;
+
+      for (const kind of rules) {
+        if (kind === rule) continue;
+        const kdecls = declarations(kind.body);
+        if (kdecls.some(([p, v]) => p === 'cursor' && v.trim() === 'pointer')) continue;
+        // Traegt das KIND die Farbe voll? Dann ist auch dort die Aussage gesetzt.
+        if (kdecls.some(([p, v]) => MARK_VIVID_PROP.test(p) && withoutColorMix(v).includes(`var(${source}`))) continue;
+        const tinte = kdecls.find(([p, v]) => p === 'color' && v.includes(`var(${source}`));
+        if (!tinte) continue;
+
+        for (const ksel of kind.selector.split(',').map((x) => x.trim())) {
+          if (LABEL_STATE.test(ksel)) continue;
+          const vorfahr = eltern.find((esel) => ksel.startsWith(`${esel} `) || ksel.startsWith(`${esel}>`));
+          if (!vorfahr) continue;
+          if (bedienEltern) continue;
+          offenders.push(`${file}: ${vorfahr} traegt die Waschung, ${ksel} die Tinte -> ${source}`);
+        }
+      }
+    }
+  }
+  // Reichweiten-Nachweis: ohne ihn haelt die Zusicherung auch dann, wenn
+  // MARK_SOURCE oder der Waschungs-Filter ins Leere greifen.
+  assert.ok(seen >= 15, `Nur ${seen} Waschungen gesehen - die Signatur greift nicht mehr.`);
+  assert.deepEqual(
+    offenders,
+    [],
+    'Eine Identitaetsfarbe steht als Flaeche im Behaelter UND als Tinte im Kind -\n'
+    + 'zusammen ist das die Doppelnennung, die die Vollton-Regel abgeschafft hat,\n'
+    + 'sie steht nur in zwei Regeln statt in einer. Entweder die Farbe steht\n'
+    + 'irgendwo VOLL (Kante, Punkt, gefuellte Scheibe), oder beide bleiben neutral.\n'
+    + `${offenders.join('\n')}`,
+  );
+});
+
+/**
+ * REGEL: zwei Stufen einer Reihe sehen nie unabsichtlich gleich aus.
+ *
+ * `countdownChip()` in birthdays.js kennt drei Stufen und sagt das im Kommentar
+ * ("`mod` steuert die visuelle Stufe"). Die Regeln fuer `--default` und
+ * `--soon` waren BITWEISE identisch - eine Skala mit einer Stufe, die es nicht
+ * gab, und niemandem aufgefallen, weil beide getoent waren und eine Toenung
+ * ohnehin kaum etwas sagt. Ein Geburtstag morgen und einer in vierzig Tagen
+ * sahen gleich aus.
+ *
+ * Gesucht werden Geschwister-Modifier EINER Basisklasse, die in GETRENNTEN
+ * Regeln stehen und dieselbe gerenderte Farbe setzen. Die Trennung ist der
+ * Kern: `.inventory-status-badge--disposed, .inventory-status-badge--lost`
+ * teilen ihre Regel ausdruecklich - der Autor hat gesagt, dass beide "nicht
+ * mehr da" heissen und das Wort den Rest erledigt. Zwei Regeln, die zufaellig
+ * dasselbe tun, hat niemand gesagt.
+ *
+ * Nur gerenderte Farbe zaehlt, keine Custom-Property-Zuweisung: dass das
+ * Familien-Widget und das Kontakte-Widget beide `--widget-accent:
+ * var(--module-contacts)` setzen, ist eine ZUORDNUNG (dasselbe Modul), keine
+ * Stufe. Und keine Reset-Werte (`none`, `transparent`, `inherit`), sonst zaehlt
+ * `background: none` dreier Navigations-Knoepfe als Farbaussage.
+ */
+const SCALE_PAINT = /^(color|background|background-color|border-color|fill|stroke)$/;
+const SCALE_RESET = /^(none|transparent|inherit|initial|unset|currentcolor)$/i;
+/** Nicht-Farb-Eigenschaften zaehlen mit: sie unterscheiden zwei Stufen genauso. */
+const SCALE_IGNORE = /^(content|transition|animation|will-change|cursor|font-family|--)/;
+
+test('zwei Stufen einer Reihe sehen nie unabsichtlich gleich aus', () => {
+  const families = new Map();
+  for (const file of readdirSync(new URL('../public/styles/', import.meta.url)).filter((n) => n.endsWith('.css'))) {
+    if (file === 'tokens.css') continue;
+    for (const rule of eachRule(read(`../public/styles/${file}`))) {
+      const mods = rule.selector.split(',').map((sel) => sel.trim())
+        .map((sel) => sel.match(/^\.([a-z0-9-]+?)--([a-z0-9-]+)$/i))
+        .filter(Boolean);
+      if (!mods.length) continue;
+      const decls = declarations(rule.body);
+      // Die Reihe muss ueberhaupt FARBE fuehren - sonst zaehlen die zwoelf
+      // Rastergroessen des Dashboards als Skala.
+      if (!decls.some(([p, v]) => SCALE_PAINT.test(p) && !SCALE_RESET.test(v.trim()))) continue;
+      // Verglichen wird der ganze sichtbare Rumpf, nicht nur die Farbe: eine
+      // Kante (`border: 1.5px solid ...`) oder eine Polsterung unterscheidet
+      // zwei Stufen genauso, und `border` ist eine Kurzform, die kein
+      // Farb-Filter sieht (gemessen an .btn--danger-outline gegen -ghost).
+      const paint = decls
+        .filter(([p]) => !SCALE_IGNORE.test(p))
+        .map(([p, v]) => `${p}:${v.replace(/\s+/g, ' ').trim()}`)
+        .sort()
+        .join(';');
+      if (!paint) continue;
+      // Modifier, die sich EINE Regel teilen, sind erklaert gleich.
+      const declared = mods.map((m) => m[2]).join('+');
+      for (const m of mods) {
+        const key = `${file}|${m[1]}|${rule.at.join('>')}`;
+        if (!families.has(key)) families.set(key, []);
+        families.get(key).push({ mod: m[2], paint, declared });
+      }
+    }
+  }
+
+  const offenders = [];
+  let compared = 0;
+  for (const [key, entries] of families) {
+    if (entries.length < 2) continue;
+    compared += 1;
+    const byPaint = new Map();
+    for (const entry of entries) {
+      if (!byPaint.has(entry.paint)) byPaint.set(entry.paint, []);
+      byPaint.get(entry.paint).push(entry);
+    }
+    for (const [, group] of byPaint) {
+      const declarations_ = new Set(group.map((g) => g.declared));
+      // Alle aus derselben Regel? Dann ist die Gleichheit ausgesprochen.
+      if (declarations_.size < 2 && group.length === group[0].declared.split('+').length) continue;
+      const mods = [...new Set(group.map((g) => g.mod))];
+      if (mods.length < 2) continue;
+      if (declarations_.size === 1) continue;
+      offenders.push(`${key} -> ${mods.join(' == ')}`);
+    }
+  }
+  assert.ok(compared >= 20, `Nur ${compared} Modifier-Reihen verglichen - der Scanner greift nicht mehr.`);
+  assert.deepEqual(
+    offenders,
+    [],
+    'Zwei Modifier derselben Basisklasse malen dasselbe, ohne sich eine Regel zu\n'
+    + 'teilen (DESIGN.md, Colors: die Skalen-Regel). Entweder ist eine Stufe zu\n'
+    + 'viel benannt, oder sie ist gemeint und gehoert in DIESELBE Regel wie ihre\n'
+    + `Schwester - dort steht sie als Absicht statt als Zufall.\n${offenders.join('\n')}`,
   );
 });
 
@@ -11884,8 +12745,8 @@ test('die Sidebar zeigt die Modultoene als Legende', () => {
   // Die Kehrseite der Regel oben: wenn die Stimme das Chrome traegt, muss der
   // Modulton EINEN sichtbaren Ort behalten, sonst verschwindet die
   // Modul-Identitaet ganz. Ohne diesen Guard waere die Legende der erste
-  // Kandidat fuer ein stilles Aufraeumen - sie ist die einzige Stelle, an der
-  // --item-module-accent noch Flaeche traegt.
+  // Kandidat fuer ein stilles Aufraeumen - sie ist die Stelle, an der
+  // --item-module-accent Flaeche traegt.
   const layout = read('../public/styles/layout.css');
   // Der Selektor wird GANZ verglichen, nicht per includes(): `.nav-item__icon`
   // ist ein Praefix von `.nav-item__icon-well`, und der erste Treffer war
@@ -11902,6 +12763,191 @@ test('die Sidebar zeigt die Modultoene als Legende', () => {
     selector.trim() === '.nav-sidebar .nav-item[aria-current="page"] .nav-item__icon');
   assert.ok(activeIcon, 'dem aktiven Sidebar-Eintrag fehlt die Icon-Regel');
   assert.match(activeIcon.body, /color:\s*var\(--color-accent\)/);
+});
+
+// ---------------------------------------------------------------------------
+// DIE TAGESMARKE (Etappe E, 2026-08-19)
+//
+// „Heute" ist keine Modul-Aussage. Wo eine TAGESZELLE den aktuellen Tag
+// markiert, traegt sie die Stimme - genau wie der Kalender es seit jeher tut
+// (`.month-day--today .month-day__number`, `.week-view__day-num--today`) und
+// der Datepicker (`.ydp-cal__day.is-today`).
+//
+// DER GUARD LIEST DIE BAUART, NICHT DEN MODULNAMEN. Gesucht ist eine Regel, die
+// (a) den heutigen Tag markiert (`--today` bzw. `.is-today`) und (b) an einem
+// Element haengt, dessen Klasse eine TAGESZELLE benennt - also einen exakten
+// Namensabschnitt `day` fuehrt. Der Abschnittsvergleich ist der Kern: ein
+// `includes('day')` faengt `birthday` mit, und die Geburtstagszeile ist der
+// dokumentierte Gegenfall.
+//
+// ZWEI KATEGORIEN BLEIBEN AUSSEN VOR, und beide ohne Ausnahmeliste:
+//
+//   1. FRISTMELDUNGEN („heute faellig") - `.due-date--today`,
+//      `.housekeeping-task--today`. Sie sagen nicht „das ist der heutige Tag",
+//      sondern „das ist jetzt dran", und tragen deshalb die Warnfarbe. Kein
+//      Namensabschnitt `day`, also nie im Trefferraum.
+//   2. DIE GEBURTSTAGSZEILE - `.birthday-item--today`, `.birthday-chip--today`.
+//      Dort ist der Modulton ausdruecklich richtig und im Quelltext begruendet
+//      („die Zeile beantwortet wann, und der eine Tag, an dem die Antwort HEUTE
+//      lautet, ist der Anlass des ganzen Moduls"), samt gemessenem Kontrast.
+//      Sie sind Zeile und Chip, keine Tageszelle - die Bauart schliesst sie
+//      aus, nicht eine Liste, die beim naechsten Modul wieder unvollstaendig
+//      waere.
+//
+// Gegenprobe gefahren: mit `--module-accent` in `.cycle-cal__day.is-today`
+// (dem Stand vor dieser Etappe) wird der Guard rot und benennt die Fundstelle.
+// ---------------------------------------------------------------------------
+const TODAY_MARKER = /(?:--today\b|\.is-today\b)/;
+
+/** Fuehrt der Selektor irgendwo einen EXAKTEN Namensabschnitt `day`? */
+function namesADayCell(selector) {
+  return selector
+    .split(/[\s>+~,()]+/)
+    .filter((token) => token.startsWith('.'))
+    .some((token) => token
+      .replace(/^\./, '')
+      .split(/__|--|-|\./)
+      .includes('day'));
+}
+
+test('eine Tagesmarke traegt die Stimme, nicht den Modulton', () => {
+  const styleDir = new URL('../public/styles/', import.meta.url);
+  const offenders = [];
+
+  for (const file of readdirSync(styleDir).filter((f) => f.endsWith('.css'))) {
+    for (const { selector, body, at } of eachRule(read(`../public/styles/${file}`))) {
+      if (!TODAY_MARKER.test(selector)) continue;
+      if (!namesADayCell(selector)) continue;
+      if (!MODULE_TONE.test(body)) continue;
+      offenders.push(`${file}${at.length ? ` [${at.join(' ')}]` : ''}: ${selector}`);
+    }
+  }
+
+  assert.deepEqual(offenders, [],
+    'Die Marke des heutigen Tages traegt --color-accent, nicht den Modulton. '
+    + '„Heute" ist dieselbe Aussage in jedem Modul, und der Kalender beantwortet sie '
+    + 'seit jeher mit der Stimme (.month-day--today, .week-view__day-num--today, '
+    + '.ydp-cal__day.is-today). Wer eine Fristmeldung meint („heute faellig"), baut '
+    + 'keine Tageszelle - und wer den Modulton wirklich braucht, begruendet ihn im '
+    + 'Quelltext wie die Geburtstagszeile.\n'
+    + offenders.join('\n'));
+});
+
+test('ein Modul fuehrt EIN Zeichen, und die Zuordnung steht an einer Stelle', () => {
+  // DER FEHLER WAR NICHT DIE STECKNADEL, SONDERN DIE DRITTE TABELLE.
+  //
+  // Welches Zeichen ein Modul fuehrt, stand bis 2026-08-17 in `navItems()`
+  // (Router), in `widgetIcon()` (Dashboard) und noch einmal in der
+  // Kennzahl-Kachelreihe. Drei Tabellen fuer eine Zuordnung laufen auseinander,
+  // und das hatten sie: Notizen war in der Leiste ein Zettel und im Widget-Kopf
+  // eine Stecknadel, Haushaltshilfe hier ein Pinsel und dort Funkeln. Ein Guard
+  // auf diese beiden Namen haette die Symptome festgehalten; gesucht ist die
+  // Bauart.
+  const navIcons = read('../public/nav-icons.js');
+  assert.match(navIcons, /export const MODULE_ICON = \{/, 'die eine Zuordnung Modul → Zeichen fehlt');
+  // Die Schluessel aus der Quelle, nicht aus einer Abschrift im Test - sonst
+  // haette der Guard genau die Dublette, die er verbietet.
+  const moduleIconBlock = navIcons.slice(navIcons.indexOf('export const MODULE_ICON = {'));
+  const MODULE_ICON_KEYS = Object.fromEntries(
+    [...moduleIconBlock.slice(0, moduleIconBlock.indexOf('\n};')).matchAll(/^\s+'?([\w-]+)'?:\s+'/gm)]
+      .map((m) => [m[1], true]),
+  );
+  assert.ok(Object.keys(MODULE_ICON_KEYS).length >= 20,
+    `Nur ${Object.keys(MODULE_ICON_KEYS).length} Eintraege in MODULE_ICON gelesen - das Muster greift nicht mehr.`);
+
+  // (a) Kein Siegel baut sich sein Zeichen selbst aus Lucide: `module-seal` und
+  //     `data-lucide` duerfen nicht in derselben Bau-Stelle stehen. Das ist der
+  //     Weg, auf dem die zweite Hand zurueckkaeme - sichtbar als anderer
+  //     Glyph fuer dasselbe Modul.
+  const WINDOW = 3;
+  const offenders = [];
+  let sealSites = 0;
+  for (const rel of walkJsFiles('../public/')) {
+    const src = read(rel);
+    if (!src.includes('module-seal')) continue;
+    const lines = src.split('\n');
+    lines.forEach((line, i) => {
+      if (!/module-seal/.test(line)) return;
+      if (/^\s*(\/\/|\*|\/\*)/.test(line)) return;
+      if (!/className|class=|classList/.test(line)) return;
+      sealSites += 1;
+      const near = lines.slice(i, i + WINDOW + 1).join('\n');
+      if (/data-lucide|dataset\.lucide/.test(near)) {
+        offenders.push(`${rel.replace(/^\.\.\//, '')}:${i + 1} baut ein Siegel mit einem rohen Lucide-Zeichen`);
+      }
+    });
+  }
+  assert.deepEqual(offenders, [],
+    'Ein Siegel holt sein Zeichen ueber moduleIconEl/moduleIconHTML (nav-icons.js) - '
+    + 'so bekommt dasselbe Modul ueberall denselben Glyph in derselben Hand.\n'
+    + offenders.join('\n'));
+  // Reichweiten-Nachweis NACH der Messung (die leere Liste ist sonst keine
+  // Zusicherung): der Scanner muss die Bau-Stellen ueberhaupt gesehen haben.
+  assert.ok(sealSites >= 6, `Nur ${sealSites} Siegel-Bau-Stellen gefunden - die Signatur greift nicht mehr.`);
+
+  // (b) Und keine der Abschriften kommt zurueck. Es waren FUENF: navItems()
+  //     (Router), widgetIcon() und jede widgetHeader()-Aufrufstelle
+  //     (Dashboard), BUILT_IN_MODULES und KITCHEN_CHILD_ICONS
+  //     (settings/module-order.js). Jede einzelne ist hier benannt, weil jede
+  //     einzeln zurueckkommen kann.
+  const dashboard = read('../public/pages/dashboard.js');
+  assert.match(dashboard, /function widgetIcon\(id\)\s*\{\s*\n\s*return MODULE_ICON\[id\]/,
+    'widgetIcon leitet aus MODULE_ICON ab, statt eine eigene Karte zu fuehren');
+  assert.doesNotMatch(dashboard, /const map = \{ tasks:/,
+    'die zweite Modul→Zeichen-Tabelle ist wieder da');
+  // Die Widget-Koepfe bekommen ihre WIDGET-ID, nicht einen Icon-Namen - sonst
+  // steht die Zuordnung wieder an jeder Aufrufstelle. Geprueft ueber die
+  // Signatur der Aufrufe: ein Icon-Name enthaelt einen Bindestrich oder heisst
+  // wie ein Lucide-Glyph, eine Id ist ein Modulschluessel.
+  const headerArgs = [...dashboard.matchAll(/widgetHeader\('([^']+)'/g)].map((m) => m[1]);
+  assert.ok(headerArgs.length >= 10, `Nur ${headerArgs.length} widgetHeader-Aufrufe gefunden - die Signatur greift nicht mehr.`);
+  const fremdeArgs = headerArgs.filter((id) => !(id in MODULE_ICON_KEYS));
+  assert.deepEqual(fremdeArgs, [],
+    'widgetHeader nimmt die Widget-Id (ein Schluessel von MODULE_ICON), nicht einen Icon-Namen.\n'
+    + fremdeArgs.join('\n'));
+
+  const moduleOrder = read('../public/settings/module-order.js');
+  assert.doesNotMatch(moduleOrder, /icon:/,
+    'BUILT_IN_MODULES/KITCHEN_CHILD_ICONS fuehren wieder eigene Zeichen - das war die vierte Abschrift');
+  for (const leaf of ['modules-active', 'modules-navigation']) {
+    assert.match(read(`../public/settings/pages/${leaf}.js`), /MODULE_ICON/,
+      `${leaf} holt die Modulzeichen aus MODULE_ICON`);
+  }
+});
+
+test('die Tab-Bar zeigt dieselbe Legende wie die Sidebar', () => {
+  // UND SIE IST DIE MOBILE FASSUNG DERSELBEN REGEL, kein zweites Feature.
+  //
+  // Die Legende hing bis 2026-08-17 an einem Breakpoint: ueber 1024px trug
+  // jedes Nav-Zeichen seinen Modulton, darunter waren alle grau - dieselbe
+  // Komponente sprach je nach Fenstergroesse eine andere Sprache, und auf
+  // Telefonen (der Hauptbuehne, PRODUCT.md) war gar kein Modulton in der
+  // Navigation zu sehen. Der Betreiber hat genau das gemeldet.
+  //
+  // Der Guard steht getrennt von dem der Sidebar, weil die beiden Faelle
+  // getrennt kaputtgehen koennen - ein Aufraeumen an der Bottom-Nav laesst die
+  // Sidebar gruen und umgekehrt. Zwei Zusicherungen, zwei Namen.
+  const layout = read('../public/styles/layout.css');
+  const wellRule = [...eachRule(layout)].find(({ selector }) =>
+    selector.trim() === '.nav-bottom .nav-item__icon-well');
+  assert.ok(wellRule, '.nav-bottom .nav-item__icon-well fehlt - die mobile Legende hat keinen Traeger');
+  assert.match(wellRule.body, /color:\s*var\(--item-module-accent,\s*var\(--color-text-tertiary\)\)/,
+    'das Tab-Zeichen traegt den Ton SEINES Moduls; wer keines hat („Mehr"), bleibt tertiaer');
+  // Aktiv gewinnt die Stimme, genau wie in der Sidebar - und zwar ueber die
+  // gemeinsame Regel fuer beide Leisten.
+  const activeWell = [...eachRule(layout)].find(({ selector }) =>
+    selector.includes('.nav-item[aria-current="page"] .nav-item__icon-well'));
+  assert.ok(activeWell, 'dem aktiven Tab fehlt die Icon-Well-Regel');
+  assert.match(activeWell.body, /color:\s*var\(--color-accent\)/);
+  // Und die Leiste selbst bleibt Shell: der Ton sitzt auf dem ZEICHEN, nicht
+  // auf der Kapsel, dem Indikator oder dem Label (Eine-Stimme-Regel). Das
+  // Label ist zugleich der Kontrast-Grund - Text braucht 4.5:1, und sieben der
+  // neun Familientoene reissen das gegen die Kapsel.
+  const labelRule = [...eachRule(layout)].find(({ selector }) =>
+    selector.trim() === '.nav-bottom .nav-item__label');
+  assert.ok(labelRule, '.nav-bottom .nav-item__label fehlt');
+  assert.doesNotMatch(labelRule.body, /--item-module-accent/,
+    'das Tab-Label bleibt Text in Textfarbe - der Modulton gehoert dem Zeichen');
 });
 
 test('kein geteiltes Bedienelement wird unter seinem eigenen Namen umgefaerbt', () => {

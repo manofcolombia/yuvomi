@@ -14,7 +14,8 @@ node tools/installer/install-server.js
 
 Then open **http://localhost:8090** in your browser.
 
-The server shuts down automatically after setup completes (or after 30 minutes of inactivity).
+The server shuts down **5 minutes after your admin account is created** (or after 30 minutes
+of inactivity otherwise). Download the generated `.env` before you close the tab.
 
 ## Requirements
 
@@ -31,26 +32,41 @@ dedicated `podman-compose.yml` (SELinux `:Z` labels).
 ## What it does
 
 1. Detects the container engine (Docker or Podman), checks its prerequisites, and
-   reports any existing `.env` file or running `yuvomi` container before you start
+   reports an existing `.env` file **and a running `yuvomi` container** before you
+   start - a running container matters because saving restarts it, so the household
+   is briefly cut off. When it finds an existing `.env`, the **simple
+   path is disabled** and you continue with the advanced setup: the simple path writes
+   fixed values for host, port, `SESSION_SECURE` and `TRUST_PROXY`, which would
+   silently downgrade an installation that already runs behind a reverse proxy
 2. Lets you pick a setup path on the welcome screen:
    - **Simple setup** (recommended for non-technical users) — auto-generates the
      security keys, applies safe localhost/HTTP defaults, and goes straight to
      creating your admin account. Two or three clicks, no jargon.
    - **Advanced setup** — walks every option, step by step. Security keys are
      still pre-generated (regenerate any time), and each screen is optional:
-     - **Basics** — domain/IP, timezone (`TZ`), HTTP host port (`OIKOS_HTTP_PORT`)
+     - **Basics** — domain/IP, HTTP host port (`OIKOS_HTTP_PORT`), timezone (`TZ`),
+       how Yuvomi is exposed (`SESSION_SECURE`, `TRUST_PROXY`) and the public
+       address (`BASE_URL`). The exposure choice follows the host you enter, and the
+       combination of an `http://` address with enforced secure cookies is rejected -
+       nobody could sign in to that
      - **Security keys** — `SESSION_SECRET` and `DB_ENCRYPTION_KEY` (pre-filled
        on a fresh install; existing keys are kept, see below)
      - **Weather** — Open-Meteo coordinates (no API key)
      - **Calendar** — Google Calendar and Apple CalDAV
      - **Email** — SMTP for the "forgot password" flow (`EMAIL_SMTP_*`,
        `EMAIL_FROM_*`); enables password-reset emails
-     - **Advanced** — reverse-proxy/HTTPS (`SESSION_SECURE`, `TRUST_PROXY`),
-       Single Sign-On (OIDC), automatic backups, off-site WebDAV backups
-       (`WEBDAV_BACKUP_*`), local-folder, WebDAV, or Google Drive document storage, live
-       currency rates (`FIXER_API_KEY`), and the Web-Push contact (`VAPID_SUBJECT`)
-   - Either path derives and writes `BASE_URL` from your host/port/scheme so
-     password-reset links work out of the box.
+     - **Storage & backups** — the host data folder (`DATA_DIR`), automatic backups,
+       off-site WebDAV backups (`WEBDAV_BACKUP_*`), and local-folder, WebDAV or
+       Google Drive document storage. Everything that decides *where data lives*
+     - **Advanced** — Single Sign-On (OIDC), the three home-network permissions
+       (calendar subscriptions, recipe mirrors, WebDAV target - they lift the SSRF
+       protection and are asked as one group), the calendar sync interval, live
+       currency rates (`FIXER_API_KEY`) and the Web-Push contact (`VAPID_SUBJECT`).
+       Everything that decides *what Yuvomi connects to*
+   - The advanced path asks for `BASE_URL` (pre-filled from host, port and the
+     exposure choice); the simple path derives it. Every redirect URI the wizard
+     shows - Google Calendar, Google Drive, OIDC - is built from that one value, so
+     what you copy into a provider console is what the app will send.
    - A language switcher (top corner) overrides the auto-detected browser
      language and remembers your choice.
    - **Existing keys survive a re-run.** If `SESSION_SECRET` or
@@ -159,7 +175,9 @@ identification — `aria-invalid` plus focus moved to the offending input).
   `GET /api/defaults` (serves `ENV_SCHEMA`), `GET /api/prereqs`,
   `GET /api/preflight` (existing `.env` / running container),
   `POST /api/generate-secret`, `POST /api/save-env` (returns the written path),
-  `POST /api/start`, `GET /api/status`, `POST /api/create-admin`.
+  `POST /api/start`, `GET /api/status`, `POST /api/create-admin`,
+  `GET /api/env-file` (serves the written `.env` for the final download - same
+  loopback guard, since the file carries the encryption keys).
 - `env-schema.js` — the single source of truth (`ENV_SCHEMA`) for every
   configurable variable, its group, default, and whether it is written to `.env`.
 - `i18n-mini.js` + `locales/*.json` — web-wizard localization.

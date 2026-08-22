@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 const { shiftEndDateKey, isEndBeforeStart, weekStartIndex, weekdayOrder,
-        monthPeriodKeys, defaultDateInPeriod } = await import('../public/utils/date.js');
+        monthPeriodKeys, defaultDateInPeriod, isWeekendKey } = await import('../public/utils/date.js');
 
 // --- weekStartIndex: Präferenz → getDay()-Index ---
 
@@ -48,6 +48,38 @@ test('weekdayOrder: akzeptiert auch einen Index und ist immer eine Permutation v
 
 test('weekdayOrder: Default (kein Argument) ist Montag', () => {
   assert.deepEqual(weekdayOrder(), [1, 2, 3, 4, 5, 6, 0]);
+});
+
+// --- isWeekendKey: Sa/So aus dem Tag selbst, nicht aus seiner Rasterspalte ---
+
+test('isWeekendKey: Samstag und Sonntag sind Wochenende, Mo-Fr nicht', () => {
+  // 2026-08-15 ist ein Samstag, 2026-08-16 ein Sonntag.
+  assert.equal(isWeekendKey('2026-08-15'), true);
+  assert.equal(isWeekendKey('2026-08-16'), true);
+  for (const key of ['2026-08-10', '2026-08-11', '2026-08-12', '2026-08-13', '2026-08-14']) {
+    assert.equal(isWeekendKey(key), false, `${key} ist ein Werktag`);
+  }
+});
+
+test('isWeekendKey: liest lokale Kalenderfelder, kippt also nicht westlich von UTC', () => {
+  // Der Sonntag bleibt ein Sonntag, egal wie die Zeitzone zum UTC-Tag steht:
+  // parseLocalDateKey baut das Datum aus Jahr/Monat/Tag, nicht aus einem
+  // UTC-Instant (siehe toLocalDateKey-Falle in CLAUDE.md).
+  assert.equal(isWeekendKey('2026-01-04'), true);   // Sonntag
+  assert.equal(isWeekendKey('2026-01-05'), false);  // Montag
+});
+
+test('isWeekendKey: über ein ganzes Jahr sind es genau die getDay()-Tage 0 und 6', () => {
+  const date = new Date(2026, 0, 1);
+  let weekendDays = 0;
+  for (let i = 0; i < 365; i++) {
+    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    const expected = date.getDay() === 0 || date.getDay() === 6;
+    assert.equal(isWeekendKey(key), expected, `${key} (getDay ${date.getDay()})`);
+    if (expected) weekendDays++;
+    date.setDate(date.getDate() + 1);
+  }
+  assert.equal(weekendDays, 104, '2026 hat 104 Wochenendtage - sonst zählt die Schleife nicht, was sie soll');
 });
 
 // --- shiftEndDateKey: Enddatum zieht um dieselbe Tagesdifferenz mit ---

@@ -13,13 +13,14 @@ import * as db from '../db.js';
 import * as googleDriveStorage from './google-drive-storage.js';
 import { isBlockedAddress, isBlockedHostname, normalizeHostname } from '../utils/ssrf.js';
 import { safeRequest } from '../utils/http.js';
+import { MAX_UPLOAD_BYTES } from '../utils/upload-limit.js';
 
 const CONFIG_PREFIX = 'document_storage_webdav_';
 const SELECTED_BACKEND_KEY = 'document_storage_selected_backend';
 const SELECTABLE_BACKENDS = new Set(['local', 'webdav', 'google_drive']);
 const DEFAULT_BASE_PATH = 'yuvomi-documents';
 const DEFAULT_TIMEOUT_MS = 8_000;
-const MAX_READ_BYTES = 5 * 1024 * 1024;
+const MAX_READ_BYTES = MAX_UPLOAD_BYTES;
 
 const ENV_FIELDS = {
   enabled: 'DOCUMENT_STORAGE_WEBDAV_ENABLED',

@@ -16,6 +16,13 @@ const GOOGLE_DRIVE_KEYS = [
   'GOOGLE_DRIVE_REDIRECT_URI',
 ];
 
+// Outlook-Push via Microsoft Graph: gleiche OAuth-Trias wie Google Calendar.
+const OUTLOOK_KEYS = [
+  'MS_CLIENT_ID',
+  'MS_CLIENT_SECRET',
+  'MS_REDIRECT_URI',
+];
+
 // Phase 5 ergänzt Reverse-Proxy-, OIDC- und Backup-Settings sowie APPLE_CALDAV_URL.
 const P5_KEYS = [
   'APPLE_CALDAV_URL', 'SESSION_SECURE', 'TRUST_PROXY',
@@ -65,10 +72,15 @@ const COMPLETENESS_KEYS = [
   'OIDC_TRUST_EMAIL_WITHOUT_VERIFIED_CLAIM',
 ];
 
-const TOTAL_KEYS = ORIGINAL_KEYS.length + GOOGLE_DRIVE_KEYS.length + 2 + P5_KEYS.length
+// Die Obergrenze fuer Uploads (#806). Eigene Liste statt Anhaengen an die
+// Storage-Keys: sie gehoert zu keinem Speicher-Backend, sondern gilt fuer jeden
+// Upload - Dokumente, Termin-Anhaenge, Belege der Haushaltshilfe.
+const UPLOAD_KEYS = ['MAX_UPLOAD_MB'];
+
+const TOTAL_KEYS = ORIGINAL_KEYS.length + GOOGLE_DRIVE_KEYS.length + OUTLOOK_KEYS.length + 2 + P5_KEYS.length
   + DOCUMENT_STORAGE_KEYS.length + DOCUMENT_STORAGE_LOCAL_KEYS.length
   + SUBSCRIPTION_KEYS.length + EMAIL_KEYS.length + WEBDAV_BACKUP_KEYS.length
-  + WIZARD_EXTRA_KEYS.length + COMPLETENESS_KEYS.length; // + TZ + OIKOS_HTTP_PORT
+  + WIZARD_EXTRA_KEYS.length + COMPLETENESS_KEYS.length + UPLOAD_KEYS.length; // + TZ + OIKOS_HTTP_PORT
 
 // ── Regel-Guard: .env.example ⇄ ENV_SCHEMA ⇄ gesendetes env-Objekt ───────────
 //
@@ -88,8 +100,16 @@ const INTENTIONALLY_NOT_IN_INSTALLER = {
   NODE_ENV: 'Vom Image gesetzt (production).',
   PORT: 'Container-interner Port, überall fest 3000. Der Host-Port ist OIKOS_HTTP_PORT.',
   DB_PATH: 'Vom Descriptor auf /data/yuvomi.db gesetzt.',
-  BACKUP_DIR: 'Vom Image auf /backups gesetzt; hat wegen der Doppelrolle Host-Pfad gegen Container-Env einen eigenen Guard (#579).',
-  MODULES_DIR: 'Compose-Host-Pfad für Dritt-Modul-Drop-ins (MODULES.md). Der Default ./modules ist für jede vom Wizard erzeugte Installation richtig; wer Module nutzt, ändert bewusst die Compose-Ebene.',
+  BACKUP_DIR:
+    'Die App liest diesen Namen selbst (backup-scheduler.js) und meint damit das Ziel IM '
+    + 'Container. Ein Host-Pfad in der .env wird dort zu /app/backups, ausserhalb des Mounts - '
+    + 'das war #579. Anders als DATA_DIR, das die App nie liest und deshalb im Wizard stehen '
+    + 'darf. Der Host-Ordner der Sicherungen wird ueber den Mount gesetzt, nicht hierueber.',
+  MODULES_DIR:
+    'Dieselbe Regel wie bei BACKUP_DIR: die App liest den Namen selbst (services/modules.js) '
+    + 'und meint das Verzeichnis IM Container. Hier ist es sogar schaerfer, weil kein Descriptor '
+    + 'die Variable unter environment pinnt - ein Host-Pfad aus der .env erreicht den Container '
+    + 'also ungebremst. Wer Module ablegt, setzt den Mount in der Compose-Datei.',
   OIKOS_HTTP_BIND: 'Bindungsadresse für rootless Podman hinter Proxy. Ein falscher Wert macht die App unerreichbar, und der Default ist für jede vom Wizard erzeugte Installation richtig.',
 
   // Werden zur Laufzeit erzeugt und in der Datenbank abgelegt.
@@ -257,8 +277,14 @@ test('ENV_SCHEMA enthält alle Original-Keys, TZ, OIKOS_HTTP_PORT, P5, Subscript
   for (const k of ORIGINAL_KEYS) {
     assert.ok(keys.includes(k), `Key fehlt: ${k}`);
   }
+  for (const k of UPLOAD_KEYS) {
+    assert.ok(keys.includes(k), `Key fehlt: ${k}`);
+  }
   for (const k of GOOGLE_DRIVE_KEYS) {
     assert.ok(keys.includes(k), `Google-Drive-Key fehlt: ${k}`);
+  }
+  for (const k of OUTLOOK_KEYS) {
+    assert.ok(keys.includes(k), `Outlook-Key fehlt: ${k}`);
   }
   assert.ok(keys.includes('TZ'), 'Key fehlt: TZ');
   assert.ok(keys.includes('OIKOS_HTTP_PORT'), 'Key fehlt: OIKOS_HTTP_PORT');
@@ -505,6 +531,65 @@ test('Google Drive OAuth installer wiring is optional, masked, validated and dep
   ]) {
     const source = readFileSync(new URL(deployment, import.meta.url), 'utf8');
     for (const key of GOOGLE_DRIVE_KEYS) assert.doesNotMatch(source, new RegExp(key));
+  }
+});
+
+test('Outlook-Push (Microsoft Graph) installer wiring is optional, masked and deployed consistently', () => {
+  for (const key of OUTLOOK_KEYS) {
+    const entry = ENV_SCHEMA.find((item) => item.key === key);
+    assert.ok(entry, `${key} missing from ENV_SCHEMA`);
+    assert.equal(entry.type, 'user');
+    assert.equal(entry.required, false);
+    assert.equal(entry.writeToEnv, true);
+    assert.equal(entry.group, 'outlook');
+  }
+  assert.equal(
+    ENV_SCHEMA.find((item) => item.key === 'MS_CLIENT_SECRET').secret,
+    true
+  );
+
+  const web = readFileSync(new URL('../tools/installer/install.html', import.meta.url), 'utf8');
+  for (const id of [
+    'outlook-id',
+    'outlook-secret',
+    'outlook-redirect-hint',
+    'rv-outlook',
+  ]) assert.match(web, new RegExp(`id="${id}"`), `web installer missing ${id}`);
+  assert.match(
+    web,
+    /id="outlook-secret"[^>]*type="password"|type="password"[^>]*id="outlook-secret"/,
+    'the client secret field must be masked'
+  );
+  for (const key of OUTLOOK_KEYS) {
+    assert.match(web, new RegExp(`${key}:\\s*S\\.${key}`));
+    assert.match(web, new RegExp(`${key}:\\s*''`));
+  }
+  assert.match(web, /\/api\/v1\/calendar\/outlook\/callback/);
+
+  const cli = readFileSync(new URL('../install.sh', import.meta.url), 'utf8');
+  for (const key of OUTLOOK_KEYS) assert.match(cli, new RegExp(`^${key}=`, 'm'));
+  assert.match(cli, /read -rs MS_CLIENT_SECRET/);
+
+  const envExample = readFileSync(new URL('../.env.example', import.meta.url), 'utf8');
+  const portainer = readFileSync(new URL('../docs/docker-compose.portainer.yml', import.meta.url), 'utf8');
+  const unraid = readFileSync(new URL('../templates/yuvomi.xml', import.meta.url), 'utf8');
+  for (const key of OUTLOOK_KEYS) {
+    assert.match(envExample, new RegExp(`^${key}=`, 'm'));
+    assert.match(portainer, new RegExp(`- ${key}=\\$\\{${key}:-`));
+    assert.match(unraid, new RegExp(`Target="${key}"`));
+  }
+  assert.match(
+    unraid.match(/<Config[^>]+Target="MS_CLIENT_SECRET"[^>]*>/)[0],
+    /Mask="true"/
+  );
+  for (const deployment of [
+    '../deploy/truenas/questions.yaml',
+    '../deploy/truenas/templates/docker-compose.yaml',
+    '../deploy/umbrel/docker-compose.yml',
+    '../deploy/umbrel/umbrel-app.yml',
+  ]) {
+    const source = readFileSync(new URL(deployment, import.meta.url), 'utf8');
+    for (const key of OUTLOOK_KEYS) assert.doesNotMatch(source, new RegExp(key));
   }
 });
 

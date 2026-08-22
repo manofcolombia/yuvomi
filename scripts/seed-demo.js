@@ -137,6 +137,12 @@ const WIPE = [
   // Sie zu leeren ließ den Haushalt ohne einen einzigen Lagerort zurück -
   // niemand legt sie danach wieder an.
   'pantry_items',
+  // inventory_item_documents haengt per CASCADE an inventory_items, steht aber
+  // bewusst zuerst: foreign_keys ist hier aus, CASCADE greift also nicht.
+  // inventory_categories fehlt aus demselben Grund wie pantry_locations und
+  // shopping_categories - es ist Referenzdatum aus Migration 145, nicht Demo-Inhalt.
+  // inventory_locations dagegen legt keine Migration an, die kommen aus diesem Seed.
+  'inventory_item_documents', 'inventory_items', 'inventory_locations',
   'reminders',
   'event_assignments', 'task_assignments', 'task_tags', 'task_documents', 'calendar_events', 'tasks',
   'birthdays',
@@ -173,6 +179,13 @@ const cfgSet = db.prepare(`
   ON CONFLICT(key) DO UPDATE SET value = excluded.value
 `);
 cfgSet.run('currency', 'EUR');
+// Migration 145 schaltet `inventory` ab, weil es sonst in der Navigation JEDES
+// Haushalts staende (Diskussion #696). Fuer die Demo gilt das Gegenteil: die
+// Landingpage wirbt mit achtzehn Modulen, und ein Modul ohne einen einzigen
+// Screenshot ist eines, das der Leser nirgends sehen kann. Der Seed schaltet
+// deshalb alles ein - explizit als leere Liste, nicht durch Loeschen des
+// Schluessels, damit der Grund am Wert selbst ablesbar bleibt.
+cfgSet.run('disabled_modules', '[]');
 cfgSet.run('date_format', 'dmy_dot');
 cfgSet.run('time_format', '24h');
 cfgSet.run('app_name', 'Yuvomi');
@@ -1310,6 +1323,64 @@ const insertSub = db.prepare(`
   [L('Kids magazine', 'Kindermagazin'), L('12-month subscription', '12-Monats-Abo'), 4.90, 'monthly', 16, 5, 6, null, '#F97316', L('Ends after the school year', 'Endet nach dem Schuljahr'), 'on_date', daysFromNow(128)],
 ].forEach(([name, desc, amount, cycle, nextDays, cat, pm, url, color, notes, endType, endDate]) =>
   insertSub.run({ name, desc, amount, cycle, next: daysFromNow(nextDays), cat, pm, url, color, notes, endType, endDate, by: alexId }));
+
+// ── Inventory ────────────────────────────────────────────────────────────────
+
+console.log('Inserting inventory…');
+// Lagerorte legt keine Migration an (anders als die Kategorien), sie kommen
+// also von hier. Flach gehalten: `parent_id` kann verschachteln, aber ein
+// Screenshot, der zwei Ebenen zeigt, erklaert weniger als einer, der acht
+// Gegenstaende zeigt.
+const insertInvLocation = db.prepare(`
+  INSERT INTO inventory_locations (name, icon, sort_order) VALUES (?, ?, ?)
+`);
+const invLocationId = {};
+[
+  ['livingroom', L('Living room', 'Wohnzimmer'), 'sofa',   0],
+  ['office',     L('Office',      'Büro'),        'laptop', 1],
+  ['basement',   L('Basement',    'Keller'),      'archive',2],
+  ['garage',     L('Garage',      'Garage'),      'car',    3],
+].forEach(([key, name, icon, sort]) => {
+  invLocationId[key] = insertInvLocation.run(name, icon, sort).lastInsertRowid;
+});
+
+const insertInvItem = db.prepare(`
+  INSERT INTO inventory_items
+    (name, brand, model, serial_number, category, location_id, purchase_date,
+     purchase_price, currency, vendor, warranty_months, condition, status, notes, created_by)
+  VALUES (@name, @brand, @model, @serial, @cat, @loc, @date, @price, 'EUR', @vendor,
+          @warranty, @cond, 'active', @notes, @by)
+`);
+// Die Mischung ist absichtlich: ein Posten mit laufender Garantie, einer mit
+// abgelaufener, ein teures Fahrzeug und ein billiges Werkzeug. Genau daran
+// haengt der Nutzen des Moduls - Kaufpreis, Garantie und Ort an einem Ort -
+// und genau das muss ein Screenshot in einem Blick zeigen.
+[
+  [L('Television', 'Fernseher'), 'LG', 'OLED55C4', 'LG4C55-882174', 'electronics', 'livingroom',
+   -420, 1299.00, L('Local electronics store', 'Elektromarkt vor Ort'), 24, 'good',
+   L('Wall mount included', 'Wandhalterung dabei')],
+  [L('Laptop', 'Notebook'), 'Apple', 'MacBook Air M3', 'C02XJ1QWLVDL', 'electronics', 'office',
+   -180, 1499.00, 'Apple', 12, 'new', null],
+  [L('Washing machine', 'Waschmaschine'), 'Miele', 'WWD660', '31-4471902', 'household', 'basement',
+   -910, 949.00, 'Miele', 120, 'good',
+   L('Ten-year warranty, receipt in Documents', 'Zehn Jahre Garantie, Beleg in Dokumenten')],
+  [L('Family car', 'Familienauto'), 'Škoda', 'Octavia Combi', 'TMBJJ7NE0J0123456', 'vehicles', 'garage',
+   -1250, 18900.00, L('Dealership', 'Autohaus'), 24, 'good',
+   L('Next inspection in spring', 'Nächste HU im Frühjahr')],
+  [L("Emma's bike", 'Emmas Fahrrad'), 'Cube', 'Acid 240', 'CU240-77120', 'sports', 'garage',
+   -300, 449.00, L('Bike shop', 'Fahrradladen'), 24, 'good', null],
+  [L('Cordless drill', 'Akkuschrauber'), 'Bosch', 'GSR 18V-55', '3601JJ2000', 'household', 'basement',
+   -640, 159.00, 'Bosch', 36, 'fair', null],
+  [L('Espresso machine', 'Espressomaschine'), 'Sage', 'Barista Express', 'SES875-441209', 'household', 'livingroom',
+   -1100, 699.00, L('Coffee specialist', 'Kaffeehändler'), 24, 'good',
+   L('Warranty expired', 'Garantie abgelaufen')],
+  [L('Monitor', 'Monitor'), 'Dell', 'U2723QE', 'CN-0M4H2X', 'electronics', 'office',
+   -95, 549.00, 'Dell', 36, 'new', null],
+].forEach(([name, brand, model, serial, cat, loc, dayOffset, price, vendor, warranty, cond, notes]) =>
+  insertInvItem.run({
+    name, brand, model, serial, cat, loc: invLocationId[loc],
+    date: daysFromNow(dayOffset), price, vendor, warranty, cond, notes, by: alexId,
+  }));
 
 // ── Reminders ────────────────────────────────────────────────────────────────
 

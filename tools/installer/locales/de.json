@@ -10,7 +10,8 @@
     "toggleVisibility": "Wert anzeigen oder verbergen",
     "copy": "Kopieren",
     "copied": "Kopiert ✓",
-    "language": "Sprache"
+    "language": "Sprache",
+    "copyRedirect": "Redirect-URI kopieren"
   },
   "config": {
     "title": "Grundkonfiguration",
@@ -22,7 +23,11 @@
     "tzLabel": "Zeitzone",
     "errHost": "Ungültiger Hostname. Verwende nur Buchstaben, Ziffern, Bindestriche und Punkte.",
     "errPort": "Ungültiger Port. Muss eine Zahl zwischen 1 und 65535 sein.",
-    "prereqMissing": "Fehlende Voraussetzungen: {{list}}. Bitte installiere sie und lade die Seite neu."
+    "prereqMissing": "Fehlende Voraussetzungen: {{list}}. {{link}} zeigt, wie du sie installierst.",
+    "prereqLinkDocker": "Die Docker-Anleitung",
+    "prereqLinkCompose": "Die podman-compose-Anleitung",
+    "prereqRecheck": "Erneut prüfen",
+    "errSecureOverHttp": "Die öffentliche Adresse beginnt mit http://, diese Auswahl erzwingt aber sichere Cookies - dann ist keine Anmeldung möglich. Wähle „Direkter Zugriff\" oder nutze eine https://-Adresse."
   },
   "secrets": {
     "title": "Sicherheitsschlüssel",
@@ -53,7 +58,7 @@
   },
   "calendar": {
     "title": "Kalender-Synchronisation",
-    "subtitle": "Verbinde Yuvomi mit Google Kalender oder Apple iCloud. Beides optional - zum Konfigurieren ausklappen.",
+    "subtitle": "Verbinde Yuvomi mit Google Kalender, Apple iCloud oder Outlook. Alles optional - zum Konfigurieren ausklappen.",
     "google": "Google Kalender",
     "googleHint": "Erstelle OAuth-Anmeldedaten unter {{link}}. Redirect-URI: {{redirect}}",
     "googleLink": "console.cloud.google.com",
@@ -67,16 +72,22 @@
     "applePassLabel": "App-spezifisches Passwort",
     "appleUrlLabel": "CalDAV-URL",
     "appleUrlOpt": "(optional)",
-    "appleUrlHint": "Leer lassen, sofern dein Anbieter keinen anderen CalDAV-Endpunkt verwendet."
+    "appleUrlHint": "Leer lassen, sofern dein Anbieter keinen anderen CalDAV-Endpunkt verwendet.",
+    "outlook": "Outlook-Kalender (Microsoft Graph)",
+    "outlookHint": "Erstelle eine kostenlose Entra-ID-App-Registrierung (\"Nur persönliche Microsoft-Konten\") unter {{link}} - siehe Installationsanleitung. Redirect-URI: {{redirect}}",
+    "outlookLink": "entra.microsoft.com",
+    "outlookIdLabel": "Client-ID",
+    "outlookSecretLabel": "Client-Secret",
+    "outlookNote": "Einseitiger Push: Yuvomi bleibt führend - Änderungen in Outlook werden überschrieben. Familienkonten werden später in den App-Einstellungen verbunden."
   },
   "advanced": {
     "tag": "Erweitert · optional",
     "title": "Erweiterte Einstellungen",
-    "subtitle": "Reverse-Proxy, Single Sign-On und automatische Backups. Alles optional - Überspringen ist unbedenklich.",
+    "subtitle": "Single Sign-On, Zugriff ins Heimnetz und ein paar Feineinstellungen. Alles optional.",
     "proxyLabel": "Wie wird Yuvomi bereitgestellt?",
     "proxyBehindHttps": "Hinter einem Reverse-Proxy mit HTTPS (Caddy, nginx, Traefik)",
     "proxyDirect": "Direkter Zugriff über localhost / HTTP",
-    "proxyHint": "Im Zweifel „Reverse-Proxy“: erzwingt sichere Cookies. „Direkt“ nur für lokalen HTTP-Zugriff ohne HTTPS.",
+    "proxyHint": "Wähle „Direkter Zugriff\", wenn du Yuvomi über http:// aufrufst - sonst kannst du dich nicht anmelden. Hinter einem Reverse-Proxy mit HTTPS die erste Option.",
     "oidc": "Single Sign-On (OIDC)",
     "oidcHint": "Fülle alle vier Felder aus, um SSO zu aktivieren, oder lass sie leer.",
     "oidcIssuerLabel": "Issuer-URL",
@@ -101,8 +112,7 @@
     "documentLocalEnable": "Neue Dokumente in einem lokalen Ordner speichern",
     "documentLocalPathLabel": "Ordnerpfad",
     "documentLocalPathHint": "Pfad im Container. Leer lassen für /documents.",
-    "sectionNetwork": "Netzwerk",
-    "sectionIntegrations": "Integrationen & Backups",
+    "sectionIntegrations": "Single Sign-On",
     "errSchedule": "Ungültiger Cron-Zeitplan (fünf durch Leerzeichen getrennte Felder erwartet, z. B. 0 2 * * *).",
     "errKeep": "Aufzubewahrende Backups muss eine positive Zahl sein.",
     "webdavBackup": "Externe Backups (WebDAV)",
@@ -137,7 +147,14 @@
     "recipeProviderPrivateNetwork": "Rezept-Provider-Spiegel im Heimnetz erlauben",
     "recipeProviderPrivateNetworkHint": "Nötig für eine Mealie- oder Tandoor-Instanz im eigenen Netz. Hebt den SSRF-Schutz für Rezept-Provider-Spiegel auf.",
     "oidcTrustEmail": "E-Mail ohne verified-Claim vertrauen",
-    "oidcTrustEmailHint": "Nur aktivieren, wenn dein Anbieter kein email_verified sendet und du ihm vertraust."
+    "oidcTrustEmailHint": "Nur aktivieren, wenn dein Anbieter kein email_verified sendet und du ihm vertraust.",
+    "baseUrlLabel": "Öffentliche Adresse",
+    "baseUrlHint": "Die Adresse, unter der deine Familie Yuvomi aufruft - nicht Host und Port des Containers. Wird für Passwort-Reset- und Einladungslinks verwendet.",
+    "syncIntervalLabel": "Kalender-Sync-Intervall (Minuten)",
+    "syncIntervalHint": "Wie oft Yuvomi Kalender und Kontakte abgleicht. Höher stellen, wenn dein Anbieter die Rate begrenzt.",
+    "errSyncInterval": "Bitte eine positive ganze Zahl in Minuten angeben.",
+    "sectionPrivateNetwork": "Zugriff auf dein Heimnetz",
+    "privateNetworkHint": "Yuvomi lehnt Verbindungen zu Adressen im eigenen Netz standardmäßig ab - das schützt davor, dass der Server dazu gebracht wird, interne Dienste zu erreichen. Gib frei, was du zu Hause wirklich betreibst."
   },
   "review": {
     "title": "Überprüfung",
@@ -166,7 +183,18 @@
     "webdavBackup": "Externe Backups",
     "on": "aktiviert",
     "off": "deaktiviert",
-    "documentGoogleDrive": "Google-Drive-Dokumente"
+    "documentGoogleDrive": "Google-Drive-Dokumente",
+    "sessionSecret": "Sitzungsschlüssel",
+    "dbKey": "Datenbankschlüssel",
+    "keyGenerated": "Neu erzeugt",
+    "keyPreserved": "Bestehender bleibt erhalten",
+    "dataDir": "Datenordner",
+    "privateNetwork": "Zugriff ins eigene Netz",
+    "privateNetworkIcs": "Kalender-Abos",
+    "privateNetworkRecipes": "Rezepte",
+    "privateNetworkWebdav": "WebDAV-Dokumente",
+    "baseUrl": "Öffentliche Adresse",
+    "outlook": "Outlook-Kalender"
   },
   "docker": {
     "title": "Yuvomi wird gestartet",
@@ -209,7 +237,17 @@
     "open": "Yuvomi öffnen →",
     "backupReminder": "Denk daran, deine .env-Datei jetzt zu sichern - sie enthält deine Schlüssel.",
     "download": ".env-Datei herunterladen",
-    "savedTo": "Gespeichert unter {{path}}"
+    "savedTo": "Gespeichert unter {{path}}",
+    "downloadFailed": "Die Datei konnte nicht geladen werden - der Installer hat sich vermutlich schon beendet. Deine Schlüssel stehen in der .env-Datei auf deinem Server.",
+    "serverStops": "Der Installer beendet sich in wenigen Minuten. Lade die Datei herunter, bevor du diesen Tab schließt.",
+    "nextTitle": "Als Nächstes",
+    "nextInvite": "Familie einladen",
+    "nextInviteDesc": "Erzeuge Einladungslinks, damit sich jede und jeder ein eigenes Passwort setzt.",
+    "nextModules": "Module wählen",
+    "nextModulesDesc": "Schalte frei, was ihr wirklich nutzt, und blende den Rest aus.",
+    "nextInstall": "Auf den Handys installieren",
+    "nextInstallDesc": "Öffne Yuvomi auf dem Handy und lege es auf den Startbildschirm - es läuft auch offline.",
+    "subtitleExisting": "Yuvomi läuft. Diese Installation hat bereits ein Administratorkonto - melde dich mit deinen bestehenden Zugangsdaten an."
   },
   "welcome": {
     "title": "Willkommen bei Yuvomi",
@@ -220,7 +258,9 @@
     "simpleTime": "Etwa 2 Minuten",
     "advancedTitle": "Erweiterte Einrichtung",
     "advancedDesc": "Volle Kontrolle: Reverse-Proxy, Kalender-Sync, E-Mail, Single Sign-On und Backups.",
-    "advancedTime": "Jede Option, Schritt für Schritt"
+    "advancedTime": "Jede Option, Schritt für Schritt",
+    "existingLocked": "Bestehende Installation erkannt. Nutze die erweiterte Einrichtung, damit deine bisherigen Einstellungen erhalten bleiben.",
+    "containerRunning": "Yuvomi läuft gerade. Beim Speichern wird der Container neu gestartet und ist kurz nicht erreichbar."
   },
   "simple": {
     "title": "Bereit",
@@ -252,5 +292,11 @@
     "fromHint": "Die „Von\"-Adresse, die Empfänger sehen. Viele Anbieter verlangen, dass sie mit dem Benutzernamen übereinstimmt.",
     "fromNameLabel": "Absendername",
     "errIncomplete": "SMTP-Server und Absenderadresse sind erforderlich."
+  },
+  "storage": {
+    "title": "Speicher & Sicherungen",
+    "subtitle": "Wo deine Daten auf dem Server liegen und wohin ihre Kopien gehen. Alles optional - die Voreinstellungen funktionieren.",
+    "sectionBackups": "Sicherungen",
+    "sectionDocuments": "Dokumentspeicher"
   }
 }

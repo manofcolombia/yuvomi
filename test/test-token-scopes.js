@@ -160,7 +160,9 @@ test('tools/call: read-Scope erlaubt Lesen, verweigert Schreiben', async () => {
 
   const denied = await callToolRes(['tasks:read'], 'create_task', { title: 'X', priority: 'high' });
   assert.equal(denied.result.isError, true);
-  assert.match(denied.result.content[0].text, /not permitted by this token's scopes/);
+  // Eine Meldung für beide Grenzen (Scope wie Modulrecht, #823): welche
+  // zugeschlagen hat, verrät die Antwort bewusst nicht.
+  assert.match(denied.result.content[0].text, /not permitted for this account/);
 });
 
 test('tools/call: write-Scope erlaubt Anlegen, andere Module bleiben gesperrt', async () => {

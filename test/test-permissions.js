@@ -18,6 +18,7 @@ import { MIGRATIONS_SQL } from '../server/db-schema-test.js';
 import {
   resolvePermissions,
   buildSessionModuleAccess,
+  moduleAccessVerdict,
   clientPermissions,
   permissionCatalog,
   getSubjectPermissions,
@@ -123,6 +124,33 @@ test('buildSessionModuleAccess: nur Abweichungen, write wird ausgelassen', () =>
 });
 
 // ── Speicherung / Validierung ────────────────────────────────────────────────
+
+// ── Durchsetzung (geteilt von /api/v1 und MCP, #823) ─────────────────────────
+
+test('moduleAccessVerdict: null lässt alles durch (Admin/unbeschränkt)', () => {
+  assert.equal(moduleAccessVerdict(null, 'tasks', 'write'), 'allow');
+  assert.equal(moduleAccessVerdict(undefined, 'tasks', 'write'), 'allow');
+});
+
+test('moduleAccessVerdict: Deny-Liste — nicht gelistete Module bleiben offen', () => {
+  const map = { tasks: 'none' };
+  assert.equal(moduleAccessVerdict(map, 'calendar', 'write'), 'allow');
+  // Auch ein Pfad ohne Modulzuordnung darf nicht stillschweigend zufallen,
+  // sonst wäre die App für eingeschränkte Mitglieder unbedienbar.
+  assert.equal(moduleAccessVerdict(map, null, 'read'), 'allow');
+});
+
+test('moduleAccessVerdict: none sperrt beide Zugriffsarten', () => {
+  const map = { tasks: 'none' };
+  assert.equal(moduleAccessVerdict(map, 'tasks', 'read'), 'none');
+  assert.equal(moduleAccessVerdict(map, 'tasks', 'write'), 'none');
+});
+
+test('moduleAccessVerdict: read erlaubt Lesen, weist Schreiben ab', () => {
+  const map = { tasks: 'read' };
+  assert.equal(moduleAccessVerdict(map, 'tasks', 'read'), 'allow');
+  assert.equal(moduleAccessVerdict(map, 'tasks', 'write'), 'read-only');
+});
 
 test('Sparse: Standard-Werte werden nicht gespeichert', () => {
   const db = freshDb();

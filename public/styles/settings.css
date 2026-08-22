@@ -182,10 +182,46 @@
 }
 
 .settings-shell__navigation-domain-icon,
+/* ── DIE MARKE EINES BLATTES ──
+ * Drei Orte zeigen dieselbe Liste (Seitenleiste, mobile Uebersicht,
+ * Desktop-Uebersicht), also tragen sie dieselbe Marke - je in ihrer Groesse.
+ * Wer ein Modul nennt, bekommt `vivid-mark` dazu und traegt dessen Ton im
+ * Vollton; wer keines nennt, bleibt auf dieser neutralen Grundform stehen.
+ * Die Zuordnung steht im `module`-Feld der Registry, die Regel in DESIGN.md
+ * (Colors, Vollton-Regel). */
 .settings-shell__navigation-link-icon {
+  display: grid;
+  place-items: center;
+  width: var(--space-6);
+  height: var(--space-6);
+  flex: 0 0 auto;
+  border-radius: var(--radius-xs);
+}
+
+/* Die neutrale Grundform gilt nur, WO keine Marke sie traegt: `.vivid-mark`
+ * steht in layout.css, diese Datei laedt danach, und bei gleicher Spezifitaet
+ * gewinnt die spaetere - die Marke waere eine Klasse ohne Wirkung.
+ *
+ * `--color-fill-well`, NICHT `--color-surface-2`. Die Gegenform stand auf der
+ * naechsthoeheren Flaeche statt auf der Well-Stufe, und im Light-Theme ist das
+ * keine Flaeche: #FBFAF7 auf dem Zeilengrund #FFFFFF ergibt gemessen 1.04:1,
+ * auf dem tatsaechlichen Grund 1.01:1 - unsichtbar. Im Dark trug dieselbe Regel,
+ * die zwoelf Modulblaetter aus v2.22.0 standen also hell als vier farbige
+ * Kacheln neben 25 nackten Glyphen und dunkel als 29 gleichwertige Zeilen.
+ * Ein Licht/Dunkel-Paritaetsbruch, und die Vollton-Regel benennt fuer ihre
+ * neutrale Gegenrichtung ausdruecklich `--color-fill-well`. */
+.settings-shell__navigation-link-icon:not(.vivid-mark) {
+  color: var(--color-text-secondary);
+  background: var(--color-fill-well);
+}
+
+.settings-shell__navigation-link-icon-glyph {
   width: var(--space-4);
   height: var(--space-4);
-  flex: 0 0 auto;
+}
+
+.settings-shell__navigation-link--active .settings-shell__navigation-link-icon:not(.vivid-mark) {
+  color: var(--color-accent);
 }
 
 .settings-shell__navigation-list {
@@ -296,12 +332,22 @@
 }
 
 .settings-overview-link__icon {
+  display: grid;
+  place-items: center;
   width: var(--target-base);
   height: var(--target-base);
-  padding: var(--space-3);
+  flex: 0 0 auto;
   border-radius: var(--radius-sm);
+}
+
+.settings-overview-link__icon:not(.vivid-mark) {
   color: var(--module-settings);
   background: var(--color-surface-2);
+}
+
+.settings-overview-link__icon-glyph {
+  width: var(--space-5);
+  height: var(--space-5);
 }
 
 .settings-overview-link__copy {
@@ -693,12 +739,21 @@
   }
 
   .settings-desktop-overview__leaf-icon {
+    display: grid;
+    place-items: center;
     width: var(--target-md);
     height: var(--target-md);
-    padding: var(--space-2);
     border-radius: var(--radius-sm);
+  }
+
+  .settings-desktop-overview__leaf-icon:not(.vivid-mark) {
     color: var(--module-settings);
     background: var(--color-surface-2);
+  }
+
+  .settings-desktop-overview__leaf-icon-glyph {
+    width: var(--space-5);
+    height: var(--space-5);
   }
 
   .settings-desktop-overview__leaf-copy {
@@ -2228,6 +2283,10 @@
 /* Flächenlos: die Fläche gehört dem Träger. Kante und Radius stehen bewusst
  * nicht mehr hier - `.row-carrier > * + *` setzt die Haarlinie, und ein Radius
  * je Zeile wäre wieder die Karte, die gerade entfallen ist. */
+/* Fuenf Spalten: Griff, Pfeile, Symbol, Text, Ausblenden. Kurzzeitig waren es
+   sechs, solange der haushaltweite Schalter hier stand; seit er auf
+   `modules-active` wohnt, traegt eine Zeile genau ein Bedienelement am Ende.
+   Auf dem anderen Blatt greift `--fixed` mit seinen drei Spalten. */
 .settings-module-row {
   display: grid;
   grid-template-columns: var(--target-base) var(--target-base) var(--target-base) minmax(0, 1fr) auto;
@@ -2273,6 +2332,166 @@
   opacity: 0.35;
 }
 
+/* AUSBLENDEN IST EIN KNOPF, KEIN SCHALTER (#673).
+   Er sieht aus wie der Griff und die Pfeile daneben. Seit der Haushalts-Schalter
+   auf `modules-active` wohnt (Critique 2026-08-16), steht er als einziges
+   Bedienelement am Zeilenende - die Abgrenzung, die diese Form urspruenglich
+   leisten musste, hat die Struktur uebernommen. */
+.settings-module-hide {
+  display: grid;
+  place-items: center;
+  width: var(--target-base);
+  height: var(--target-base);
+  border: 0;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: background-color var(--transition-fast), color var(--transition-fast);
+}
+
+/* `:not([aria-pressed='true'])` ist nicht Zierrat, sondern eine gemessene
+   Korrektur: `:hover:not(:disabled)` hat die Spezifitaet 0,3,0 und schlug damit
+   `[aria-pressed='true']` mit 0,2,0. Sobald der Zeiger auf einem gedrueckten
+   Knopf lag, waren Toenung UND Akzentfarbe weg und der Zustand haengte am
+   24px-Glyph allein. */
+.settings-module-hide:hover:not(:disabled):not([aria-pressed='true']) {
+  background: color-mix(in srgb, var(--color-accent) var(--tint-state), transparent);
+  color: var(--color-text-primary);
+}
+
+/* Gedrueckt = ausgeblendet. Der Zustand traegt Farbe, weil er sonst nur am
+   Symbol haengt und ein durchgestrichenes Auge klein ist. */
+.settings-module-hide[aria-pressed='true'] {
+  background: color-mix(in srgb, var(--color-accent) var(--tint-surface), transparent);
+  color: var(--color-accent);
+}
+
+/* Eine Sprosse hoeher auf der Toenungsskala - der Zustand liegt bereits auf
+   einer getoenten Flaeche (tokens.css, `--tint-raised`). */
+.settings-module-hide[aria-pressed='true']:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-accent) var(--tint-raised), transparent);
+}
+
+.settings-module-hide:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+
+/* EINE AUSGEBLENDETE ZEILE IST AUFGERAEUMT, NICHT GESPERRT (Critique 2026-08-16).
+   Hier stand `opacity: 0.6` auf Symbol und Titel - genau das, was DESIGN.md
+   verbietet ("einen Zustand nicht ueber opacity auf dem eigenen Inhalt zeigen,
+   sondern eine Sprosse der Toenungsskala steigen"). Gemessen fiel das
+   Modulsymbol damit auf 2,79:1 und riss die 3:1-Grenze fuer Bedienelemente, der
+   Titel landete bei 4,52:1 - dem knappsten Wert der Seite, ausgerechnet auf der
+   Beschriftung, die der einzige Weg zurueck ist. Der Zustand liegt jetzt am
+   TRAEGER statt am Inhalt: die Zeile toent, der Text bleibt voll lesbar. */
+.settings-module-row--hidden {
+  background: color-mix(in srgb, var(--color-accent) var(--tint-wash), transparent);
+}
+
+/* Der Hover der Zeile (0,2,0) schlug den Zustand (0,1,0) und ersetzte die
+   Toenung durch eine deckende Flaeche - gemessen fiel der Chip dabei von 4,25
+   auf 4,00:1 und der Knopf-Glyph auf 3,54:1, und der Zustand "ausgeblendet"
+   verschwand genau dann, wenn der Zeiger auf ihm lag. Dieselbe Kollision hatte
+   der Knopf eine Ebene tiefer; sie hier zu uebersehen, war der eigentliche
+   Fehler. Der Hover steigt jetzt eine Sprosse der Toenungsskala, statt sie zu
+   ueberschreiben. */
+.settings-module-row--hidden:hover {
+  background: color-mix(in srgb, var(--color-accent) var(--tint-state), transparent);
+}
+
+/* „AUSGEBLENDET" IST EINE MELDUNG, UND EINE MELDUNG TRAEGT KEINE FLAECHE.
+ *
+ * Hier stand eine Akzent-Toenung mit `--tint-ink`-Schrift derselben Farbe, und
+ * der Kommentar davor erzaehlte die Vorgeschichte: die pure Akzentfarbe lag auf
+ * ihrer eigenen blassen Fuellung bei 4,25:1 (light) und 3,86:1 (dark), also
+ * unter AA, und die Antwort war damals die naechste Sprosse der Toenungsskala.
+ *
+ * Die Skalen-Regel (v2.23.0) beantwortet die Frage eine Ebene hoeher: ein
+ * Etikett nennt seinen Ton EINMAL. „Ausgeblendet" meldet einen Zustand, und
+ * Meldungen tragen ihren Ton in der Schrift - hier ist der Zustand nicht einmal
+ * gefaehrlich oder dringend, also bleibt auch die Schrift zurueckgenommen. Der
+ * ganze Kontrastkampf faellt mit der Flaeche weg, gegen die er gefuehrt wurde. */
+.settings-module-row__title .settings-module-status--hidden {
+  color: var(--color-text-secondary);
+  background: transparent;
+}
+
+/* Kind der Kueche: Symbol und Beschriftung links, Ausblenden rechts - dieselbe
+   Ordnung wie in der Elternzeile. Vorher lagen sie vertauscht, und dieselben
+   zwei Entscheidungen tauschten innerhalb einer aufgeklappten Karte die Seite. */
+.settings-module-kitchen__child-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.settings-module-kitchen__child-row > :first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Ein einzeln ausgeblendetes Kind toent SEINE Zeile - nicht die der Gruppe.
+   Bis zur Review lief der Zustand ueber `closest('.settings-module-row')` und
+   landete damit auf der Kuechenzeile: ein verstecktes Rezepte-Modul toente die
+   ganze Kueche und haengte ihr den Chip an, obwohl die Gruppe sichtbar blieb.
+   Dieselbe Sprosse der Toenungsskala wie bei einer ganzen Zeile, eine Ebene
+   tiefer angewandt. */
+.settings-module-kitchen__child-row--hidden {
+  background: color-mix(in srgb, var(--color-accent) var(--tint-wash), transparent);
+  border-radius: var(--radius-sm);
+}
+
+/* Ist die ganze Kueche versteckt, toent die Zeile bereits - das Kind darf seine
+   Toenung dann nicht obendraufsetzen, sonst liest eine vollstaendig versteckte
+   Kueche zwei Sprossen dunkler als jede andere versteckte Zeile. */
+.settings-module-row--hidden .settings-module-kitchen__child-row--hidden {
+  background: transparent;
+}
+
+/* Unterhalb der Lesebreite bricht die Kindzeile um, statt ihren Knopf zu
+   quetschen: gemessen schrumpfte er bei 200% Wurzelschrift auf 38px Breite und
+   riss damit sein Beruehrungsziel. Ein Container-Query, kein Viewport-Breakpoint
+   - was hier zaehlt, ist die Breite des aufgeklappten Felds, und die haengt auch
+   an der Schriftgroesse. */
+.settings-module-kitchen__children {
+  container-type: inline-size;
+}
+
+@container (max-width: 260px) {
+  .settings-module-kitchen__child-row {
+    flex-wrap: wrap;
+  }
+
+  .settings-module-kitchen__child-row > :first-child {
+    flex-basis: 100%;
+  }
+
+  .settings-module-kitchen__child-row .settings-module-hide {
+    margin-inline-start: auto;
+  }
+}
+
+/* Die Klasse gab es seit dem Umbau der Kuechenzeile, eine Regel dazu nie: das
+   Symbol stand dadurch UEBER der Beschriftung statt daneben, in allen vier
+   Kindern (Assessment B, 2026-08-16). Fuer Adminnen fiel es nie auf, weil dort
+   `label.toggle-row` mit eigenem Flex rendert. */
+.settings-module-kitchen__child {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+/* Der Gruppen-Knopf der Kueche fuellt die letzte Rasterspalte nicht, `auto`
+   kollabierte dort auf 0 - gemessen stand er 42px rechts der Augenspalte aller
+   anderen Zeilen. Er wird deshalb in dieselbe Spur gezwungen. */
+.settings-module-row--kitchen > .settings-module-hide {
+  grid-column: 5;
+  justify-self: center;
+}
+
 .settings-module-move-buttons {
   display: grid;
   gap: var(--space-1);
@@ -2303,8 +2522,7 @@
   width: var(--target-base);
   height: var(--target-base);
   border-radius: var(--radius-md);
-  color: var(--module-row-accent, var(--color-accent));
-  background: color-mix(in srgb, var(--module-row-accent, var(--color-accent)) var(--tint-surface), transparent);
+  --seal-accent: var(--module-row-accent, var(--color-accent));
 }
 
 .settings-module-row__body {
@@ -2358,13 +2576,16 @@
   padding: var(--space-0h) var(--space-2);
   border-radius: var(--radius-full);
   font-weight: var(--font-weight-semibold);
-  /* Akzent-TEXT auf akzent-getoenter Flaeche - der rohe Akzent scheitert hier,
-   * weil der Grund eine Toenung DERSELBEN Farbe ist (gemessen 3,99:1 dark).
-   * Das ist die Akzent-auf-Toenung-Regel, und sie hat seit Runde 1 auf diesen
-   * Fall gewartet: die Regel stand in tokens.css, die Fundstelle sah niemand,
-   * weil kein Guard bis in die Settings-Blaetter reichte. */
-  color: color-mix(in srgb, var(--color-accent) var(--tint-ink), var(--color-text-primary));
-  background: color-mix(in srgb, var(--color-accent) var(--tint-surface), transparent);
+  /* „EXTERN" / „EINGEBAUT" IST EINE SACHANGABE, KEINE IDENTITAET.
+   *
+   * Hier stand Akzent-Text auf akzent-getoenter Flaeche, mit einer
+   * Kontrastbegruendung im Kommentar (der rohe Akzent scheiterte bei 3,99:1
+   * dark, weil der Grund eine Toenung DERSELBEN Farbe war). Die Skalen-Regel
+   * loest den Fall auf: die Zuordnung, die dieses Etikett nennt, ist keine
+   * Identitaet mit eigener Farbe - sie sagt, WOHER ein Modul kommt, so wie ein
+   * Versionsetikett sagt, WANN. Neutral, und der Kontrastkampf entfaellt. */
+  background: var(--color-fill-well);
+  color: var(--color-text-primary);
 }
 
 .settings-module-row__toggle {
@@ -2389,6 +2610,13 @@
 
   .settings-module-row--fixed {
     grid-template-columns: var(--target-base) minmax(0, 1fr) auto;
+  }
+
+  /* Der Ausblenden-Knopf steht auf dem Telefon vor dem Schalter, in derselben
+     Zeile wie der Titel; die Pfeile bleiben darunter. */
+  .settings-module-hide {
+    grid-column: 3;
+    grid-row: 1;
   }
 
   .settings-module-move-buttons {
@@ -2416,22 +2644,54 @@
     padding-inline: var(--space-2);
   }
 
-  .settings-module-row--fixed .settings-module-row__toggle {
+  /* HIER STAND EINE REGEL, DIE NIEMANDEN MEHR TRIFFT (Audit 2026-08-16, P0).
+     Sie versteckte auf dem Telefon den Schalter gesperrter Zeilen - der ist
+     wirkungslos, also kostete er nur Platz. Sie hing an `--fixed`, und das
+     heisst woertlich "drei Rasterspalten": als das neue Blatt `modules-active`
+     genau das brauchte, verschwanden dort ALLE elf Schalter unter 640px.
+     Auf `--locked` umgehaengt traf sie nichts mehr - gesperrte Zeilen stehen
+     nur auf dem Navigationsblatt, und das rendert seit dem Split gar keine
+     Schalter. Eine Regel ohne Traeger ist keine Zusicherung, sondern eine
+     Notiz; deshalb steht hier die Notiz und nicht die Regel. */
+
+  /* Der "Aktiviert"-Chip verschwindet hier, weil der Schalter daneben dasselbe
+     sagt. `--disabled` bleibt seit 2026-08-16 STEHEN: auf dem Navigationsblatt
+     gibt es keinen Schalter mehr, der ihn wiederholen koennte, und er ist die
+     einzige Begruendung fuer den gesperrten Ausblenden-Knopf - ohne ihn sah ein
+     Mitglied am Telefon ein totes Auge bei 1,68:1 und null Text. */
+  .settings-module-row--sortable .settings-module-status--enabled {
     display: none;
   }
 
-  .settings-module-row:not(.settings-module-row--fixed) .settings-module-status--enabled,
-  .settings-module-row:not(.settings-module-row--fixed) .settings-module-status--disabled {
-    display: none;
-  }
-
+  /* Die Kuechenzeile spannte ihren Text hier ueber die Steuerspalten, damit das
+     aufgeklappte Feld die volle Breite bekommt - der Gruppen-Knopf lag dadurch
+     44px DARAUF, und in der Ausweichposition neben den Pfeilen las er sich als
+     drittes Sortier-Bedienelement (beide Zustaende gemessen, 2026-08-16). Sie
+     endet jetzt wie jede andere Zeile vor der Knopfspalte: das Feld ist etwas
+     schmaler, dafuer steht das Auge der Kueche dort, wo alle Augen stehen. */
   .settings-module-row--kitchen .settings-module-row__body {
-    grid-column: 2 / -1;
+    grid-column: 2 / 3;
   }
 
   .settings-module-row--kitchen .settings-module-move-buttons {
     grid-column: 3;
     justify-content: flex-end;
+  }
+
+  /* Die Desktop-Regel setzt den Gruppen-Knopf in Spalte 5. Hier gibt es nur
+     drei; ohne diese Zeile erzeugte er eine implizite fuenfte und stand 48px
+     neben der Augenspalte (gemessen 2026-08-16). */
+  .settings-module-row--kitchen > .settings-module-hide {
+    grid-column: 3;
+    grid-row: 1;
+    justify-self: stretch;
+  }
+
+  /* Das aufgeklappte Feld darf die Knopfspalte mitbenutzen: sein Text endet
+     sonst nach 118px und die vier Kind-Knoepfe schrumpfen auf 19-24px, also
+     unter jedes Beruehrungsziel. Der Ausbruch ist genau eine Spalte breit. */
+  .settings-module-kitchen__children {
+    margin-inline-end: calc(-1 * (var(--target-base) + var(--space-3)));
   }
 }
 
